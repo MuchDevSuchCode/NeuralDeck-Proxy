@@ -141,7 +141,17 @@ def _norm(path) -> str:
         return str(path)
 
 
-_BACKEND_BY_EXE = {_norm(b): label for label, b in config.BACKENDS.items() if b}
+# Resolving a path is a syscall, so the map is cached — and rebuilt whenever
+# the backend list changes under it (the settings page can do that live).
+_backend_map: dict = {"key": None, "map": {}}
+
+
+def _backend_by_exe() -> dict:
+    key = tuple(sorted(config.BACKENDS.items()))
+    if _backend_map["key"] != key:
+        _backend_map["key"] = key
+        _backend_map["map"] = {_norm(b): label for label, b in key if b}
+    return _backend_map["map"]
 
 
 def backend_of(exe, cmd: str) -> str:
@@ -151,7 +161,7 @@ def backend_of(exe, cmd: str) -> str:
     someone started by hand, or a fork being A/B'd — is named after the
     checkout its binary lives in, which is more use than "unknown".
     """
-    label = _BACKEND_BY_EXE.get(_norm(exe)) if exe else None
+    label = _backend_by_exe().get(_norm(exe)) if exe else None
     if label:
         return label
     parts = [q for q in Path(exe or cmd.split(" ")[0]).parts

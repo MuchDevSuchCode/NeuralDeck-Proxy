@@ -203,6 +203,41 @@
     font-variant-numeric:tabular-nums; box-shadow:0 0 14px rgba(0,240,224,.25);
   }
 
+  /* settings */
+  .stgroup { margin-bottom:12px; }
+  .strow { display:grid; grid-template-columns:230px minmax(0,1fr); gap:4px 14px;
+           padding:8px 2px; border-bottom:1px solid var(--grid); align-items:start; }
+  .strow:last-child { border-bottom:none; }
+  .strow.dirty { background:rgba(0,240,224,.05); }
+  .strow .lab { color:var(--ink-2); padding-top:4px; }
+  .strow .lab small { display:block; color:var(--muted); font-size:10.5px;
+                      letter-spacing:.5px; text-transform:uppercase; }
+  .strow .help { color:var(--muted); font-size:11.5px; grid-column:2; }
+  .strow .badge { display:inline-block; font-size:10px; padding:0 6px; margin-left:6px;
+                  border:1px solid var(--border-dim); color:var(--muted); border-radius:8px; }
+  .strow .badge.env { border-color:var(--yellow); color:var(--yellow); }
+  .strow .badge.restart { border-color:var(--pink); color:var(--pink); }
+  .strow .badge.missing { border-color:var(--critical); color:var(--critical); }
+  .strow input[type=text], .strow input[type=number], .strow textarea, .strow select {
+    background:var(--surface2); color:var(--ink); border:1px solid var(--border-dim);
+    padding:4px 8px; font:inherit; font-size:12px; width:100%; }
+  .strow input:disabled, .strow select:disabled { opacity:.5; }
+  .pathrow { display:flex; gap:6px; align-items:center; margin-bottom:4px; }
+  .pathrow .p { flex:1; overflow-wrap:anywhere; color:var(--ink); }
+  .pathrow .p.gone { color:var(--critical); }
+  .stbar { position:sticky; bottom:0; background:linear-gradient(0deg,var(--page) 70%,transparent);
+           padding:10px 0 2px; display:flex; gap:10px; align-items:center; z-index:5; }
+  .stnote { padding:8px 11px; border:1px solid var(--border-dim); margin-bottom:10px;
+            font-size:12px; color:var(--ink-2); }
+  .stnote.warn { border-color:var(--yellow); color:var(--yellow); }
+  .stnote.ok { border-color:var(--green); color:var(--green); }
+  #fp-list { max-height:44vh; overflow:auto; border:1px solid var(--border-dim); }
+  #fp-list .d { display:flex; gap:10px; padding:4px 8px; cursor:pointer;
+                border-bottom:1px solid var(--grid); align-items:center; }
+  #fp-list .d:hover { background:rgba(0,240,224,.1); }
+  #fp-list .d .n { color:var(--ink-2); overflow-wrap:anywhere; }
+  #fp-list .d .g { margin-left:auto; color:var(--green); font-size:11px; flex:none; }
+
   pre.logbox {
     background:rgba(0,0,0,.45); border:1px solid var(--border-dim); border-radius:6px;
     padding:8px 10px; margin-top:8px; max-height:230px; overflow:auto;
@@ -226,6 +261,7 @@
     <button id="vt-dash" onclick="setView('dash')">Dashboard</button>
     <button id="vt-prompt" onclick="setView('prompt')">Prompt Lab</button>
     <button id="vt-bench" onclick="setView('bench')">Benchmarks</button>
+    <button id="vt-settings" onclick="setView('settings')">Settings</button>
   </nav>
   <span class="sub" id="hw-line">—</span>
   <span class="right"><span id="conn" class="pill">connecting…</span>
@@ -497,6 +533,42 @@
       <th class="num">prompt</th><th class="num">gen</th><th class="num">prefill</th>
       <th class="num">decode</th><th class="num">ttft</th><th class="num">wall</th><th></th>
     </tr></thead><tbody></tbody></table></div>
+  </div>
+</div>
+
+<!-- ═══════════ SETTINGS view ═══════════ -->
+<div id="view-settings" style="display:none">
+  <div class="panel">
+    <h2>Settings <span class="meta" id="st-where"></span></h2>
+    <div id="st-notes"></div>
+    <div id="st-body"><div class="advisory">loading…</div></div>
+    <div class="stbar">
+      <button class="primary" id="st-save" onclick="stSave()" disabled>Save changes</button>
+      <button id="st-revert" onclick="stLoad()" disabled>Discard</button>
+      <span class="sub" id="st-dirty"></span>
+      <span style="flex:1"></span>
+      <button id="st-restart" onclick="stRestart()" style="display:none">↻ Restart NeuralDeck</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ folder picker ═══════════ -->
+<div id="fp-overlay" style="display:none; position:fixed; inset:0; z-index:130;
+     background:rgba(0,0,5,.75); backdrop-filter:blur(2px);" onclick="if(event.target===this)fpClose()">
+  <div class="panel" style="max-width:680px; margin:8vh auto;">
+    <h2 id="fp-title">Choose a folder <span class="meta"><button onclick="fpClose()">✕ close</button></span></h2>
+    <div style="display:flex; gap:6px; margin-bottom:8px;">
+      <input id="fp-path" class="pl-input" style="flex:1" autocomplete="off"
+        onkeydown="if(event.key==='Enter')fpGo($('fp-path').value)">
+      <button onclick="fpGo($('fp-path').value)">Go</button>
+      <button onclick="fpUp()">↑ up</button>
+    </div>
+    <div id="fp-roots" style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;"></div>
+    <div id="fp-list"></div>
+    <div style="margin-top:10px; display:flex; gap:10px; align-items:center;">
+      <button class="primary" onclick="fpPick()">Use this folder</button>
+      <span class="sub" id="fp-here"></span>
+    </div>
   </div>
 </div>
 
@@ -1167,7 +1239,7 @@ function hfPollStatus(){
 }
 
 /* ---------- view tabs ---------- */
-const VIEWS=["dash","prompt","bench"];
+const VIEWS=["dash","prompt","bench","settings"];
 function setView(v){
   if(!VIEWS.includes(v))v="dash";
   try{localStorage.setItem("nd-view",v);}catch(e){}
@@ -1176,6 +1248,7 @@ function setView(v){
     $("vt-"+x).classList.toggle("active",x===v);
   }
   if(v==="bench")benchLoad();
+  if(v==="settings")stLoad();
 }
 
 /* ---------- shared streaming client (prompt lab + bench runner) ---------- */
@@ -1555,6 +1628,262 @@ function renderBench(){
       <td><button class="danger" style="padding:0 7px" onclick="benchDelete('${r.id}')">✕</button></td></tr>`;
   }).join("");
 }
+
+/* ---------- settings ----------
+   The page is rendered from the schema the deck serves, so a new setting
+   appears here without touching this file. Only fields the user actually
+   changed are submitted: the API treats a missing key as "leave alone" and
+   an empty one as "go back to the default". */
+let stSchema=null, stDirty={}, stNeedsRestart=[];
+const stVal=f=>(f.key in stDirty)?stDirty[f.key]
+  :(f.value!=null?f.value:f.effective);
+function stMark(key,val){
+  stDirty[key]=val;
+  $("st-save").disabled=false; $("st-revert").disabled=false;
+  const n=Object.keys(stDirty).length;
+  $("st-dirty").textContent=`${n} change${n===1?"":"s"} not saved`;
+  const row=document.querySelector(`.strow[data-k="${key}"]`);
+  if(row)row.classList.add("dirty");
+}
+async function stLoad(){
+  stDirty={}; $("st-save").disabled=true; $("st-revert").disabled=true;
+  $("st-dirty").textContent="";
+  try{ stSchema=await api("/api/settings"); }
+  catch(e){ $("st-body").innerHTML='<div class="advisory">could not load settings</div>'; return; }
+  $("st-where").textContent=stSchema.config_file;
+  stRender();
+}
+function stRender(){
+  const host=$("st-body"); host.innerHTML="";
+  for(const g of stSchema.groups){
+    const fields=stSchema.fields.filter(f=>f.group===g);
+    if(!fields.length)continue;
+    const box=document.createElement("div"); box.className="stgroup";
+    const h=document.createElement("div"); h.className="grpsep"; h.textContent=g;
+    box.appendChild(h);
+    for(const f of fields) box.appendChild(stRow(f));
+    host.appendChild(box);
+  }
+  const info=document.createElement("div"); info.className="advisory";
+  info.innerHTML=`data directory <span style="color:var(--ink-2)">${escH(stSchema.data_dir)}</span>`
+    +` · logs <span style="color:var(--ink-2)">${escH(stSchema.log_dir)}</span>`
+    +` · benchmarks <span style="color:var(--ink-2)">${escH(stSchema.bench_file)}</span>`;
+  host.appendChild(info);
+}
+function stRow(f){
+  const row=document.createElement("div");
+  row.className="strow"+(f.key in stDirty?" dirty":"");
+  row.dataset.k=f.key;
+  const lab=document.createElement("div"); lab.className="lab";
+  lab.innerHTML=`${escH(f.label)}<small>${escH(f.key)}</small>`;
+  if(f.locked)lab.innerHTML+='<span class="badge env" title="set in the environment — '
+    +'the config file cannot override it">env</span>';
+  if(f.restart)lab.innerHTML+='<span class="badge restart" title="read at startup — '
+    +'changing it needs a restart">restart</span>';
+  row.appendChild(lab);
+  const ctl=document.createElement("div");
+  ctl.appendChild(stControl(f));
+  row.appendChild(ctl);
+  const bits=[];
+  if(f.help)bits.push(escH(f.help));
+  if(f.locked)bits.push(`fixed by NEURALDECK_${f.key.toUpperCase()}=${escH(f.env)}`);
+  else if(f.value==null)bits.push("using the default");
+  if(bits.length){
+    const help=document.createElement("div"); help.className="help";
+    help.innerHTML=bits.join(" · ");
+    if(f.value!=null&&!f.locked){
+      const b=document.createElement("button");
+      b.textContent="use default"; b.style.cssText="margin-left:8px;padding:0 7px;font-size:10px";
+      b.onclick=()=>{stMark(f.key,Array.isArray(f.effective)?[]:
+        (f.effective&&typeof f.effective==="object"?{}:"")); stRender();};
+      help.appendChild(b);
+    }
+    row.appendChild(help);
+  }
+  return row;
+}
+function stControl(f){
+  const v=stVal(f), dis=f.locked;
+  const wrap=document.createElement("div");
+  const missing=p=>f.exists&&p in f.exists&&!f.exists[p];
+  if(f.type==="bool"){
+    const cb=document.createElement("input"); cb.type="checkbox";
+    cb.checked=!!v; cb.disabled=dis; cb.style.accentColor="var(--cyan)";
+    cb.onchange=()=>stMark(f.key,cb.checked);
+    wrap.appendChild(cb);
+  }else if(f.type==="choice"){
+    const sel=document.createElement("select"); sel.disabled=dis;
+    sel.innerHTML=(f.choices||[]).map(c=>
+      `<option value="${escA(c)}"${String(v)===c?" selected":""}>${escH(c)}</option>`).join("");
+    sel.onchange=()=>stMark(f.key,sel.value);
+    wrap.appendChild(sel);
+  }else if(f.type==="strlist"){
+    const ta=document.createElement("textarea"); ta.rows=Math.max(2,(v||[]).length+1);
+    ta.disabled=dis; ta.value=(v||[]).join("\n");
+    ta.placeholder="one per line";
+    ta.onchange=()=>stMark(f.key,ta.value.split("\n").filter(x=>x.trim()));
+    wrap.appendChild(ta);
+  }else if(f.type==="dirlist"){
+    const list=v||[];
+    list.forEach((p,i)=>{
+      const r=document.createElement("div"); r.className="pathrow";
+      r.innerHTML=`<span class="p${missing(p)?" gone":""}">${escH(p)}`
+        +`${missing(p)?' <span class="badge missing">not found</span>':""}</span>`;
+      if(!dis){
+        const x=document.createElement("button"); x.className="danger";
+        x.textContent="✕"; x.style.padding="0 7px";
+        x.onclick=()=>{const n=list.slice(); n.splice(i,1); stMark(f.key,n); stRender();};
+        r.appendChild(x);
+      }
+      wrap.appendChild(r);
+    });
+    if(!list.length){
+      const e=document.createElement("div"); e.className="advisory";
+      e.textContent="none — add one, or clear to use the default"; wrap.appendChild(e);
+    }
+    if(!dis){
+      const add=document.createElement("button"); add.textContent="+ add folder…";
+      add.onclick=()=>fpOpen(list[list.length-1]||"",picked=>{
+        if(list.includes(picked))return;
+        stMark(f.key,list.concat([picked])); stRender();});
+      wrap.appendChild(add);
+    }
+  }else if(f.type==="map"){
+    const m=v||{};
+    Object.entries(m).forEach(([label,path])=>{
+      const r=document.createElement("div"); r.className="pathrow";
+      r.innerHTML=`<span style="color:var(--cyan);flex:none;min-width:90px">${escH(label)}</span>`
+        +`<span class="p${missing(path)?" gone":""}">${escH(path)}`
+        +`${missing(path)?' <span class="badge missing">not found</span>':""}</span>`;
+      if(!dis){
+        const x=document.createElement("button"); x.className="danger";
+        x.textContent="✕"; x.style.padding="0 7px";
+        x.onclick=()=>{const n={...m}; delete n[label]; stMark(f.key,n); stRender();};
+        r.appendChild(x);
+      }
+      wrap.appendChild(r);
+    });
+    if(!dis){
+      const r=document.createElement("div"); r.className="pathrow";
+      const name=document.createElement("input"); name.type="text";
+      name.placeholder="label (e.g. upstream)"; name.style.maxWidth="150px";
+      const path=document.createElement("input"); path.type="text";
+      path.placeholder="path to llama-server";
+      const add=document.createElement("button"); add.textContent="+ add";
+      add.onclick=()=>{
+        if(!name.value.trim()||!path.value.trim()){alert("both a label and a path");return;}
+        stMark(f.key,{...m,[name.value.trim()]:path.value.trim()}); stRender();};
+      r.append(name,path,add); wrap.appendChild(r);
+    }
+  }else{
+    const inp=document.createElement("input");
+    inp.type=(f.type==="int"||f.type==="float")?"number":"text";
+    if(f.type==="float")inp.step="any";
+    if(f.min!=null)inp.min=f.min; if(f.max!=null)inp.max=f.max;
+    inp.value=v==null?"":v; inp.disabled=dis; inp.placeholder=f.placeholder||"";
+    inp.onchange=()=>stMark(f.key,inp.value);
+    if(f.type==="dir"||f.type==="file"){
+      const r=document.createElement("div"); r.className="pathrow";
+      r.appendChild(inp);
+      if(!dis){
+        const b=document.createElement("button"); b.textContent="browse…";
+        b.onclick=()=>fpOpen(inp.value,picked=>{inp.value=picked;stMark(f.key,picked);});
+        r.appendChild(b);
+      }
+      wrap.appendChild(r);
+      if(missing(v)){
+        const w=document.createElement("div"); w.className="help";
+        w.innerHTML='<span class="badge missing">not found</span>'; wrap.appendChild(w);
+      }
+    }else wrap.appendChild(inp);
+  }
+  return wrap;
+}
+function stNote(kind,html){
+  const d=document.createElement("div"); d.className="stnote "+kind;
+  d.innerHTML=html; $("st-notes").appendChild(d);
+}
+async function stSave(){
+  if(!Object.keys(stDirty).length)return;
+  $("st-save").disabled=true;
+  $("st-notes").innerHTML="";
+  let r;
+  try{ r=await api("/api/settings","POST",stDirty); }
+  catch(e){ $("st-save").disabled=false; return; }   // api() already reported it
+  stDirty={}; $("st-dirty").textContent="";
+  const parts=[];
+  if(r.saved.length)parts.push(`saved ${r.saved.join(", ")}`);
+  if(r.cleared.length)parts.push(`reset ${r.cleared.join(", ")} to default`);
+  stNote("ok",parts.join(" · ")||"nothing changed");
+  for(const w of r.warnings||[])stNote("warn",escH(w));
+  stNeedsRestart=[...new Set(stNeedsRestart.concat(r.needs_restart||[]))];
+  if(stNeedsRestart.length){
+    stNote("warn",`<b>${escH(stNeedsRestart.join(", "))}</b> ${stNeedsRestart.length===1?"was":"were"}`
+      +" read when NeuralDeck started — restart for it to take effect.");
+    $("st-restart").style.display="";
+  }
+  await stLoad();
+  // the rest of the page reads its ports, backends and defaults from the
+  // deck, so pick the new ones up without a reload
+  try{ applyConfig(await api("/api/config")); }catch(e){}
+  loadModels();
+}
+async function stRestart(){
+  if(!confirm("Restart NeuralDeck now?\n\nRunning models are not affected — "
+    +"they are separate processes."))return;
+  const before=CFG.deck_port;
+  let r; try{ r=await api("/api/restart","POST",{}); }catch(e){ return; }
+  const port=r.port||before;
+  $("st-notes").innerHTML="";
+  stNote("ok","restarting…");
+  if(port!==before){
+    const url=`${location.protocol}//${location.hostname}:${port}/`;
+    stNote("warn",`the dashboard has moved to <a class="ext" href="${escA(url)}">${escH(url)}</a>`
+      +" — opening it in a moment");
+    setTimeout(()=>location.href=url,3000);
+    return;
+  }
+  // same port: wait for it to answer again, then reload
+  let tries=0;
+  const poll=setInterval(async()=>{
+    tries++;
+    try{ await fetch("/api/config",{cache:"no-store"}); clearInterval(poll); location.reload(); }
+    catch(e){ if(tries>40){clearInterval(poll); stNote("warn","it did not come back — "
+      +"check the terminal NeuralDeck was started from");} }
+  },700);
+}
+
+/* ---------- folder picker ---------- */
+let fpCb=null, fpPath="";
+function fpOpen(start,cb){ fpCb=cb; $("fp-overlay").style.display="block"; fpGo(start||""); }
+function fpClose(){ $("fp-overlay").style.display="none"; fpCb=null; }
+function fpUp(){ if(fpParent!=null)fpGo(fpParent); }
+let fpParent=null;
+async function fpGo(path){
+  let d;
+  try{ d=await api("/api/browse"+(path?"?path="+encodeURIComponent(path):"")); }
+  catch(e){ return; }
+  fpPath=d.path; fpParent=d.parent;
+  $("fp-path").value=d.path;
+  $("fp-here").textContent=d.ggufs_here?`${d.ggufs_here} .gguf file(s) directly in this folder`
+    :"pick the folder that holds your model folders";
+  $("fp-roots").innerHTML="";
+  for(const r of d.roots||[]){
+    const b=document.createElement("button"); b.textContent=r;
+    b.style.cssText="padding:1px 8px;font-size:11px";
+    b.onclick=()=>fpGo(r); $("fp-roots").appendChild(b);
+  }
+  const list=$("fp-list"); list.innerHTML="";
+  if(!d.dirs.length)list.innerHTML='<div class="advisory" style="padding:8px">no subfolders</div>';
+  for(const dir of d.dirs){
+    const row=document.createElement("div"); row.className="d";
+    row.innerHTML=`<span class="n">${escH(dir.name)}</span>`
+      +(dir.ggufs?`<span class="g">${dir.ggufs} gguf</span>`:"");
+    row.onclick=()=>fpGo(dir.path);
+    list.appendChild(row);
+  }
+}
+function fpPick(){ const cb=fpCb, p=$("fp-path").value||fpPath; fpClose(); if(cb)cb(p); }
 
 /* ---------- boot ---------- */
 (async function boot(){

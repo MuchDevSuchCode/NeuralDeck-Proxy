@@ -72,9 +72,35 @@ def _doctor() -> int:
     return 0 if ok else 1
 
 
+def _open_when_ready(port: int, timeout: float = 90.0) -> None:
+    """Open the dashboard in a browser once it answers.
+
+    Used by the installers so the first run lands on the page instead of a
+    URL the user has to copy out of a terminal.
+    """
+    import socket
+    import threading
+    import time
+    import webbrowser
+
+    def wait():
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            with socket.socket() as sock:
+                sock.settimeout(0.5)
+                if sock.connect_ex(("127.0.0.1", port)) == 0:
+                    webbrowser.open(f"http://localhost:{port}/")
+                    return
+            time.sleep(0.5)
+
+    threading.Thread(target=wait, daemon=True).start()
+
+
 def _run_all(args) -> int:
     """Proxy as a child, deck in the foreground: one command for the stack."""
     from . import config, services
+    if getattr(args, "open", False):
+        _open_when_ready(config.DECK_PORT)
     child = None
     if not args.no_proxy:
         try:
@@ -107,8 +133,12 @@ def main(argv=None) -> int:
                        help="dashboard only; leave the proxy alone")
     p_all.add_argument("--stop-proxy", action="store_true",
                        help="stop the proxy again when the dashboard exits")
+    p_all.add_argument("--open", action="store_true",
+                       help="open the dashboard in a browser once it is up")
 
-    sub.add_parser("deck", help="dashboard only")
+    p_deck = sub.add_parser("deck", help="dashboard only")
+    p_deck.add_argument("--open", action="store_true",
+                        help="open the dashboard in a browser once it is up")
     sub.add_parser("proxy", help="multimodal proxy only")
     sub.add_parser("doctor", help="show what this machine looks like to NeuralDeck")
 
@@ -116,6 +146,9 @@ def main(argv=None) -> int:
     cmd = args.cmd or "up"
 
     if cmd == "deck":
+        from . import config
+        if getattr(args, "open", False):
+            _open_when_ready(config.DECK_PORT)
         from .deck import main as deck_main
         deck_main()
         return 0

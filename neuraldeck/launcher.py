@@ -65,6 +65,10 @@ def caps(binary: str) -> dict:
         "no_warmup": has("--no-warmup"),
         "cache_type_k": has("--cache-type-k") or has("-ctk"),
         "flash_attn": has("--flash-attn"),
+        "temp": has("--temp"),
+        "top_p": has("--top-p"),
+        "min_p": has("--min-p"),
+        "repeat_penalty": has("--repeat-penalty"),
         # Newer builds take a value: -fa on|off|auto. Older ones are a bare
         # switch and reject "on" as a positional argument.
         "flash_attn_value": bool(re.search(r"--flash-attn\s*\[?on\|off\|auto",
@@ -112,6 +116,13 @@ def build_argv(model: dict, *, binary: str, port: int, ctx: int, slots: int,
         argv.append("--metrics")
     if c["cache_type_k"] and config.KV_CACHE_TYPE:
         argv += ["-ctk", config.KV_CACHE_TYPE, "-ctv", config.KV_CACHE_TYPE]
+    for flag, value, supported in (("--temp", config.TEMP, c["temp"]),
+                                   ("--top-p", config.TOP_P, c["top_p"]),
+                                   ("--min-p", config.MIN_P, c["min_p"]),
+                                   ("--repeat-penalty", config.REPEAT_PENALTY,
+                                    c["repeat_penalty"])):
+        if supported and value is not None:
+            argv += [flag, str(value)]
 
     # ── thinking ──────────────────────────────────────────────────────────
     budget = THINK_BUDGET.get(thinking, 0)

@@ -41,7 +41,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from starlette.background import BackgroundTask
 
-from . import bench, config, launcher, llama_log, models, procs, services, sysinfo
+from . import (bench, config, launcher, llama_log, models, procs, services,
+               settings, sysinfo)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -266,6 +267,8 @@ async def ui_config():
         "model_dirs": config.MODEL_DIRS,
         "download_dir": config.MODELS_DOWNLOAD_DIR,
         "hf_available": _hf_available(),
+        "data_dir": str(config.DATA_DIR),
+        "config_file": str(config.CONFIG_FILE),
         "platform": "windows" if config.IS_WINDOWS else sys.platform,
     })
 
@@ -304,6 +307,65 @@ async def stream():
             await asyncio.sleep(config.SAMPLE_INTERVAL)
     return StreamingResponse(gen(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache"})
+
+
+# ---------------------------------------------------------------------------
+# Settings
+# ---------------------------------------------------------------------------
+
+@app.get("/api/settings")
+async def settings_get():
+    return JSONResponse(settings.describe())
+
+
+@app.post("/api/settings")
+async def settings_post(body: dict):
+    """Write the submitted settings and re-read the file.
+
+    Only the keys in the body are touched, and a key sent empty is removed
+    so it falls back to its default. Most settings apply at once; the
+    response names the ones that were captured at startup and so need a
+    restart.
+    """
+    try:
+        result = await asyncio.to_thread(settings.save, body)
+    except settings.Invalid as e:
+        raise HTTPException(400, str(e))
+    except OSError as e:
+        raise HTTPException(500, f"could not write {config.CONFIG_FILE}: {e}")
+    return JSONResponse(result)
+
+
+@app.get("/api/browse")
+async def browse(path: str = None):
+    """Directory listing for the settings page's folder picker — a browser
+    cannot open a native one, and typing paths by hand is worse."""
+    try:
+        return JSONResponse(await asyncio.to_thread(settings.browse, path))
+    except settings.Invalid as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/restart")
+async def restart():
+    """Re-exec this process, for settings that were read at startup.
+
+    The response goes out first and the exec happens a moment later, so the
+    page knows the restart was accepted (and where to reconnect) instead of
+    just seeing the connection drop.
+    """
+    async def go():
+        await asyncio.sleep(0.4)
+        print("restarting on request from the settings page", flush=True)
+        # -m neuraldeck works whether this was started as a module or via
+        # the installed console script; the listening socket is not
+        # inherited across exec, so the new process can bind it.
+        os.execv(sys.executable,
+                 [sys.executable, "-m", "neuraldeck", *sys.argv[1:]])
+
+    asyncio.create_task(go())
+    return JSONResponse({"restarting": True, "port": config.DECK_PORT,
+                         "url": f"http://HOST:{config.DECK_PORT}/"})
 
 
 # ---------------------------------------------------------------------------

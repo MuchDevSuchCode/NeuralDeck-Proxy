@@ -12,6 +12,9 @@ in one Python package that runs on **Windows or Linux**:
 * **Benchmarks** — every request through the stack is recorded, from the
   Prompt Lab, from a standard prompt, or from any other client on your
   network. Compare models, backends and speculation settings on medians.
+* **Settings** — point NeuralDeck at your model folders and llama-server
+  builds from the page itself, with a folder picker, validation, and an
+  honest account of which changes apply at once and which need a restart.
 * **Multimodal proxy** — one OpenAI-compatible endpoint in front of every
   `llama-server` you have running. It routes by model name, transcribes
   audio through whisper.cpp, turns video into frames for vision models,
@@ -51,10 +54,42 @@ launches models into it.
 
 ## Install
 
+One script does everything: it finds a suitable Python, builds a virtual
+environment, installs NeuralDeck into it, prints what it found on your
+machine, and starts the dashboard in your browser.
+
+**Linux / macOS**
+
 ```bash
 git clone git@github.com:MuchDevSuchCode/NeuralDeck-Proxy.git
 cd NeuralDeck-Proxy
-pip install -e .            # or: pip install -r requirements.txt
+./install.sh
+```
+
+**Windows** (PowerShell, in the cloned folder)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+The dashboard opens at **http://localhost:8770**. Point it at your models
+from the **Settings** tab — nothing else needs editing to get started.
+
+| Installer flag | Effect |
+| --- | --- |
+| `--no-launch` / `-NoLaunch` | install only, do not start it |
+| `--no-link` / `-NoShortcut` | skip the `~/.local/bin` launcher / Start Menu shortcut |
+| `--dir <path>` / `-Dir <path>` | put the virtual environment somewhere else |
+
+Nothing is installed system-wide: everything lives in the virtual
+environment, plus a config file and logs under your user data directory.
+Deleting the folder and that directory removes it completely.
+
+<details>
+<summary>Manual install, or into an existing environment</summary>
+
+```bash
+pip install -e ".[hub]"     # or: pip install -r requirements.txt
 neuraldeck doctor           # what this machine looks like to NeuralDeck
 neuraldeck                  # start the proxy and the dashboard
 ```
@@ -66,14 +101,14 @@ first run:
 ./scripts/neuraldeck.sh            # Linux / macOS
 .\scripts\neuraldeck.ps1           # Windows PowerShell
 ```
-
-Then open **http://localhost:8770**.
+</details>
 
 ### Commands
 
 | Command | What it does |
 | --- | --- |
 | `neuraldeck` (or `up`) | proxy as a child process, dashboard in the foreground |
+| `neuraldeck up --open` | the same, and open the dashboard in a browser once it answers |
 | `neuraldeck deck` | dashboard only |
 | `neuraldeck proxy` | multimodal proxy only |
 | `neuraldeck doctor` | resolved config, detected hardware, binaries, models, what is running |
@@ -81,31 +116,39 @@ Then open **http://localhost:8770**.
 Run `neuraldeck doctor` first. It tells you what was found and what is
 missing before anything tries to start.
 
-## Configuration
+## Settings
 
-Settings come from the environment (`NEURALDECK_<KEY>`), then from
-`config.json` in the data directory, then the defaults. The data directory
-is `%LOCALAPPDATA%\NeuralDeck` on Windows and `~/.local/share/neuraldeck`
-on Linux, and holds instance logs, the benchmark history and pid files.
-`neuraldeck doctor` prints its path.
+Everything configurable is on the **Settings** tab, grouped: Models,
+Backends, Launch defaults, Sampling, Ports, Speech & video, Proxy,
+Dashboard, Optional services.
 
-The settings you are most likely to want:
+* **Model directories** — add or remove folders with a picker that shows
+  how many `.gguf` files each subfolder holds, so you can see which one is
+  the right level. A folder that is not mounted right now is kept and
+  flagged rather than dropped.
+* **llama-server builds** — label → path. Add more than one and the launch
+  form lets you pick between them per launch, which is how you A/B a fork
+  against upstream on the same model.
+* Most changes **apply immediately** — the running process re-reads the
+  file. Settings that were read when the process started (ports, history
+  length, proxy behaviour) carry a `restart` badge, and the page offers a
+  restart button that brings itself back, following the port if you changed
+  it.
+* A setting fixed by an environment variable carries an `env` badge and is
+  read-only, because writing the file could not override it. The page says
+  so instead of accepting a change that would do nothing.
+* Clearing a field means "use the default", not "set it to empty". The
+  `use default` button next to a stored value does the same.
 
-| Key | Default | Meaning |
-| --- | --- | --- |
-| `llama_bin` | first `llama-server` found | path to the binary |
-| `backends` | `{"llama.cpp": <llama_bin>}` | several builds to pick between in the launcher |
-| `model_dirs` | `~/models` (+ `/mnt/models`) | where to look for GGUFs |
-| `deck_port` / `proxy_port` | `8770` / `8080` | the two listening ports |
-| `llama_port_range` | `8081-8089` | ports the deck launches into and the proxy discovers |
-| `ctx` / `slots` | `32768` / `1` | launch-form defaults |
-| `kv_cache_type` | `q8_0` | `-ctk`/`-ctv` for launched instances |
-| `peak_bw_gbs` | `89.6` | memory bandwidth for the roofline panel — set it to your box's real figure |
-| `whisper_bin` / `whisper_model` | whisper.cpp defaults | speech input |
-| `tts_endpoint` | `http://127.0.0.1:8004` | OpenAI-compatible speech synthesis |
-| `ffmpeg` | from `PATH` | needed only for video input |
+Saved settings land in `config.json` in the data directory
+(`%LOCALAPPDATA%\NeuralDeck` on Windows, `~/.local/share/neuraldeck` on
+Linux), which also holds the instance logs and the benchmark history. The
+Settings tab prints all three paths; so does `neuraldeck doctor`.
 
-`config.json` uses lowercase keys and JSON types:
+### Configuring without the page
+
+Precedence is environment → `config.json` → defaults. The keys are the same
+in both, and `config.json` uses lowercase names with JSON types:
 
 ```json
 {
@@ -119,13 +162,29 @@ The settings you are most likely to want:
 }
 ```
 
-The same in the environment:
-
 ```bash
 export NEURALDECK_BACKENDS="upstream=/home/me/llama.cpp/build/bin/llama-server"
 export NEURALDECK_MODEL_DIRS="/home/me/models:/mnt/big/models"   # ';' on Windows
 export NEURALDECK_PEAK_BW_GBS=256
 ```
+
+The settings most worth checking on a new machine:
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `model_dirs` | `~/models` (+ `/mnt/models`) | where to look for GGUFs |
+| `backends` | first `llama-server` found | label → binary path |
+| `deck_port` / `proxy_port` | `8770` / `8080` | the two listening ports |
+| `deck_host` | `0.0.0.0` | `127.0.0.1` keeps the dashboard off the network |
+| `llama_port_range` | `8081-8089` | ports the deck launches into and the proxy discovers |
+| `ctx` / `slots` | `32768` / `1` | launch-form defaults |
+| `kv_cache_type` | `q8_0` | `-ctk`/`-ctv` for launched instances |
+| `peak_bw_gbs` | `89.6` | memory bandwidth for the roofline panel — set it to your real figure |
+| `whisper_bin` / `whisper_model` | whisper.cpp defaults | speech input |
+| `ffmpeg` | from `PATH` | needed only for video input |
+
+`NEURALDECK_HOME` moves the data directory itself, which is the one setting
+the page cannot change (it is where the page's settings are stored).
 
 ## Using the proxy
 
