@@ -29,16 +29,29 @@ def _size(path: str) -> int:
         return 0
 
 
-def _weights_bytes(main: str) -> int:
-    """Total bytes loaded for a model: every shard, not just the first."""
+def shards(main: str) -> list:
+    """Every file of a split model (just `main` if it is not split)."""
     m = SHARD_RE.search(os.path.basename(main))
     if not m:
-        return _size(main)
-    stem = os.path.basename(main)[:m.start()]
+        return [main]
+    base = os.path.basename(main)
+    stem, tail = base[:m.start()], base[m.end():]
     folder = os.path.dirname(main)
-    return sum(_size(os.path.join(folder, f)) for f in os.listdir(folder)
-               if f.startswith(stem) and f.lower().endswith(".gguf")
-               and SHARD_RE.search(f))
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return [main]
+    # same stem, same suffix, only the shard number differs — a sibling
+    # quant whose name merely starts the same is not part of this model
+    found = sorted(os.path.join(folder, f) for f in names
+                   if f[:m.start()] == stem and f[m.end():] == tail
+                   and SHARD_RE.fullmatch(f[m.start():m.end()]))
+    return found or [main]
+
+
+def _weights_bytes(main: str) -> int:
+    """Total bytes loaded for a model: every shard, not just the first."""
+    return sum(_size(f) for f in shards(main))
 
 
 def _ggufs(folder: Path) -> list:
@@ -54,7 +67,7 @@ def _pick(folder: Path):
 
     Pass 1 takes the first .gguf that is neither a projector nor a draft
     head. Pass 2 covers combined builds, where the MTP head is inside the
-    weights file and its name says so — there, the one file is both.
+    weights file — whether or not its name says so, the one file is both.
     """
     files = _ggufs(folder)
     if not files:
@@ -75,6 +88,8 @@ def _pick(folder: Path):
         draft = next((p for p in files if p is not main
                       and not HELPER_RE.search(p.name)
                       and DRAFT_RE.search(p.name)), None)
+        if draft is None and gguf.has_mtp(str(main)):
+            draft = main                  # head declared in the weights' header
     # Only advertise a head the file actually declares. Keying on the name
     # trusts a label: plenty of repos ship "-MTP" in a filename with no
     # nextn layers in the header, and vice versa.
@@ -84,7 +99,8 @@ def _pick(folder: Path):
 
 
 def _entry(main: Path, mmproj, draft, root: Path) -> dict:
-    name = main.parent.name if main.parent != root else main.stem
+    name = (main.parent.name if main.parent != root
+            else SHARD_RE.sub("", main.stem))
     vram = _weights_bytes(str(main))
     if mmproj is not None:
         vram += _size(str(mmproj))
@@ -97,6 +113,12 @@ def _entry(main: Path, mmproj, draft, root: Path) -> dict:
         "mmproj_path": str(mmproj) if mmproj else None,
         "draft_path": str(draft) if draft else None,
         "source": _short(str(root)),
+        "root": str(root),
+        # everything that belongs to this model and nothing else — what a
+        # delete removes
+        "files": shards(str(main))
+                 + ([str(mmproj)] if mmproj else [])
+                 + ([str(draft)] if draft is not None and draft != main else []),
         "vram_bytes": vram,
         "vision": mmproj is not None,
         "mtp": draft is not None,
@@ -111,9 +133,28 @@ def _short(path: str) -> str:
     return "~" + path[len(home):] if path.startswith(home) else path
 
 
+def _unique(name: str, root: Path, seen: set) -> str:
+    """A second model of the same name (another root, or a loose file beside
+    a folder) keeps its own entry under a name that says where it lives, so
+    launch and delete never silently hit the first one."""
+    cand = f"{name}@{root.name or 'root'}"
+    n = 2
+    while cand in seen:
+        cand = f"{name}@{root.name or 'root'}-{n}"
+        n += 1
+    return cand
+
+
 def discover() -> list:
     """Every model under every configured root, newest roots last."""
     out, seen = [], set()
+
+    def add(e, root):
+        if e["name"] in seen:
+            e["name"] = _unique(e["name"], root, seen)
+        seen.add(e["name"])
+        out.append(e)
+
     for root_str in config.MODEL_DIRS:
         root = Path(root_str)
         if not root.is_dir():
@@ -128,19 +169,16 @@ def discover() -> list:
             main, mmproj, draft = _pick(folder)
             if main is None:
                 continue
-            e = _entry(main, mmproj, draft, root)
-            if e["name"] in seen:
-                continue
-            seen.add(e["name"])
-            out.append(e)
+            add(_entry(main, mmproj, draft, root), root)
         for loose in _ggufs(root):
-            if HELPER_RE.search(loose.name) or SHARD_RE.search(loose.name):
+            if HELPER_RE.search(loose.name):
                 continue
-            e = _entry(loose, None, None, root)
-            if e["name"] in seen:
+            # a split model loose in the root is listed by its first shard
+            m = SHARD_RE.search(loose.name)
+            if m and not m.group(0).startswith("-00001-"):
                 continue
-            seen.add(e["name"])
-            out.append(e)
+            add(_entry(loose, None,
+                       loose if gguf.has_mtp(str(loose)) else None, root), root)
     return out
 
 

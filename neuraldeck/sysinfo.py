@@ -4,10 +4,12 @@ The dashboard asks for one shape of data whatever the box is; this module
 answers it from whatever that box actually exposes, and returns None for
 anything it cannot know rather than inventing a number.
 
-Probe order for the GPU: NVIDIA's nvidia-smi, AMD's amd-smi, AMD's
-rocm-smi, the amdgpu sysfs nodes (Linux), then a name-only lookup from
-Windows CIM. The first one that answers wins; a second GPU vendor in the
-same box is not something this dashboard tries to chart.
+Probe order for the GPU: NVIDIA's nvidia-smi, the amdgpu sysfs nodes
+(Linux), AMD's amd-smi and rocm-smi, then a name-and-memory lookup from
+Windows CIM. The first vendor to answer wins and only that vendor's probes
+are merged; a second GPU vendor in the same box (an iGPU beside a discrete
+card) is not something this dashboard tries to chart. Several NVIDIA cards
+are shown as one pool, VRAM summed.
 """
 
 import glob
@@ -83,23 +85,53 @@ def cpu_name() -> str:
     return platform.processor() or platform.machine() or "Unknown CPU"
 
 
+# CPU temperature sources, best first: (driver, preferred labels). A driver
+# with none of its preferred labels still counts, via its hottest reading.
+# acpitz is a motherboard ACPI zone that often sits near ambient, so it is
+# only a last resort — never a stand-in when a real CPU sensor exists.
+_CPU_SENSORS = (
+    ("k10temp", ("Tdie", "Tctl")),
+    ("zenpower", ("Tdie", "Tctl")),
+    ("coretemp", ("Package id 0",)),
+    ("cpu_thermal", ()),
+    ("cpu-thermal", ()),
+    ("x86_pkg_temp", ()),
+    ("k8temp", ()),
+    ("via_cputemp", ()),
+    ("cpu0_thermal", ()),
+    ("soc_thermal", ()),
+    ("acpitz", ()),
+)
+
+
+def _pick_cpu_temp(readings: dict):
+    """The temperature from the best sensor in `readings` (driver -> list
+    of psutil shwtemp), or None."""
+    for driver, labels in _CPU_SENSORS:
+        entries = [e for e in readings.get(driver) or []
+                   if e.current and 0 < e.current < 150]
+        if not entries:
+            continue
+        for label in labels:
+            for e in entries:
+                if e.label == label:
+                    return e.current
+        if driver == "coretemp":         # "Package id 1…" on a second socket
+            pkg = [e.current for e in entries
+                   if (e.label or "").startswith("Package")]
+            if pkg:
+                return max(pkg)
+        return max(e.current for e in entries)
+    return None
+
+
 def cpu_metrics():
     """(temperature_c, core_volts) — both None where unavailable."""
     temp = volts = None
     sensors = getattr(psutil, "sensors_temperatures", None)
     if sensors:
         try:
-            for name, entries in (sensors() or {}).items():
-                if name not in ("k10temp", "zenpower", "amdgpu", "coretemp",
-                                "acpitz", "cpu_thermal"):
-                    continue
-                for e in entries:
-                    if e.label in ("Tdie", "Tctl", "edge", "Package id 0", "") \
-                            and e.current and e.current > 0:
-                        temp = e.current
-                        break
-                if temp:
-                    break
+            temp = _pick_cpu_temp(sensors() or {})
         except Exception:
             pass
     for hwmon in glob.glob("/sys/class/hwmon/hwmon*"):
@@ -153,27 +185,44 @@ def _gpu_nvidia():
               "clocks.current.memory,fan.speed")
     out = _run(["nvidia-smi", f"--query-gpu={fields}",
                 "--format=csv,noheader,nounits"])
-    line = next((l for l in out.splitlines() if l.strip()), None)
-    if not line:
+    gpus = []
+    for line in out.splitlines():
+        if not line.strip():
+            continue
+        p = [x.strip() for x in line.split(",")]
+        while len(p) < 9:
+            p.append("")
+        gpus.append(p)
+    if not gpus:
         return None
-    p = [x.strip() for x in line.split(",")]
-    while len(p) < 9:
-        p.append("")
-    mu, mt = _f(p[4]), _f(p[5])
+    # Several GPUs are reported as one pool — llama.cpp splits a model
+    # across all of them, so the VRAM that matters is the sum. Power adds
+    # up too; temperature and fan take the hottest card, utilisation the
+    # mean, and clocks come from the first card.
+    def col(i):
+        return [v for v in (_f(g[i]) for g in gpus) if v is not None]
+
+    used, total = col(4), col(5)
+    util, temp, power, fan = col(1), col(2), col(3), col(8)
+    p = gpus[0]
     sclk, mclk = _f(p[6]), _f(p[7])
+    names = [g[0] or "NVIDIA GPU" for g in gpus]
+    name = (names[0] if len(names) == 1
+            else f"{len(names)}× {names[0]}" if len(set(names)) == 1
+            else " + ".join(names))
     return {
-        "name": p[0] or "NVIDIA GPU",
+        "name": name,
         "vendor": "nvidia",
-        "utilization": _f(p[1]),
-        "temperature": _f(p[2]),
-        "power": _f(p[3]),
-        "vram_used_bytes": int(mu * 1024**2) if mu is not None else None,
-        "vram_total_bytes": int(mt * 1024**2) if mt is not None else None,
+        "utilization": sum(util) / len(util) if util else None,
+        "temperature": max(temp) if temp else None,
+        "power": sum(power) if power else None,
+        "vram_used_bytes": int(sum(used) * 1024**2) if used else None,
+        "vram_total_bytes": int(sum(total) * 1024**2) if total else None,
         "sclk": f"{sclk:.0f}Mhz" if sclk else None,
         "mclk": f"{mclk:.0f}Mhz" if mclk else None,
         "fclk": None,
         # nvidia-smi reports fan as a percentage, not RPM
-        "fan_pct": _f(p[8]),
+        "fan_pct": max(fan) if fan else None,
         "fan_rpm": None,
     }
 
@@ -332,9 +381,9 @@ def _gpu_amdgpu_sysfs():
             "power": _hwmon_power(d),
             "vram_used_bytes": used,
             "vram_total_bytes": total,
-            "sclk": dpm_clock("pp_dpm_sclk"),
-            "mclk": dpm_clock("pp_dpm_mclk"),
-            "fclk": dpm_clock("pp_dpm_fclk"),
+            "sclk": dpm_clock("pp_dpm_sclk", d),
+            "mclk": dpm_clock("pp_dpm_mclk", d),
+            "fclk": dpm_clock("pp_dpm_fclk", d),
             "fan_pct": None,
             "fan_rpm": _fan_rpm(idx),
         }
@@ -358,28 +407,71 @@ def _hwmon_power(dev_dir):
     return None
 
 
+# Win32_VideoController.AdapterRAM is a uint32: anything over 4 GiB is
+# clamped to about 4 GiB, so a value that high means "unknown", not 4 GiB.
+# The display class key in the registry has the real 64-bit size.
+_WIN_GPU_PS = r"""
+$reg = @()
+Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}' -ErrorAction SilentlyContinue | ForEach-Object {
+  $p = Get-ItemProperty -Path $_.PSPath -ErrorAction SilentlyContinue
+  if ($p -and $p.DriverDesc) {
+    $reg += [pscustomobject]@{ Name = [string]$p.DriverDesc; Mem = $p.'HardwareInformation.qwMemorySize' }
+  }
+}
+$cim = @(Get-CimInstance Win32_VideoController | Select-Object Name,AdapterRAM)
+[pscustomobject]@{ cim = $cim; reg = $reg } | ConvertTo-Json -Depth 3 -Compress
+"""
+_SKIP_ADAPTERS = ("microsoft basic", "microsoft remote display",
+                  "microsoft hyper-v")
+
+
+def _as_list(v):
+    return v if isinstance(v, list) else [v] if isinstance(v, dict) else []
+
+
 def _gpu_windows_name():
     """Last resort on Windows: the adapter's name and memory from CIM, with
-    no utilisation — better than an empty panel."""
+    no utilisation — better than an empty panel. With several adapters (an
+    iGPU beside a discrete card) the one with the most memory is shown."""
     if not IS_WINDOWS:
         return None
-    out = _run(["powershell", "-NoProfile", "-Command",
-                "Get-CimInstance Win32_VideoController | "
-                "Select-Object -First 1 Name,AdapterRAM | ConvertTo-Json"],
+    out = _run(["powershell", "-NoProfile", "-Command", _WIN_GPU_PS],
                timeout=8.0)
     try:
-        d = json.loads(out)
+        data = json.loads(out)
     except Exception:
         return None
-    if isinstance(d, list):
-        d = d[0] if d else {}
-    ram = d.get("AdapterRAM")
+    if not isinstance(data, dict):
+        return None
+    reg_mem = {}
+    for r in _as_list(data.get("reg")):
+        mem = r.get("Mem") if isinstance(r, dict) else None
+        if isinstance(mem, int) and mem > 0 and r.get("Name"):
+            reg_mem.setdefault(str(r["Name"]).strip(), mem)
+    best = None
+    for d in _as_list(data.get("cim")):
+        name = str(d.get("Name") or "").strip()
+        if not name or name.lower().startswith(_SKIP_ADAPTERS):
+            continue
+        ram = d.get("AdapterRAM")
+        mem = reg_mem.get(name)
+        if mem is None and isinstance(ram, int) and 0 < ram < 0xFFF00000:
+            mem = ram
+        if best is None or (mem or 0) > (best[1] or 0):
+            best = (name, mem)
+    if best is None:
+        return None
+    name, mem = best
+    low = name.lower()
+    vendor = ("nvidia" if "nvidia" in low else
+              "amd" if ("amd" in low or "radeon" in low) else
+              "intel" if "intel" in low else "unknown")
     return {
-        "name": d.get("Name") or "GPU",
-        "vendor": "unknown",
+        "name": name,
+        "vendor": vendor,
         "utilization": None, "temperature": None, "power": None,
         "vram_used_bytes": None,
-        "vram_total_bytes": int(ram) if isinstance(ram, int) and ram > 0 else None,
+        "vram_total_bytes": mem,
         "sclk": None, "mclk": None, "fclk": None,
         "fan_pct": None, "fan_rpm": None,
     }
@@ -388,36 +480,56 @@ def _gpu_windows_name():
 # Probe order is merge order: the first probe to supply a field owns it.
 # sysfs comes before amd-smi because its utilisation counter is live and
 # free, while amd-smi fills in the name, VRAM size and edge temperature an
-# APU does not expose through sysfs.
+# APU does not expose through sysfs. The last column is the vendor a probe
+# can report: once one vendor has answered, only probes of that vendor are
+# merged, so an NVIDIA card's unknown fields are never filled in from the
+# AMD iGPU beside it. None (CIM) runs only when nothing else answered.
 _PROBES = (
-    ("nvidia-smi", _gpu_nvidia, 1.5),
-    ("amdgpu-sysfs", _gpu_amdgpu_sysfs, 0.0),
-    ("amd-smi", _amd_smi_metrics, 2.0),
-    ("rocm-smi", _gpu_rocm_smi, 2.0),
-    ("windows-cim", _gpu_windows_name, 60.0),
+    ("nvidia-smi", _gpu_nvidia, 1.5, "nvidia"),
+    ("amdgpu-sysfs", _gpu_amdgpu_sysfs, 0.0, "amd"),
+    ("amd-smi", _amd_smi_metrics, 2.0, "amd"),
+    ("rocm-smi", _gpu_rocm_smi, 2.0, "amd"),
+    ("windows-cim", _gpu_windows_name, 60.0, None),
 )
 _GPU_FIELDS = ("name", "vendor", "utilization", "temperature", "power",
                "vram_used_bytes", "vram_total_bytes", "sclk", "mclk", "fclk",
                "fan_pct", "fan_rpm")
 # Per-probe memo: {"at": monotonic, "val": result}. A probe that costs a
-# subprocess refreshes on its own interval and is reused in between; one
-# that produced nothing at all is dropped for the rest of the session.
+# subprocess refreshes on its own interval and is reused in between. One
+# that produces nothing on its very first call is dropped for the session
+# (the tool is absent, or the box has no part it understands); one that
+# has worked before and then fails is retried with a growing back-off,
+# capped at a minute, and recovers on its next success.
 _gpu_memo: dict = {}
 _gpu_dead: set = set()
+_gpu_fails: dict = {}
+_gpu_retry_at: dict = {}
+_GPU_BACKOFF_MAX = 60.0
 
 
 def _probe_value(name, fn, interval):
     import time
+    now = time.monotonic()
     memo = _gpu_memo.get(name)
-    if memo and (interval == 0.0 or time.monotonic() - memo["at"] < interval):
-        if interval != 0.0:
-            return memo["val"]
+    if memo and interval != 0.0 and now - memo["at"] < interval:
+        return memo["val"]
+    if now < _gpu_retry_at.get(name, 0.0):
+        return None
     try:
         val = fn()
     except Exception:
         val = None
-    _gpu_memo[name] = {"at": time.monotonic(), "val": val}
-    return val
+    if val:
+        _gpu_memo[name] = {"at": now, "val": val}
+        _gpu_fails.pop(name, None)
+        _gpu_retry_at.pop(name, None)
+        return val
+    if memo is None:
+        _gpu_dead.add(name)
+    else:
+        n = _gpu_fails[name] = _gpu_fails.get(name, 0) + 1
+        _gpu_retry_at[name] = now + min(_GPU_BACKOFF_MAX, 2.0 ** n)
+    return None
 
 
 def gpu() -> dict:
@@ -428,15 +540,15 @@ def gpu() -> dict:
     """
     out = {k: None for k in _GPU_FIELDS}
     out["sources"] = []
-    for name, fn, interval in _PROBES:
+    for name, fn, interval, vendor in _PROBES:
         if name in _gpu_dead:
             continue
+        if out["vendor"] and vendor != out["vendor"]:
+            continue                     # a different GPU already answered
         val = _probe_value(name, fn, interval)
         if not val:
-            # nothing on the first attempt means the tool is absent or this
-            # box has no part it understands — stop paying for it
-            if name in _gpu_memo and _gpu_memo[name]["val"] is None:
-                _gpu_dead.add(name)
+            continue
+        if out["vendor"] and val.get("vendor") != out["vendor"]:
             continue
         used = False
         for k in _GPU_FIELDS:
@@ -450,9 +562,12 @@ def gpu() -> dict:
     return out
 
 
-def dpm_clock(name: str):
-    """Current level from an amdgpu pp_dpm_* node (the line marked '*')."""
-    for f in glob.glob(f"/sys/class/drm/card*/device/{name}"):
+def dpm_clock(name: str, dev_dir: str = None):
+    """Current level from an amdgpu pp_dpm_* node (the line marked '*'), for
+    one card's device directory, or the first card that has the node."""
+    pattern = (f"{glob.escape(dev_dir)}/{name}" if dev_dir
+               else f"/sys/class/drm/card*/device/{name}")
+    for f in sorted(glob.glob(pattern)):
         try:
             for line in Path(f).read_text().splitlines():
                 if "*" in line:

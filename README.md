@@ -83,7 +83,7 @@ from the **Settings** tab — nothing else needs editing to get started.
 
 Nothing is installed system-wide: everything lives in the virtual
 environment, plus a config file and logs under your user data directory.
-Deleting the folder and that directory removes it completely.
+See [Uninstall](#uninstall) for the full list of what to delete.
 
 <details>
 <summary>Manual install, or into an existing environment</summary>
@@ -107,7 +107,7 @@ first run:
 
 | Command | What it does |
 | --- | --- |
-| `neuraldeck` (or `up`) | proxy as a child process, dashboard in the foreground |
+| `neuraldeck` (same as `neuraldeck up`) | proxy as a child process, dashboard in the foreground |
 | `neuraldeck up --open` | the same, and open the dashboard in a browser once it answers |
 | `neuraldeck deck` | dashboard only |
 | `neuraldeck proxy` | multimodal proxy only |
@@ -129,11 +129,25 @@ Dashboard, Optional services.
 * **llama-server builds** — label → path. Add more than one and the launch
   form lets you pick between them per launch, which is how you A/B a fork
   against upstream on the same model.
-* Most changes **apply immediately** — the running process re-reads the
-  file. Settings that were read when the process started (ports, history
-  length, proxy behaviour) carry a `restart` badge, and the page offers a
-  restart button that brings itself back, following the port if you changed
-  it.
+* Each setting says when it takes effect:
+  * **at once** — the dashboard re-reads the file on save: model folders,
+    backends, launch and sampling defaults (for the next launch), the
+    roofline bandwidth, the sample interval, service start commands (for
+    the next start);
+  * **proxy** — read by the proxy process when it starts: its port and bind
+    address, the llama port range it discovers, strict routing, timeouts,
+    ffmpeg and the video, whisper and TTS settings. Saving one of these
+    restarts the proxy for you;
+  * **restart** — captured when the dashboard started: its own port and
+    bind address and the chart history length. The page offers a restart
+    button that brings itself back, following the port if you changed it.
+* Values that would stop NeuralDeck from starting are refused before the
+  file is written: host names with a scheme or port, ports out of range or
+  colliding with each other or with the llama port range, a range of more
+  than 64 ports, non-finite or fractional numbers.
+* A `config.json` that is not valid JSON (a hand edit gone wrong) is never
+  silently replaced: the page shows the error and refuses to save until
+  the file is fixed or removed. `neuraldeck doctor` reports it too.
 * A setting fixed by an environment variable carries an `env` badge and is
   read-only, because writing the file could not override it. The page says
   so instead of accepting a change that would do nothing.
@@ -166,7 +180,12 @@ in both, and `config.json` uses lowercase names with JSON types:
 export NEURALDECK_BACKENDS="upstream=/home/me/llama.cpp/build/bin/llama-server"
 export NEURALDECK_MODEL_DIRS="/home/me/models:/mnt/big/models"   # ';' on Windows
 export NEURALDECK_PEAK_BW_GBS=256
+export NEURALDECK_TTS_CMD="python -m my_tts --port 8004"   # split like a shell would
 ```
+
+Path lists (`model_dirs`) are joined with the OS path separator in the
+environment; commands (`tts_cmd`, `comfy_cmd`, `extra_llama_args`) are
+split like a shell command line. An empty variable counts as unset.
 
 The settings most worth checking on a new machine:
 
@@ -179,12 +198,25 @@ The settings most worth checking on a new machine:
 | `llama_port_range` | `8081-8089` | ports the deck launches into and the proxy discovers |
 | `ctx` / `slots` | `32768` / `1` | launch-form defaults |
 | `kv_cache_type` | `q8_0` | `-ctk`/`-ctv` for launched instances |
-| `peak_bw_gbs` | `89.6` | memory bandwidth for the roofline panel — set it to your real figure |
+| `peak_bw_gbs` | `89.6` | memory bandwidth for the roofline panel — set it to your GPU's (or APU's) real figure |
 | `whisper_bin` / `whisper_model` | whisper.cpp defaults | speech input |
 | `ffmpeg` | from `PATH` | needed only for video input |
 
 `NEURALDECK_HOME` moves the data directory itself, which is the one setting
 the page cannot change (it is where the page's settings are stored).
+
+## Uninstall
+
+Stop NeuralDeck, then delete:
+
+* the checkout folder, which holds the default `venv`;
+* the virtual environment you chose with `--dir` / `-Dir`, if you did;
+* `~/.local/bin/neuraldeck` — the launcher `install.sh` writes (Linux / macOS);
+* the Start Menu shortcut `NeuralDeck.lnk` in
+  `%APPDATA%\Microsoft\Windows\Start Menu\Programs` (Windows);
+* the data directory — `~/.local/share/neuraldeck` on Linux,
+  `%LOCALAPPDATA%\NeuralDeck` on Windows, or wherever `NEURALDECK_HOME`
+  points — which holds `config.json`, the logs and the benchmark history.
 
 ## Using the proxy
 

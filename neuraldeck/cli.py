@@ -15,6 +15,10 @@ def _doctor() -> int:
     print("NeuralDeck configuration")
     print("=" * 56)
     for k, v in config.summary().items():
+        if k == "config_error":
+            if v:
+                print(f"  {'CONFIG ERROR':<16} {v}")
+            continue
         if isinstance(v, (list, dict)):
             v = json.dumps(v, indent=None)
         print(f"  {k:<16} {v}")
@@ -72,26 +76,35 @@ def _doctor() -> int:
     return 0 if ok else 1
 
 
-def _open_when_ready(port: int, timeout: float = 90.0) -> None:
+def _open_when_ready(host: str, port: int, timeout: float = 90.0) -> None:
     """Open the dashboard in a browser once it answers.
 
     Used by the installers so the first run lands on the page instead of a
-    URL the user has to copy out of a terminal.
+    URL the user has to copy out of a terminal. A wildcard bind is reached
+    on localhost; a specific address is only reachable at that address.
     """
     import socket
     import threading
     import time
     import webbrowser
 
+    host = (host or "").strip()
+    if host in ("", "0.0.0.0", "::", "[::]"):
+        probe, shown = "127.0.0.1", "localhost"
+    else:
+        probe = host
+        shown = f"[{host}]" if ":" in host else host
+
     def wait():
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            with socket.socket() as sock:
-                sock.settimeout(0.5)
-                if sock.connect_ex(("127.0.0.1", port)) == 0:
-                    webbrowser.open(f"http://localhost:{port}/")
-                    return
-            time.sleep(0.5)
+            try:
+                socket.create_connection((probe, port), timeout=0.5).close()
+            except OSError:
+                time.sleep(0.5)
+                continue
+            webbrowser.open(f"http://{shown}:{port}/")
+            return
 
     threading.Thread(target=wait, daemon=True).start()
 
@@ -100,7 +113,7 @@ def _run_all(args) -> int:
     """Proxy as a child, deck in the foreground: one command for the stack."""
     from . import config, services
     if getattr(args, "open", False):
-        _open_when_ready(config.DECK_PORT)
+        _open_when_ready(config.DECK_HOST, config.DECK_PORT)
     child = None
     if not args.no_proxy:
         try:
@@ -121,7 +134,30 @@ def _run_all(args) -> int:
     return 0
 
 
+def _ensure_streams() -> None:
+    """Give pythonw somewhere to write.
+
+    Under pythonw.exe (the Start Menu shortcut) sys.stdout and sys.stderr
+    are None, and the first print — or uvicorn configuring its log
+    formatter — would kill the process before the page ever loads, with
+    no window to show why. Send both to deck.log in the log directory.
+    """
+    if sys.stdout is not None and sys.stderr is not None:
+        return
+    try:
+        from . import config
+        sink = open(config.LOG_DIR / "deck.log", "a", encoding="utf-8",
+                    buffering=1)
+    except Exception:
+        sink = open(os.devnull, "w", encoding="utf-8")
+    if sys.stdout is None:
+        sys.stdout = sink
+    if sys.stderr is None:
+        sys.stderr = sink
+
+
 def main(argv=None) -> int:
+    _ensure_streams()
     p = argparse.ArgumentParser(
         prog="neuraldeck",
         description="Local LLM dashboard, prompt lab, benchmarks and "
@@ -141,6 +177,8 @@ def main(argv=None) -> int:
                         help="open the dashboard in a browser once it is up")
     sub.add_parser("proxy", help="multimodal proxy only")
     sub.add_parser("doctor", help="show what this machine looks like to NeuralDeck")
+    # bare `neuraldeck` means `up`, which reads these without a subparser
+    p.set_defaults(no_proxy=False, stop_proxy=False, open=False)
 
     args = p.parse_args(argv)
     cmd = args.cmd or "up"
@@ -148,7 +186,7 @@ def main(argv=None) -> int:
     if cmd == "deck":
         from . import config
         if getattr(args, "open", False):
-            _open_when_ready(config.DECK_PORT)
+            _open_when_ready(config.DECK_HOST, config.DECK_PORT)
         from .deck import main as deck_main
         deck_main()
         return 0

@@ -204,14 +204,43 @@ def summarize(timings: List[Timing]) -> Dict:
     }
 
 
-def quick_stats(path) -> Dict:
-    """Headline numbers for the dashboard. Never raises."""
+# Where one run of a server begins, in a log that may hold several.
+RUN_START = "load_model: loading model"
+TAIL_BYTES = 1 << 20
+
+
+def _tail(path, n_bytes: int = TAIL_BYTES) -> Optional[str]:
+    """The last n_bytes of a log, from a line boundary. None if unreadable."""
     try:
-        with open(path, "r", errors="replace") as fh:
-            lines = fh.readlines()
+        with open(path, "rb") as fh:
+            fh.seek(0, 2)
+            size = fh.tell()
+            fh.seek(max(0, size - n_bytes))
+            data = fh.read()
     except OSError:
+        return None
+    if size > n_bytes:
+        data = data.split(b"\n", 1)[-1]
+    return data.decode("utf-8", errors="replace")
+
+
+def quick_stats(path) -> Dict:
+    """Headline numbers for the dashboard, for the current run. Never raises.
+
+    Called every second, so only a bounded tail is read, and only the part
+    after the last startup counts — earlier launches into the same log must
+    not blend into this one's totals.
+    """
+    text = _tail(path)
+    if text is None:
         return {"ok": False}
-    timings, header, live = parse_lines(lines)
+    idx = text.rfind(RUN_START)
+    timings, header, live = parse_lines(
+        (text[idx:] if idx >= 0 else text).splitlines())
+    if header.build is None and idx > 0:
+        # build_info can print before the model loads
+        builds = RE_BUILD.findall(text[:idx])
+        header.build = builds[-1] if builds else None
     s = summarize(timings)
     s.update({
         "ok": True,

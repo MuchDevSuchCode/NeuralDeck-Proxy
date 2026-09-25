@@ -43,7 +43,7 @@ def caps(binary: str) -> dict:
     text = ""
     try:
         p = subprocess.run([binary, "--help"], capture_output=True, text=True,
-                           timeout=30,
+                           encoding="utf-8", errors="replace", timeout=30,
                            creationflags=(subprocess.CREATE_NO_WINDOW
                                           if config.IS_WINDOWS else 0))
         text = (p.stdout or "") + (p.stderr or "")
@@ -58,6 +58,9 @@ def caps(binary: str) -> dict:
         "model_draft": has("--model-draft") or has("-md"),
         "chat_template_kwargs": has("--chat-template-kwargs"),
         "reasoning_budget": has("--reasoning-budget"),
+        # -rea/--reasoning on|off|auto replaced enable_thinking passed
+        # through --chat-template-kwargs, which newer builds warn about.
+        "reasoning": bool(re.search(r"--reasoning\s+\[?on\|off", text)),
         "mmproj": has("--mmproj"),
         "embeddings": has("--embeddings"),
         "metrics": has("--metrics"),
@@ -126,20 +129,27 @@ def build_argv(model: dict, *, binary: str, port: int, ctx: int, slots: int,
 
     # ── thinking ──────────────────────────────────────────────────────────
     budget = THINK_BUDGET.get(thinking, 0)
+    if c["reasoning"]:
+        argv += ["--reasoning", "off" if budget == 0 else "on"]
     if c["reasoning_budget"]:
         if budget == 0:
             argv += ["--reasoning-budget", "0"]
             # A budget of 0 alone does not render the template with
             # enable_thinking=false, and some templates then inject an
             # unclosed think tag into the system turn, which visibly
-            # degrades output. Say it explicitly.
-            if c["chat_template_kwargs"]:
+            # degrades output. Say it explicitly — with --reasoning off
+            # where the build has it, the older kwargs route otherwise.
+            if not c["reasoning"] and c["chat_template_kwargs"]:
                 argv += ["--chat-template-kwargs",
                          json.dumps({"enable_thinking": False})]
         elif budget > 0:
             argv += ["--reasoning-budget", str(budget)]
         notes.append(f"thinking {thinking}"
                      + (f" ({budget} tok)" if budget > 0 else ""))
+    elif c["reasoning"]:
+        notes.append(f"thinking {thinking}"
+                     + (" (no --reasoning-budget in this build: unbudgeted)"
+                        if budget > 0 else ""))
     elif thinking != "off":
         notes.append(f"thinking {thinking} requested but this build has no "
                      "--reasoning-budget — ignored")
@@ -162,7 +172,13 @@ def build_argv(model: dict, *, binary: str, port: int, ctx: int, slots: int,
             notes.append("spec: ngram requested but this build has no ngram "
                          "draft type — plain decoding")
     elif spec == "auto" and model.get("draft_path"):
-        if c["model_draft"] and "draft-mtp" in c["spec_types"]:
+        if model["draft_path"] == model["path"] and "draft-mtp" in c["spec_types"]:
+            # Combined build: the head is inside the weights already, and
+            # naming the same file as -md would load every weight twice.
+            argv += ["--spec-type", "draft-mtp"]
+            notes.append("spec: MTP head (inside the model file)")
+        elif (c["model_draft"] and "draft-mtp" in c["spec_types"]
+              and model["draft_path"] != model["path"]):
             argv += ["-md", model["draft_path"], "--spec-type", "draft-mtp"]
             if c["draft_gpu_layers"]:
                 argv += ["-ngld", "999"]
@@ -211,6 +227,20 @@ def _spawn(argv: list, log_path: Path):
         log.close()
 
 
+def _rotate(log_path: Path) -> None:
+    """Start each launch on a fresh log, keeping the previous run as .1.
+
+    Everything that reads an instance log (headline numbers, KV, traffic)
+    wants the current run only, and an append-forever log also grows
+    without bound.
+    """
+    try:
+        if log_path.exists() and log_path.stat().st_size > 0:
+            os.replace(log_path, log_path.with_name(log_path.name + ".1"))
+    except OSError:
+        pass            # held open elsewhere (Windows): append instead
+
+
 class Launcher:
     """One launch at a time, with its progress readable over HTTP."""
 
@@ -220,6 +250,7 @@ class Launcher:
         self.running = False
         self.returncode = None
         self._task = None
+        self._claimed = False
 
     # ── status ────────────────────────────────────────────────────────────
     def status(self) -> dict:
@@ -236,9 +267,35 @@ class Launcher:
 
     # ── the launch itself ─────────────────────────────────────────────────
     async def start(self, *, model_name: str, backend: str, ctx: int, slots: int,
-                    thinking: str, spec: str, replace: bool, force: bool) -> dict:
-        if self.running:
+                    thinking: str, spec: str, replace: bool, force: bool,
+                    relaunch: bool = False) -> dict:
+        # The checks read GGUF headers, walk the process table and probe the
+        # GPU, so they run in a thread. The claim is taken before the first
+        # await, so two clicks cannot both get past it.
+        if self.running or self._claimed:
             raise RuntimeError("a launch is already in progress")
+        self._claimed = True
+        try:
+            model, binary, port, mode, stop = await asyncio.to_thread(
+                self._plan, model_name, backend, replace, relaunch, force)
+            self.buffer.clear()
+            self.running = True
+        finally:
+            self._claimed = False
+        self.returncode = None
+        self.started = time.time()
+        self.say(f"launching {model['name']} · backend={backend} · slots={slots}"
+                 f" · ctx={ctx} · thinking={thinking} · spec={spec}"
+                 f" · port={port} · mode={mode}")
+        self._task = asyncio.create_task(
+            self._run(model, binary, backend, port, ctx, slots, thinking, spec,
+                      replace, stop))
+        return {"launching": True, "model": model["name"], "backend": backend,
+                "port": port, "mode": mode}
+
+    def _plan(self, model_name, backend, replace, relaunch, force) -> tuple:
+        """(model, binary, port, mode, pids to stop first). Sync: runs in a
+        thread, and raises what the API turns into 404/409/500."""
         model = models.by_name(model_name)
         if model is None:
             raise LookupError(f"unknown model '{model_name}'")
@@ -249,32 +306,40 @@ class Launcher:
             raise FileNotFoundError(f"llama-server not found: {binary}")
 
         instances = procs.llama_instances()
-        port = config.LLAMA_PORTS[0]
+        # Same alias means same log and same model id at the proxy: a second
+        # copy beside the first is never what was meant.
+        same = [i for i in instances if i.get("alias") == model["name"]]
+        if same and not (replace or relaunch):
+            raise RuntimeError(
+                f"'{model['name']}' is already serving on :{same[0]['port']} "
+                "— use Relaunch, or tick replace")
+        ours = [i for i in instances if i.get("port") in config.LLAMA_PORTS]
+        stop = []
         if replace:
             mode = "replace-all"
+            # stop_all_llama covers the deck's ports; a copy of this very
+            # model elsewhere would still collide on alias and log
+            stop = [i["pid"] for i in same if i.get("pid")]
+            # Provisional: the first deck port, unless something that is not
+            # one of our instances holds it. Re-checked once they are down.
+            held = {i["port"] for i in ours}
+            port = next((p for p in config.LLAMA_PORTS
+                         if p in held or not procs.llama_port_busy(p)), None)
+        elif same:
+            mode = "relaunch"
+            stop = [i["pid"] for i in same if i.get("pid")]
+            port = same[0]["port"]
+            if port not in config.LLAMA_PORTS:
+                port = procs.next_free_llama_port(instances)
         elif instances:
-            free = procs.next_free_llama_port()
-            if free is None:
-                raise RuntimeError(
-                    f"no free llama port in {config.LLAMA_PORT_RANGE}")
-            port, mode = free, "additive"
-            if not force:
+            port, mode = procs.next_free_llama_port(instances), "additive"
+            if port is not None and not force:
                 self._check_vram(model)
         else:
-            mode = "first"
-
-        self.buffer.clear()
-        self.running = True
-        self.returncode = None
-        self.started = time.time()
-        self.say(f"launching {model['name']} · backend={backend} · slots={slots}"
-                 f" · ctx={ctx} · thinking={thinking} · spec={spec}"
-                 f" · port={port} · mode={mode}")
-        self._task = asyncio.create_task(
-            self._run(model, binary, backend, port, ctx, slots, thinking, spec,
-                      replace))
-        return {"launching": True, "model": model["name"], "backend": backend,
-                "port": port, "mode": mode}
+            port, mode = procs.next_free_llama_port(instances), "first"
+        if port is None:
+            raise RuntimeError(f"no free llama port in {config.LLAMA_PORT_RANGE}")
+        return model, binary, port, mode, stop
 
     def _check_vram(self, model: dict) -> None:
         """Refuse an additive launch that plainly will not fit.
@@ -298,33 +363,51 @@ class Launcher:
                 "free — stop an instance first, or force to try anyway")
 
     async def _run(self, model, binary, backend, port, ctx, slots, thinking,
-                   spec, replace):
+                   spec, replace, stop=()):
         try:
             if replace:
                 n = await asyncio.to_thread(procs.stop_all_llama)
                 self.say(f"stopped {n} running instance(s)")
-            if procs.port_in_use(port):
-                self.say(f"waiting for port {port} to be released…")
-                if not await asyncio.to_thread(procs.wait_port_free, port, 30.0):
-                    self.say(f"[error] port {port} is still in use — aborting")
-                    self.returncode = 1
-                    return
+            for pid in stop:
+                ok = await asyncio.to_thread(procs.stop_pid, pid)
+                self.say(f"stopped pid {pid}" if ok
+                         else f"[warn] pid {pid} did not stop")
+            if procs.llama_port_busy(port):
+                if replace or stop:
+                    self.say(f"waiting for port {port} to be released…")
+                    await asyncio.to_thread(procs.wait_port_free, port, 30.0)
+                if procs.llama_port_busy(port):
+                    # Held by something that is not ours to stop: take the
+                    # next free deck port rather than giving up.
+                    alt = await asyncio.to_thread(procs.next_free_llama_port)
+                    if alt is None:
+                        self.say(f"[error] port {port} is still in use and no "
+                                 f"other port in {config.LLAMA_PORT_RANGE} is "
+                                 "free — aborting")
+                        self.returncode = 1
+                        return
+                    self.say(f"port {port} is in use — using {alt} instead")
+                    port = alt
 
             log_path = config.LOG_DIR / f"{model['name']}.log"
-            argv, notes = build_argv(model, binary=binary, port=port, ctx=ctx,
-                                     slots=slots, thinking=thinking, spec=spec)
+            argv, notes = await asyncio.to_thread(
+                build_argv, model, binary=binary, port=port, ctx=ctx,
+                slots=slots, thinking=thinking, spec=spec)
             for n in notes:
                 self.say(n)
             self.say(f"ctx {ctx} total / {ctx // max(1, slots)} per slot")
             self.say(f"log: {log_path}")
+            await asyncio.to_thread(_rotate, log_path)
 
-            ok = await self._spawn_and_wait(argv, log_path, port)
-            if not ok and _has_spec(argv):
+            ok, exited = await self._spawn_and_wait(argv, log_path, port)
+            if not ok and exited and _has_spec(argv):
                 # The MTP/draft head is an optimisation; if the runtime could
                 # not load it, serve the model plainly rather than nothing.
+                # Only after the first attempt has really gone — a second
+                # copy beside a live one would fight it for the port.
                 plain = _strip_spec(argv)
                 self.say("retrying without speculative decoding")
-                ok = await self._spawn_and_wait(plain, log_path, port)
+                ok, _ = await self._spawn_and_wait(plain, log_path, port)
             self.returncode = 0 if ok else 1
             self.say("ready" if ok else "[error] launch failed")
         except Exception as e:                       # never leave it "running"
@@ -334,37 +417,47 @@ class Launcher:
             self.running = False
 
     async def _spawn_and_wait(self, argv: list, log_path: Path, port: int,
-                              max_wait: float = 600.0) -> bool:
+                              max_wait: float = 600.0) -> tuple:
+        """(ready, exited_by_itself). A server that is not ready in time is
+        stopped here, never left loading beside whatever comes next."""
         self.say("$ " + _display(argv))
         try:
             proc = await asyncio.to_thread(_spawn, argv, log_path)
         except Exception as e:
             self.say(f"[error] could not start llama-server: {e}")
-            return False
+            return False, True
         self.say(f"pid {proc.pid} — waiting for the server to become ready")
         deadline = time.monotonic() + max_wait
-        url = f"http://127.0.0.1:{port}/health"
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            while time.monotonic() < deadline:
-                if proc.poll() is not None:
-                    tail = procs.tail_text(log_path, 4096).splitlines()[-8:]
-                    self.say(f"[error] llama-server exited "
-                             f"(code {proc.returncode}):")
-                    for ln in tail:
-                        self.say("    " + ln)
-                    return False
-                try:
-                    r = await client.get(url)
-                    if r.status_code == 200 and '"ok"' in r.text:
-                        return True
-                except httpx.HTTPError:
-                    pass
-                await asyncio.sleep(2.0)
-                waited = int(max_wait - (deadline - time.monotonic()))
-                if waited and waited % 20 == 0:
-                    self.say(f"still loading… {waited}s")
-        self.say(f"[error] not ready within {int(max_wait)}s")
-        return False
+        host = procs.llama_probe_host()
+        url = f"http://{'[%s]' % host if ':' in host else host}:{port}/health"
+        ok = False
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                while time.monotonic() < deadline:
+                    if proc.poll() is not None:
+                        tail = procs.tail_text(log_path, 4096).splitlines()[-8:]
+                        self.say(f"[error] llama-server exited "
+                                 f"(code {proc.returncode}):")
+                        for ln in tail:
+                            self.say("    " + ln)
+                        return False, True
+                    try:
+                        r = await client.get(url)
+                        if r.status_code == 200 and '"ok"' in r.text:
+                            ok = True
+                            return True, False
+                    except httpx.HTTPError:
+                        pass
+                    await asyncio.sleep(2.0)
+                    waited = int(max_wait - (deadline - time.monotonic()))
+                    if waited and waited % 20 == 0:
+                        self.say(f"still loading… {waited}s")
+            self.say(f"[error] not ready within {int(max_wait)}s")
+            return False, False
+        finally:
+            if not ok and proc.poll() is None:
+                self.say(f"stopping pid {proc.pid}")
+                await asyncio.to_thread(procs.stop_pid, proc.pid)
 
 
 _SPEC_FLAGS = {"--spec-type", "-md", "--model-draft", "--spec-draft-model",

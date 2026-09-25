@@ -25,6 +25,12 @@ while [ $# -gt 0 ]; do
     esac
     shift
 done
+# a relative --dir is relative to where you ran this, and has to stay
+# meaningful once it is written into the launcher
+case "$VENV" in
+    /*) ;;
+    *)  VENV="$PWD/$VENV" ;;
+esac
 
 say()  { printf '\033[96m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[93m  ! \033[0m%s\n' "$*"; }
@@ -42,11 +48,21 @@ done
 say "using $("$PY" --version) at $(command -v "$PY")"
 
 # ── venv ──────────────────────────────────────────────────────────────────
-if [ ! -x "$VENV/bin/python" ]; then
-    say "creating the virtual environment at $VENV"
-    "$PY" -m venv "$VENV" || die "could not create a venv. On Debian/Ubuntu: sudo apt install python3-venv"
-fi
+# A venv left half-built by an interrupted run has a python but no working
+# pip; rebuild it rather than trusting that the interpreter exists.
 VPY="$VENV/bin/python"
+if [ ! -x "$VPY" ] || ! "$VPY" -m pip --version >/dev/null 2>&1; then
+    if [ -f "$VENV/pyvenv.cfg" ]; then
+        say "repairing the virtual environment at $VENV"
+        CLEAR=1
+    else
+        say "creating the virtual environment at $VENV"
+        CLEAR=""
+    fi
+    "$PY" -m venv ${CLEAR:+--clear} "$VENV" || die "could not create a venv. On Debian/Ubuntu: sudo apt install python3-venv"
+    "$VPY" -m pip --version >/dev/null 2>&1 \
+        || die "the venv at $VENV has no pip. On Debian/Ubuntu: sudo apt install python3-venv"
+fi
 "$VPY" -m pip install --upgrade pip >/dev/null 2>&1 || warn "could not upgrade pip; continuing"
 
 # ── the package ───────────────────────────────────────────────────────────
@@ -61,8 +77,11 @@ fi
 if [ "$LINK" = 1 ]; then
     BIN="$HOME/.local/bin"
     mkdir -p "$BIN"
+    # PYTHONPATH keeps the package importable even when only the
+    # requirements.txt fallback succeeded (no editable install)
     cat > "$BIN/neuraldeck" <<LAUNCHER
 #!/usr/bin/env bash
+export PYTHONPATH="$ROOT\${PYTHONPATH:+:\$PYTHONPATH}"
 exec "$VPY" -m neuraldeck "\$@"
 LAUNCHER
     chmod +x "$BIN/neuraldeck"
@@ -74,6 +93,9 @@ LAUNCHER
 fi
 
 # ── what this machine looks like ──────────────────────────────────────────
+# from the checkout, so `-m neuraldeck` resolves without an editable install
+cd "$ROOT"
+export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
 echo
 "$VPY" -m neuraldeck doctor || warn "doctor reported something missing (see above)"
 echo

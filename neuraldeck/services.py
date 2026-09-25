@@ -12,6 +12,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import psutil
+
 from . import config, procs
 
 
@@ -54,14 +56,16 @@ def registry() -> dict:
             "cmd": _whisper_cmd(),
         },
     }
+    # The whole command line is the needle: its last word alone is often
+    # something generic ("--listen", "main.py") that other processes share.
     if config.TTS_CMD:
         out["tts"] = {"label": "TTS server", "port": config.TTS_PORT,
-                      "needle": config.TTS_CMD[-1], "log": config.TTS_LOG,
+                      "needle": " ".join(config.TTS_CMD), "log": config.TTS_LOG,
                       "cmd": config.TTS_CMD}
     if config.COMFY_CMD:
         out["comfy"] = {"label": "ComfyUI", "port": config.COMFY_PORT,
-                        "needle": config.COMFY_CMD[-1], "log": config.COMFY_LOG,
-                        "cmd": config.COMFY_CMD}
+                        "needle": " ".join(config.COMFY_CMD),
+                        "log": config.COMFY_LOG, "cmd": config.COMFY_CMD}
     return out
 
 
@@ -113,25 +117,43 @@ def start(name: str) -> dict:
     with open(log, "ab", buffering=0) as fh:
         proc = subprocess.Popen(svc["cmd"], stdout=fh, stderr=subprocess.STDOUT,
                                 **kwargs)
-    (config.RUN_DIR / f"{name}.pid").write_text(str(proc.pid))
+    (config.RUN_DIR / f"{name}.pid").write_text(str(proc.pid), encoding="utf-8")
     return {"starting": name, "pid": proc.pid, "log": str(log),
             "cmd": svc["cmd"]}
 
 
+def _pidfile_pid(name: str, svc: dict):
+    """The pid we recorded at start — trusted only while that pid is still
+    the service. Pids are reused; a stale file must never point stop() at
+    whatever unrelated process (and its children) got the number since."""
+    pidfile = config.RUN_DIR / f"{name}.pid"
+    try:
+        pid = int(pidfile.read_text(encoding="utf-8").strip())
+        p = psutil.Process(pid)
+        if svc["needle"] in " ".join(p.cmdline() or []) \
+                or (p.name() or "") in (svc.get("names") or ()):
+            return pid
+    except Exception:
+        pass
+    return None
+
+
 def stop(name: str) -> dict:
     """Stop a service by the pid we can identify, never by pattern."""
+    svc = registry().get(name)
+    if svc is None:
+        raise LookupError(f"unknown service '{name}'")
     proc = find(name)
-    pid = proc.pid if proc else None
-    if pid is None:
-        pidfile = config.RUN_DIR / f"{name}.pid"
-        try:
-            pid = int(pidfile.read_text().strip())
-        except Exception:
-            pid = None
+    pid = proc.pid if proc else _pidfile_pid(name, svc)
     if pid is None:
         raise LookupError(f"{name} does not appear to be running")
-    procs.stop_pid(pid)
-    return {"stopped": name, "pid": pid}
+    gone = procs.stop_pid(pid)
+    if gone:
+        try:
+            (config.RUN_DIR / f"{name}.pid").unlink()
+        except OSError:
+            pass
+    return {"stopped": name, "pid": pid, "gone": gone}
 
 
 def log_path(name: str):

@@ -14,7 +14,7 @@
     --surface2: #111a2b;
     --ink:      #eaf6ff;
     --ink-2:    #b8cfe0;
-    --muted:    #5f7a94;
+    --muted:    #7590aa;   /* 5.6:1 on --surface, 5.2:1 on --surface2 */
     --grid:     #1b2a3f;
     --axis:     #2a4059;
     --border:   rgba(0, 240, 224, 0.45);
@@ -55,7 +55,7 @@
     --ink:#1f2328; --ink-2:#31373d; --muted:#656d76;
     --grid:#d8dee4; --axis:#afb8c1; --border:#d0d7de; --border-dim:#d8dee4;
     --cyan:#0969da; --green:#1a7f37; --yellow:#9a6700; --pink:#bf3989;
-    --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100;   /* light steps, same slots */
+    --s1:#2a78d6; --s2:#d4561f; --s3:#16906a; --s4:#ad7400;   /* light steps, same slots: all >=3:1 on white, CVD-checked */
     --good:#1a7f37; --warning:#9a6700; --critical:#cf222e;
     --bar-grad: linear-gradient(90deg, #0969da, #54aeff);
     --well:rgba(31,35,40,.06); --scrim:rgba(31,35,40,.45); --stripe:rgba(31,35,40,.03);
@@ -103,7 +103,8 @@
                  color:var(--ink); font-size:12px; line-height:1.5; }
   code.ic { background:var(--surface2); border:1px solid var(--grid); padding:0 4px;
             color:var(--cyan); font-size:12px; }
-  .tblwrap { overflow-x:auto; }
+  .tblwrap { overflow-x:auto; position:relative; }   /* contains .vh headers */
+  .tblwrap td { white-space:nowrap; }   /* scroll sideways rather than wrap names into towers */
   .grpsep { color:var(--muted); font-size:10.5px; letter-spacing:1.5px;
             text-transform:uppercase; margin:9px 0 3px; padding-top:6px;
             border-top:1px solid var(--grid); }
@@ -185,7 +186,9 @@
   button.danger:hover { background:color-mix(in srgb, var(--critical) 16%, transparent); text-shadow:0 0 7px color-mix(in srgb, var(--critical) 60%, transparent);
     box-shadow:0 0 10px color-mix(in srgb, var(--critical) 35%, transparent); }
   button.primary { background:color-mix(in srgb, var(--cyan) 14%, transparent); }
-  button:disabled { opacity:.35; cursor:default; box-shadow:none; }
+  button:disabled { opacity:.55; cursor:default; box-shadow:none; text-shadow:none;
+    border-style:dashed; background:transparent; }
+  button:disabled:hover { background:transparent; }
   select {
     background:var(--surface2); color:var(--ink-2); border:1px solid var(--border-dim);
     padding:4px 8px; font:inherit; font-size:12px;
@@ -195,7 +198,7 @@
   /* model manager */
   .mrow { padding:9px 2px; border-bottom:1px solid var(--grid); }
   .mrow:last-child { border-bottom:none; }
-  .mrow .top { display:flex; align-items:center; gap:8px; }
+  .mrow .top { display:flex; align-items:center; gap:8px; min-width:0; }
   .mrow .dot { color:var(--muted); } .mrow .dot.on { color:var(--green); text-shadow:0 0 7px color-mix(in srgb, var(--green) 70%, transparent); }
   .mrow .name { color:var(--cyan); font-weight:700; overflow-wrap:anywhere; text-shadow:0 0 5px color-mix(in srgb, var(--cyan) 30%, transparent); }
   .mrow .serving { color:var(--green); }
@@ -261,7 +264,7 @@
   .pathrow { display:flex; gap:6px; align-items:center; margin-bottom:4px; }
   .pathrow .p { flex:1; overflow-wrap:anywhere; color:var(--ink); }
   .pathrow .p.gone { color:var(--critical); }
-  .stbar { position:sticky; bottom:0; background:linear-gradient(0deg,var(--page) 70%,transparent);
+  .stbar { position:sticky; bottom:0; background:linear-gradient(0deg,var(--surface) 70%,transparent);
            padding:10px 0 2px; display:flex; gap:10px; align-items:center; z-index:5; }
   .stnote { padding:8px 11px; border:1px solid var(--border-dim); margin-bottom:10px;
             font-size:12px; color:var(--ink-2); }
@@ -277,7 +280,7 @@
   pre.logbox {
     background:var(--well); border:1px solid var(--border-dim); border-radius:6px;
     padding:8px 10px; margin-top:8px; max-height:230px; overflow:auto;
-    font:11px/1.55 inherit; color:var(--ink-2); white-space:pre-wrap; word-break:break-all;
+    font:11px/1.55 inherit; color:var(--ink-2); white-space:pre-wrap; overflow-wrap:anywhere;
   }
   .tabs { display:flex; gap:6px; margin-bottom:2px; }
   .tabs button.active { background:color-mix(in srgb, var(--cyan) 14%, transparent); }
@@ -285,9 +288,102 @@
   th { text-align:left; color:var(--muted); font-size:11px; font-weight:500;
        text-transform:uppercase; letter-spacing:.5px; padding:2px 6px; border-bottom:1px solid var(--grid); }
   td { padding:2px 6px; font-size:12px; border-bottom:1px solid var(--grid); }
-  td.num, th.num { text-align:right; color:var(--green); }
+  td.num { text-align:right; color:var(--ink); }
+  th.num { text-align:right; color:var(--muted); }
   td:first-child { color:var(--ink-2); }
   a.ext { color:var(--cyan); text-decoration:none; }
+  a.ext:hover { text-decoration:underline; }
+  .vh { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+  .legend > span:has(> i) { white-space:nowrap; }   /* swatch + label stay together */
+  .legend { flex-wrap:wrap; column-gap:14px; row-gap:0; }
+  .charts .wide { grid-column:1/-1; }
+  .xaxis { display:flex; justify-content:space-between; font-size:10px; color:var(--muted);
+           padding-left:40px; padding-right:8px; margin-top:-2px; }
+  .chip.on::before { content:"✓ "; }
+
+  /* drag handle: the header is the grip, the ⠿ just makes that discoverable */
+  .cols .panel h2 .grip { order:-1; color:var(--muted); opacity:0; font-size:12px;
+    letter-spacing:0; transition:opacity .15s; }
+  .cols .panel:hover h2 .grip, .cols .panel h2:focus-within .grip, .cols .panel h2 .grip:focus { opacity:1; }
+  .cols .panel h2::before { order:-2; }
+
+  /* toasts: transient feedback instead of alert() */
+  #toasts { position:fixed; right:14px; bottom:14px; z-index:200; display:flex;
+            flex-direction:column; gap:6px; max-width:min(420px, calc(100vw - 28px)); }
+  .toast { background:var(--surface2); border:1px solid var(--border); color:var(--ink-2);
+           padding:8px 12px; font-size:12px; display:flex; gap:10px; align-items:flex-start;
+           box-shadow:0 0 14px color-mix(in srgb, var(--cyan) 20%, transparent); overflow-wrap:anywhere; }
+  .toast.ok { border-color:var(--green); } .toast.warn { border-color:var(--yellow); }
+  .toast.err { border-color:var(--critical); color:var(--ink); }
+  .toast span { flex:1; } .toast button { padding:0 8px; font-size:11px; flex:none; }
+  .stbar #st-dirty.ok { color:var(--green); } .stbar #st-dirty.warn { color:var(--yellow); }
+  .stbar #st-dirty.err { color:var(--critical); }
+
+  /* modals are <dialog>s: Esc, focus trap and focus return come for free */
+  dialog.modal { border:none; padding:0; background:transparent; color:inherit; margin:6vh auto auto;
+                 width:min(760px, calc(100vw - 20px)); max-width:none; max-height:90vh; overflow:visible; }
+  dialog.modal::backdrop { background:var(--scrim); backdrop-filter:blur(2px); }
+  dialog.modal > .panel { max-height:88vh; overflow:auto; }
+  dialog.modal h2 .meta { flex:none; }
+  #fp-dialog { width:min(680px, calc(100vw - 20px)); }
+  #fp-list .d { width:100%; background:none; border:none; border-bottom:1px solid var(--grid);
+                clip-path:none; text-transform:none; letter-spacing:0; text-align:left;
+                font-size:12.5px; color:var(--ink-2); }
+  #fp-list .d.file .n { color:var(--ink); } #fp-list .d.sel { background:color-mix(in srgb, var(--cyan) 16%, transparent); }
+  #fp-list .d:focus-visible, .mrow.hfrow:focus-visible { outline:2px solid var(--cyan); outline-offset:-2px; }
+  .hfrow .top { flex-wrap:wrap; }
+  #launch-status { margin-top:6px; font-size:12px; color:var(--ink-2); display:flex; gap:8px; align-items:center; }
+  #launch-status:empty { display:none; }
+  #hf-mini { font-size:11px; color:var(--muted); font-weight:400; letter-spacing:0; text-transform:none;
+             text-shadow:none; white-space:nowrap; }
+  .instrow { display:flex; gap:8px; flex-wrap:wrap; font-size:11.5px; color:var(--muted);
+             padding:2px 0; border-top:1px dashed var(--grid); }
+  .instrow .port { color:var(--yellow); }
+  .panel h2 .meta { overflow-wrap:anywhere; min-width:0; }
+  header .right { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  #hw-line { min-width:0; flex:1 1 120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .strow .lab label { cursor:default; }
+  .strow .lab .badge { white-space:nowrap; }
+  .pathrow button { white-space:nowrap; flex:none; }
+  .pathrow input[type=text] { min-width:0; }
+  .pl-grid { display:grid; grid-template-columns:minmax(0,1fr) 260px; gap:12px; align-items:start; }
+  .rl-fix { background:none; border:none; clip-path:none; padding:0; color:var(--cyan);
+            text-transform:none; letter-spacing:0; text-decoration:underline; font-size:inherit; }
+
+  @media (max-width:1080px){ .cols > .col:last-child { order:-1; } }
+  @media (max-width:700px){
+    .pl-grid { grid-template-columns:1fr; }
+    .strow { grid-template-columns:1fr; }
+    .strow .help { grid-column:1; }
+  }
+  @media (max-width:600px){
+    body { padding:10px 8px; }
+    header { gap:8px; align-items:center; }
+    header h1 { font-size:15px; letter-spacing:3px; }
+    .viewtabs { margin-left:0; flex-wrap:wrap; gap:4px; width:100%; order:3; }
+    .viewtabs button { padding:3px 8px; flex:1 1 auto; }
+    #hw-line { display:none; }
+    header .right { margin-left:auto; font-size:11px; }
+    .uptime-lbl { display:none; }
+    .panel { padding:10px 10px; }
+    .kv { grid-template-columns:minmax(90px,auto) 1fr; gap:3px 10px; }
+    .coregrid { grid-template-columns:repeat(3,1fr); }
+    .srow-top { flex-wrap:wrap; }
+    .stbar { flex-wrap:wrap; }
+    #bn-search { width:100% !important; }
+  }
+  @media (max-width:500px){
+    .mrow .top { flex-wrap:wrap; }
+    .mrow .btns { margin-left:20px; width:100%; }
+    .srow .spacer { flex-basis:100%; height:0; }
+    .coregrid { grid-template-columns:repeat(2,1fr); }
+  }
+  @media (prefers-reduced-motion: reduce){
+    header h1::after { animation:none; }
+    .bar i { transition:none; }
+    body::before { display:none; }
+    .cols .panel h2 .grip { transition:none; }
+  }
 </style>
 </head>
 <body>
@@ -301,14 +397,14 @@
   </nav>
   <span class="sub" id="hw-line">—</span>
   <span class="right"><span id="conn" class="pill">connecting…</span>
-    &nbsp; uptime <span id="uptime" style="color:var(--green)">—</span>
-    &nbsp; <select id="theme-sel" onchange="setTheme(this.value)" title="colour theme"
+    <span title="time since this machine booted"><span class="uptime-lbl">system uptime </span><span id="uptime" style="color:var(--green)">—</span></span>
+    <select id="theme-sel" onchange="setTheme(this.value)" title="colour theme" aria-label="Colour theme"
       style="font-size:11px;padding:1px 6px">
       <option value="neuraldeck">theme: NeuralDeck</option>
       <option value="dark">theme: Dark</option>
       <option value="light">theme: Light</option></select>
-    &nbsp; <button onclick="localStorage.removeItem('nd-layout-v1');location.reload()"
-      title="reset panel layout to default" style="font-size:11px;padding:1px 8px">↺ layout</button></span>
+    <button onclick="resetLayout()" id="reset-layout"
+      title="put the dashboard panels back in their default order" style="font-size:11px;padding:1px 8px">Reset layout</button></span>
 </header>
 
 <div id="view-dash">
@@ -316,7 +412,7 @@
   <!-- ═══════════ LEFT: hardware ═══════════ -->
   <div class="col">
     <div class="panel">
-      <h2>Model <span class="meta" id="cpu-load-pct"></span></h2>
+      <h2>CPU <span class="meta" id="cpu-load-pct"></span></h2>
       <dl class="kv">
         <dt>Model</dt><dd class="plain" id="cpu-name">—</dd>
         <dt>Frequency</dt><dd id="cpu-freq">—</dd>
@@ -347,7 +443,7 @@
       <div class="barwrap" style="margin-top:8px"><div class="bar"><i id="b-gpu"></i></div>
         <span class="barpct" id="p-gpu">—</span></div>
       <div class="advisory" id="gpu-note" style="display:none"></div>
-      <div class="meter"><div class="row"><b>VRAM (Unified)</b><span id="m-vram">—</span></div>
+      <div class="meter"><div class="row"><b id="vram-lbl">VRAM</b><span id="m-vram">—</span></div>
         <div class="barwrap"><div class="bar"><i id="b-vram"></i></div><span class="barpct" id="p-vram">—</span></div></div>
       <div class="meter" id="gtt-meter"><div class="row"><b>Shared (GTT)</b><span id="m-gtt">—</span></div>
         <div class="barwrap"><div class="bar"><i id="b-gtt"></i></div><span class="barpct" id="p-gtt">—</span></div></div>
@@ -377,6 +473,7 @@
       </dl>
       <div class="barwrap" style="margin-top:8px"><div class="bar"><i id="b-roof"></i></div>
         <span class="barpct" id="p-roof">—</span></div>
+      <div class="advisory" id="rl-note" style="display:none"></div>
       <div class="advisory">ceiling = peak bandwidth ÷ weight bytes (theoretical, per token)</div>
     </div>
 
@@ -399,7 +496,7 @@
     </div>
 
     <div class="panel">
-      <h2>History <span class="meta">10 min · 1 Hz</span></h2>
+      <h2>History <span class="meta" id="hist-meta">10 min · 1 Hz</span></h2>
       <div class="charts">
         <div><div class="legend"><span><i style="background:var(--s1)"></i>CPU %</span>
           <span><i style="background:var(--s2)"></i>GPU %</span></div>
@@ -411,7 +508,7 @@
           <div class="chart" id="ch-vram"></div></div>
         <div><div class="legend"><span><i style="background:var(--yellow)"></i>GPU °C</span></div>
           <div class="chart" id="ch-temp"></div></div>
-        <div><div class="legend" id="kv-legend">
+        <div class="wide"><div class="legend" id="kv-legend">
           <span class="sub" style="margin-left:auto">KV cache fill %</span></div>
           <div class="chart" id="ch-kv"></div></div>
       </div>
@@ -424,10 +521,11 @@
     <div class="panel">
       <h2>Models
         <button id="hf-open" onclick="openHF()" style="margin-left:10px; display:none">⬇ Get models</button>
-        <span class="meta">launch config → <span id="mm-note"></span></span></h2>
+        <span id="hf-mini" role="status"></span>
+        <span class="meta" id="mm-count"></span></h2>
       <div style="display:flex; gap:8px; margin-bottom:6px; flex-wrap:wrap; align-items:center;">
-        <select id="backend-sel" title="which llama-server build to launch"></select>
-        <select id="slots-sel" onchange="ctxPerSlot()">
+        <select id="backend-sel" title="which llama-server build to launch" aria-label="llama-server build"></select>
+        <select id="slots-sel" onchange="ctxPerSlot()" aria-label="Parallel slots">
           <option value="1">1 slot</option><option value="2">2 slots</option>
           <option value="4">4 slots</option><option value="8">8 slots</option>
         </select>
@@ -440,12 +538,12 @@
           <option value="16384"><option value="32768"><option value="65536">
           <option value="64000"><option value="131072"><option value="262144">
         </datalist>
-        <select id="spec-sel" title="speculative decoding: use the model's MTP/NextN head when it has one">
+        <select id="spec-sel" title="speculative decoding: use the model's MTP/NextN head when it has one" aria-label="Speculative decoding">
           <option value="auto">spec: auto (MTP if available)</option>
           <option value="ngram">spec: ngram (no draft model)</option>
           <option value="off">spec: off</option>
         </select>
-        <select id="think-sel" title="reasoning budget for models that support thinking">
+        <select id="think-sel" title="reasoning budget for models that support thinking" aria-label="Thinking budget">
           <option value="off">thinking: off</option>
           <option value="low">thinking: low (1k tok)</option>
           <option value="medium">thinking: medium (4k tok)</option>
@@ -456,7 +554,8 @@
           replace running instances</label>
       </div>
       <div id="models"></div>
-      <div class="advisory">👁 vision &nbsp;·&nbsp; 🎬 video (frames via proxy) &nbsp;·&nbsp; ⚡ MTP/NextN speculative &nbsp;·&nbsp; 💭 thinking (level set at launch) &nbsp;·&nbsp; 🧬 embedding &nbsp;·&nbsp; 🎙 audio available on all chat models via whisper</div>
+      <div class="advisory">👁 vision &nbsp;·&nbsp; 🎬 video (frames via proxy) &nbsp;·&nbsp; ⚡ MTP/NextN speculative &nbsp;·&nbsp; 💭 thinking (level set at launch) &nbsp;·&nbsp; 🧬 embedding &nbsp;·&nbsp; audio input works on every chat model via whisper</div>
+      <div id="launch-status" role="status"></div>
       <pre class="logbox" id="launch-log" style="display:none"></pre>
     </div>
 
@@ -480,6 +579,7 @@
 
     <div class="panel">
       <h2>Llama.cpp inference <span class="meta" id="inf-build"></span></h2>
+      <div class="advisory" id="inf-which" style="margin:-4px 0 6px"></div>
       <dl class="kv">
         <dt>Health</dt><dd id="inf-health">—</dd>
         <dt>Status</dt><dd id="inf-status" class="plain">—</dd>
@@ -493,6 +593,7 @@
         <div class="barwrap"><div class="bar"><i id="b-dc"></i></div><span class="barpct" id="p-dc"></span></div></div>
       <div class="meter" id="inf-ctx-row"><div class="row"><b>Context (live prompt)</b><span id="inf-ctx">—</span></div>
         <div class="barwrap"><div class="bar"><i id="b-ctx"></i></div><span class="barpct" id="p-ctx"></span></div></div>
+      <div id="inf-insts" style="margin-top:8px"></div>
     </div>
 
   </div>
@@ -510,24 +611,24 @@
   <div class="panel">
     <h2>Prompt Lab <span class="meta" id="pl-status">idle</span></h2>
     <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px; align-items:center;">
-      <select id="pl-model" style="max-width:420px"></select>
+      <select id="pl-model" style="max-width:100%" aria-label="Model"></select>
       <label class="sub">temp <input id="pl-temp" class="pl-input" type="number" step="0.1" min="0" max="2"
         value="0.7" style="width:70px"></label>
       <label class="sub">max tok <input id="pl-max" class="pl-input" type="number" step="64" min="1"
         value="512" style="width:88px"></label>
     </div>
-    <input id="pl-sys" class="pl-input" placeholder="system prompt (optional)" style="margin-bottom:8px" autocomplete="off">
-    <textarea id="pl-in" class="pl-input" rows="4" placeholder="prompt…  (Ctrl+Enter to send)"></textarea>
+    <input id="pl-sys" class="pl-input" placeholder="system prompt (optional)" aria-label="System prompt" style="margin-bottom:8px" autocomplete="off">
+    <textarea id="pl-in" class="pl-input" rows="4" placeholder="prompt…  (Ctrl+Enter to send)" aria-label="Prompt" oninput="plValid()"></textarea>
     <div style="display:flex; gap:8px; margin:8px 0 12px;">
-      <button class="primary" id="pl-send" onclick="plSend()">Send ▸</button>
+      <button class="primary" id="pl-send" onclick="plSend()" disabled>Send ▸</button>
       <button class="danger" id="pl-stop" style="display:none"
         onclick="plAbort&&plAbort.abort()">Stop</button>
       <button onclick="plClear()">Clear</button>
     </div>
-    <div style="display:grid; grid-template-columns:minmax(0,1fr) 260px; gap:12px; align-items:start;">
+    <div class="pl-grid">
       <div style="min-width:0">
         <pre class="logbox" id="pl-think" style="display:none; max-height:150px; color:var(--muted)"></pre>
-        <div class="logbox" id="pl-out" style="max-height:440px; min-height:220px">—</div>
+        <div class="logbox" id="pl-out" style="max-height:440px; min-height:220px"></div>
       </div>
       <div>
         <div class="legend" style="margin-bottom:6px"><span style="color:var(--cyan);letter-spacing:1.5px">BENCHMARK</span></div>
@@ -542,17 +643,18 @@
   <div class="panel">
     <h2>Benchmarks <span class="meta" id="bn-status"></span></h2>
     <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px;">
-      <select id="bn-model" style="max-width:420px"></select>
-      <button class="primary" id="bn-run" onclick="benchRun()">Run standard bench ▸</button>
+      <select id="bn-model" style="max-width:100%" aria-label="Model to benchmark" onchange="bnValid()"></select>
+      <button class="primary" id="bn-run" onclick="benchRun()" disabled
+        title="Sends one fixed prompt (a ~250-word lithium-ion battery explanation) at temperature 0 with max 320 tokens, so runs are comparable across models and builds">Run standard bench ▸</button>
       <label class="sub" style="cursor:pointer"><input type="checkbox" id="bn-std"
         style="accent-color:var(--cyan)" onchange="renderBench()"> standard runs only</label>
       <span style="flex:1"></span>
       <button class="danger" onclick="benchClearAll()">Clear all</button>
     </div>
     <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
-      <input id="bn-search" class="pl-input" placeholder="search models…"
+      <input id="bn-search" class="pl-input" placeholder="search models…" aria-label="Search models"
         style="width:200px" oninput="renderBench()" autocomplete="off">
-      <span id="bn-backends" style="display:flex; gap:5px;"></span>
+      <span id="bn-backends" style="display:flex; gap:5px; flex-wrap:wrap;" role="group" aria-label="Backend filter"></span>
       <span style="flex:1"></span>
       <button onclick="benchSelectAll(true)">all</button>
       <button onclick="benchSelectAll(false)">none</button>
@@ -565,14 +667,14 @@
     <div id="bn-chart" style="margin-bottom:12px"></div>
     <div class="tblwrap" style="margin-bottom:16px"><table id="bn-agg"><thead><tr>
       <th>model</th><th>backend</th><th>spec</th><th class="num">accept</th><th class="num">runs</th><th class="num">ttft med</th>
-      <th class="num">prefill med</th><th class="num">decode med</th><th class="num">decode best</th>
+      <th class="num">prefill med (tok/s)</th><th class="num">decode med (tok/s)</th><th class="num">decode best (tok/s)</th>
     </tr></thead><tbody></tbody></table></div>
     <div class="legend"><span style="color:var(--cyan);letter-spacing:1.5px">RUNS</span>
       <span class="sub" id="bn-count">· newest first</span></div>
     <div class="tblwrap"><table id="bn-runs"><thead><tr>
       <th>time</th><th>kind</th><th>model</th><th>backend</th><th>spec</th>
-      <th class="num">prompt</th><th class="num">gen</th><th class="num">prefill</th>
-      <th class="num">decode</th><th class="num">ttft</th><th class="num">wall</th><th></th>
+      <th class="num">prompt tokens</th><th class="num">gen tokens</th><th class="num">prefill (tok/s)</th>
+      <th class="num">decode (tok/s)</th><th class="num">ttft</th><th class="num">wall</th><th><span class="vh">delete</span></th>
     </tr></thead><tbody></tbody></table></div>
   </div>
 </div>
@@ -585,8 +687,8 @@
     <div id="st-body"><div class="advisory">loading…</div></div>
     <div class="stbar">
       <button class="primary" id="st-save" onclick="stSave()" disabled>Save changes</button>
-      <button id="st-revert" onclick="stLoad()" disabled>Discard</button>
-      <span class="sub" id="st-dirty"></span>
+      <button id="st-revert" onclick="stDiscard()" disabled>Discard</button>
+      <span class="sub" id="st-dirty" role="status"></span>
       <span style="flex:1"></span>
       <button id="st-restart" onclick="stRestart()" style="display:none">↻ Restart NeuralDeck</button>
     </div>
@@ -594,54 +696,52 @@
 </div>
 
 <!-- ═══════════ folder picker ═══════════ -->
-<div id="fp-overlay" style="display:none; position:fixed; inset:0; z-index:130;
-     background:var(--scrim); backdrop-filter:blur(2px);" onclick="if(event.target===this)fpClose()">
-  <div class="panel" style="max-width:680px; margin:8vh auto;">
-    <h2 id="fp-title">Choose a folder <span class="meta"><button onclick="fpClose()">✕ close</button></span></h2>
-    <div style="display:flex; gap:6px; margin-bottom:8px;">
-      <input id="fp-path" class="pl-input" style="flex:1" autocomplete="off"
-        onkeydown="if(event.key==='Enter')fpGo($('fp-path').value)">
+<dialog id="fp-dialog" class="modal" aria-labelledby="fp-title" onclick="if(event.target===this)fpClose()">
+  <div class="panel">
+    <h2><span id="fp-title">Choose a folder</span> <span class="meta"><button onclick="fpClose()" aria-label="Close">✕ close</button></span></h2>
+    <div style="display:flex; gap:6px; margin-bottom:8px; flex-wrap:wrap;">
+      <input id="fp-path" class="pl-input" style="flex:1 1 200px; min-width:0" autocomplete="off" aria-label="Path"
+        onkeydown="if(event.key==='Enter'){event.preventDefault();fpGo($('fp-path').value);}">
       <button onclick="fpGo($('fp-path').value)">Go</button>
       <button onclick="fpUp()">↑ up</button>
     </div>
     <div id="fp-roots" style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;"></div>
     <div id="fp-list"></div>
-    <div style="margin-top:10px; display:flex; gap:10px; align-items:center;">
-      <button class="primary" onclick="fpPick()">Use this folder</button>
+    <div style="margin-top:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+      <button class="primary" id="fp-use" onclick="fpPick()">Use this folder</button>
       <span class="sub" id="fp-here"></span>
     </div>
   </div>
-</div>
+</dialog>
 
 <div class="tooltip" id="tt"></div>
 
 <!-- ═══════════ HF downloader modal ═══════════ -->
-<div id="hf-overlay" style="display:none; position:fixed; inset:0; z-index:120;
-     background:var(--scrim); backdrop-filter:blur(2px);" onclick="if(event.target===this)closeHF()">
-  <div class="panel" style="max-width:760px; margin:6vh auto; max-height:86vh; overflow:auto;">
-    <h2>Hugging Face — model downloader
-      <span class="meta"><button onclick="closeHF()">✕ close</button></span></h2>
+<dialog id="hf-dialog" class="modal" aria-labelledby="hf-title" onclick="if(event.target===this)closeHF()">
+  <div class="panel">
+    <h2><span id="hf-title">Hugging Face — model downloader</span>
+      <span class="meta"><button onclick="closeHF()" aria-label="Close">✕ close</button></span></h2>
     <div style="display:flex; gap:8px; margin-bottom:8px;">
-      <input id="hf-q" placeholder="search GGUF repos… (empty = browse the hub)"
-        style="flex:1; background:var(--surface2); color:var(--ink); border:1px solid var(--border-dim);
+      <input id="hf-q" placeholder="search GGUF repos… (empty = browse the hub)" aria-label="Search Hugging Face"
+        style="flex:1; min-width:0; background:var(--surface2); color:var(--ink); border:1px solid var(--border-dim);
                padding:6px 10px; font:inherit;"
-        onkeydown="if(event.key==='Enter')hfSearch()">
+        onkeydown="if(event.key==='Enter'){event.preventDefault();hfSearch();}">
       <button class="primary" onclick="hfSearch()">Search</button>
     </div>
-    <div class="tabs" style="margin-bottom:8px;">
+    <div class="tabs" style="margin-bottom:8px; flex-wrap:wrap;">
       <button id="hfs-trending" onclick="hfSetSort('trending')">🔥 trending</button>
       <button id="hfs-downloads" onclick="hfSetSort('downloads')">⬇ top downloads</button>
       <button id="hfs-likes" onclick="hfSetSort('likes')">♥ most liked</button>
     </div>
     <div id="hf-results"></div>
     <div id="hf-files" style="display:none">
-      <div style="display:flex; align-items:center; gap:10px; margin:10px 0 6px;">
+      <div style="display:flex; align-items:center; gap:10px; margin:10px 0 6px; flex-wrap:wrap;">
         <button onclick="hfBack()">‹ back</button>
-        <span class="name" id="hf-repo-name" style="color:var(--cyan); font-weight:700"></span>
+        <span class="name" id="hf-repo-name" style="color:var(--cyan); font-weight:700; overflow-wrap:anywhere; min-width:0"></span>
       </div>
       <div id="hf-filelist"></div>
-      <div style="margin-top:10px; display:flex; gap:10px; align-items:center;">
-        <button class="primary" onclick="hfDownload()">⬇ Queue download</button>
+      <div style="margin-top:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <button class="primary" id="hf-dl" onclick="hfDownload()" disabled>⬇ Queue download</button>
         <span class="sub" id="hf-selinfo"></span>
       </div>
     </div>
@@ -650,55 +750,133 @@
         <div class="barwrap"><div class="bar"><i id="hf-prog-bar"></i></div><span class="barpct" id="hf-prog-pct"></span></div></div>
       <div id="hf-queue"></div>
       <pre class="logbox" id="hf-log"></pre>
-      <button class="danger" id="hf-cancel" onclick="api('/api/hf/cancel','POST',{})">Cancel current</button>
+      <button class="danger" id="hf-cancel" onclick="hfCancelCurrent()">Cancel current</button>
     </div>
   </div>
-</div>
+</dialog>
+<div id="toasts" aria-live="polite"></div>
 
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
 const fmt = (v,d=1) => v==null?"—":Number(v).toFixed(d);
+// every string that reaches innerHTML goes through one of these
+const escH=s=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const escA=s=>escH(s).replace(/"/g,"&quot;").replace(/'/g,"&#39;");
 let modelsCache = [];
 /* llama logs report the .gguf filename; discovery reports folder display
-   names — normalize both and match on prefix in either direction. */
-const norm = s => (s||"").toLowerCase().replace(/\.gguf$/,"").replace(/-gguf$/,"").replace(/[._]/g,"-");
-const fuzzyEq = (a,b) => { a=norm(a); b=norm(b);
-  return !!a && !!b && (a.startsWith(b)||b.startsWith(a)); };
+   names — normalize both. An exact normalised match wins; a prefix match is
+   only trusted when it picks out a single candidate, otherwise sibling quants
+   (…-Q4_K_M / …-Q4_K_M-imat) would all light up. */
+const norm = s => String(s||"").split(/[\\/]/).pop().toLowerCase().replace(/\.gguf$/,"")
+  .replace(/-0*1-of-\d+$/,"").replace(/-gguf$/,"").replace(/[._]/g,"-");
+const prefixEq=(a,b)=>!!a&&!!b&&(a.startsWith(b)||b.startsWith(a));
+function matchModel(label,cands,key=m=>m.name){
+  const n=norm(label); if(!n)return null;
+  const exact=cands.filter(c=>norm(key(c))===n);
+  if(exact.length)return exact[0];
+  const pre=cands.filter(c=>prefixEq(norm(key(c)),n));
+  return pre.length===1?pre[0]:null;
+}
+
+/* ---------- toasts: feedback that doesn't block the page ---------- */
+function toast(msg,kind="",{ms=5000,action,actionLabel}={}){
+  const t=document.createElement("div"); t.className="toast "+kind;
+  t.setAttribute("role",kind==="err"?"alert":"status");
+  const m=document.createElement("span"); m.textContent=msg; t.appendChild(m);
+  if(action){ const b=document.createElement("button"); b.textContent=actionLabel||"undo";
+    b.onclick=()=>{t.remove(); action();}; t.appendChild(b); }
+  const x=document.createElement("button"); x.textContent="✕"; x.setAttribute("aria-label","Dismiss");
+  x.onclick=()=>t.remove(); t.appendChild(x);
+  $("toasts").appendChild(t);
+  if(ms) setTimeout(()=>t.remove(),ms);
+  return t;
+}
+// FastAPI {"detail":..} (string or validation list) or OpenAI {"error":{"message":..}}
+function errText(e,fallback){
+  if(!e)return fallback;
+  if(typeof e==="string")return e;
+  if(e.error)return typeof e.error==="string"?e.error:(e.error.message||JSON.stringify(e.error));
+  if(e.detail)return typeof e.detail==="string"?e.detail:JSON.stringify(e.detail);
+  if(e.message)return e.message;
+  return fallback;
+}
 
 /* ---------- line chart (SVG, crosshair + tooltip) ---------- */
+// history cap and cadence come from /api/config (history_len,
+// sample_interval); these are the defaults an older deck implies
+let HIST_LEN=600, SAMPLE_S=1;
+const durTxt=s=>s>=3600?+(s/3600).toFixed(1)+" h":s>=60?Math.round(s/60)+" min":Math.round(s)+" s";
+// place a fixed-position tooltip near the pointer but never past the viewport
+function placeTip(tt,ev){
+  const pad=8, w=tt.offsetWidth, h=tt.offsetHeight;
+  let x=ev.clientX+14, y=ev.clientY-10;
+  if(x+w>innerWidth-pad) x=Math.max(pad,ev.clientX-14-w);
+  if(y+h>innerHeight-pad) y=Math.max(pad,innerHeight-pad-h);
+  tt.style.left=(x+scrollX)+"px"; tt.style.top=(y+scrollY)+"px";
+}
+// redraw on container resize, debounced — the SVGs are drawn at real pixel
+// size so their text stays ~10px instead of scaling with the viewBox
+function onResize(el,fn){
+  let t=null, w=el.clientWidth;
+  new ResizeObserver(()=>{ if(el.clientWidth===w)return; w=el.clientWidth;
+    clearTimeout(t); t=setTimeout(fn,120); }).observe(el);
+}
 function lineChart(el, seriesDefs, opts={}) {
-  const W=620,H=140,PL=40,PR=8,PT=8,PB=16, ns="http://www.w3.org/2000/svg";
+  const H=140,PL=40,PR=8,PT=8,PB=20, ns="http://www.w3.org/2000/svg";
   const svg=document.createElementNS(ns,"svg");
-  svg.setAttribute("viewBox",`0 0 ${W} ${H}`); el.appendChild(svg);
+  svg.setAttribute("height",H); el.appendChild(svg);
   const tt=$("tt");
   let data={ts:[]}; seriesDefs.forEach(s=>data[s.key]=[]);
+  let visible=null;   // null = every series; else a Set of keys to draw
+  const mk=(tag,attrs,text)=>{const e=document.createElementNS(ns,tag);
+    for(const k in attrs)e.setAttribute(k,attrs[k]); if(text!=null)e.textContent=text; return e;};
+  const LBL="font:10px ui-monospace,monospace;fill:var(--muted)";
   function render(){
+    const W=Math.max(120,el.clientWidth||300);
+    svg.setAttribute("viewBox",`0 0 ${W} ${H}`); svg.setAttribute("width",W);
     const n=data.ts.length; svg.innerHTML=""; if(n<2)return;
-    let ymax=opts.ymax ?? Math.max(1,...seriesDefs.flatMap(s=>data[s.key]))*1.1;
+    const defs=seriesDefs.filter(s=>!visible||visible.has(s.key));
+    const vals=defs.flatMap(s=>data[s.key]).filter(v=>v!=null);
+    let ymax=opts.ymax ?? Math.max(1,...vals)*1.1;
     const x=i=>PL+(W-PL-PR)*i/(n-1), y=v=>PT+(H-PT-PB)*(1-Math.min(v,ymax)/ymax);
     for(let g=0;g<=3;g++){
       const gv=ymax*g/3, gy=y(gv);
-      const ln=document.createElementNS(ns,"line");
-      ln.setAttribute("x1",PL);ln.setAttribute("x2",W-PR);ln.setAttribute("y1",gy);ln.setAttribute("y2",gy);
-      ln.setAttribute("stroke",g===0?"var(--axis)":"var(--grid)");ln.setAttribute("stroke-width","1");
-      svg.appendChild(ln);
-      const tx=document.createElementNS(ns,"text");
-      tx.textContent=gv>=100?Math.round(gv):+gv.toFixed(1);
-      tx.setAttribute("x",PL-6);tx.setAttribute("y",gy+3.5);tx.setAttribute("text-anchor","end");
-      tx.setAttribute("style","font:9.5px ui-monospace,monospace;fill:var(--muted)");
-      svg.appendChild(tx);
+      svg.appendChild(mk("line",{x1:PL,x2:W-PR,y1:gy,y2:gy,"stroke-width":1,
+        stroke:g===0?"var(--axis)":"var(--grid)"}));
+      svg.appendChild(mk("text",{x:PL-6,y:gy+3.5,"text-anchor":"end",style:LBL},
+        gv>=100?Math.round(gv):+gv.toFixed(1)));
     }
-    for(const s of seriesDefs){
-      const pl=document.createElementNS(ns,"polyline");
-      pl.setAttribute("points",data[s.key].map((v,i)=>`${x(i).toFixed(1)},${y(v||0).toFixed(1)}`).join(" "));
-      pl.setAttribute("fill","none");pl.setAttribute("stroke",s.color);
-      pl.setAttribute("stroke-width","2");pl.setAttribute("stroke-linejoin","round");
-      svg.appendChild(pl);
+    // time ticks back from "now": pick a round step giving ≤ ~5 labels
+    const span=data.ts[n-1]-data.ts[0];
+    if(span>0){
+      const maxTicks=Math.max(2,Math.floor((W-PL-PR)/70));
+      const step=[5,10,15,30,60,120,300,600,900,1800,3600,7200,14400,21600,43200]
+        .find(s=>span/s<=maxTicks) || span;
+      // index of the first sample at or after time t (samples are ordered)
+      const at=t=>{let lo=0,hi=n-1;while(lo<hi){const m=(lo+hi)>>1;
+        if(data.ts[m]<t)lo=m+1;else hi=m;}return lo;};
+      for(let k=0;k*step<=span+0.5;k++){
+        const xi=x(at(data.ts[n-1]-k*step));
+        const lab=k===0?"now":"-"+durTxt(k*step).replace(" ","");
+        svg.appendChild(mk("line",{x1:xi,x2:xi,y1:H-PB,y2:H-PB+3,stroke:"var(--axis)"}));
+        svg.appendChild(mk("text",{x:xi,y:H-PB+13,style:LBL,
+          "text-anchor":k===0?"end":(xi-PL<20?"start":"middle")},lab));
+      }
     }
-    const ch=document.createElementNS(ns,"line");
-    ch.setAttribute("y1",PT);ch.setAttribute("y2",H-PB);
-    ch.setAttribute("stroke","var(--muted)");ch.setAttribute("stroke-dasharray","3 3");
+    for(const s of defs){
+      // null = unknown: break the line there rather than drawing a fake 0
+      let seg=[];
+      const flush=()=>{ if(seg.length>1)svg.appendChild(mk("polyline",{points:seg.join(" "),
+          fill:"none",stroke:s.color,"stroke-width":2,"stroke-linejoin":"round"}));
+        else if(seg.length===1){const [cx,cy]=seg[0].split(",");
+          svg.appendChild(mk("circle",{cx,cy,r:1.5,fill:s.color}));}
+        seg=[]; };
+      data[s.key].forEach((v,i)=>{ if(v==null)flush();
+        else seg.push(`${x(i).toFixed(1)},${y(v).toFixed(1)}`); });
+      flush();
+    }
+    const ch=mk("line",{y1:PT,y2:H-PB,stroke:"var(--muted)","stroke-dasharray":"3 3"});
     ch.style.display="none"; svg.appendChild(ch);
     svg.onmousemove=ev=>{
       const r=svg.getBoundingClientRect();
@@ -706,16 +884,28 @@ function lineChart(el, seriesDefs, opts={}) {
       ch.setAttribute("x1",x(i));ch.setAttribute("x2",x(i));ch.style.display="";
       tt.style.display="block";
       tt.innerHTML=`<div style="color:var(--muted)">${Math.round(data.ts[n-1]-data.ts[i])}s ago</div>`+
-        seriesDefs.map(s=>`<div><span style="color:${s.color}">●</span> ${s.label}: <b style="color:var(--ink)">${fmt(data[s.key][i])}${opts.unit||""}</b></div>`).join("");
-      tt.style.left=(ev.pageX+14)+"px"; tt.style.top=(ev.pageY-10)+"px";
+        defs.map(s=>`<div><span style="color:${s.color}">●</span> ${escH(s.label)}: <b style="color:var(--ink)">${fmt(data[s.key][i])}${escH(opts.unit||"")}</b></div>`).join("");
+      placeTip(tt,ev);
     };
     svg.onmouseleave=()=>{ch.style.display="none";tt.style.display="none";};
   }
+  let raf=0, dirty=false;   // coalesce bursts; dirty = hidden, draw when shown
+  const draw=()=>{ if(!raf) raf=requestAnimationFrame(()=>{raf=0;
+    if(el.offsetParent!==null) render(); else dirty=true;}); };
+  onResize(el,render);
   return {
-    seed(ts,o){data.ts=ts.slice();seriesDefs.forEach(s=>data[s.key]=(o[s.key]||[]).slice());render();},
-    push(ts,o){data.ts.push(ts);seriesDefs.forEach(s=>data[s.key].push(o[s.key]??0));
-      if(data.ts.length>600){data.ts.shift();seriesDefs.forEach(s=>data[s.key].shift());}render();},
-    setYmax(v){ if(v&&opts.ymax!==v){opts.ymax=v;render();} },
+    seed(ts,o){data.ts=(ts||[]).slice();seriesDefs.forEach(s=>data[s.key]=(o[s.key]||[]).slice());
+      const cap=HIST_LEN; if(data.ts.length>cap){const k=data.ts.length-cap;
+        data.ts.splice(0,k); seriesDefs.forEach(s=>data[s.key].splice(0,k));}
+      draw();},
+    push(ts,o){data.ts.push(ts);seriesDefs.forEach(s=>data[s.key].push(o[s.key]===undefined?null:o[s.key]));
+      while(data.ts.length>HIST_LEN){data.ts.shift();seriesDefs.forEach(s=>data[s.key].shift());}draw();},
+    setYmax(v){ if(v&&opts.ymax!==v){opts.ymax=v;draw();} },
+    setVisible(keys){ const k=keys?[...keys].sort().join():null;
+      if(k!==(visible?[...visible].sort().join():null)){visible=keys?new Set(keys):null;draw();} },
+    has(key){ return data[key]&&data[key].some(v=>v!=null&&v>0); },
+    redraw(){ if(dirty){dirty=false;draw();} },
+    destroy(){ svg.remove(); },
   };
 }
 const chUtil=lineChart($("ch-util"),[{key:"cpu",label:"CPU",color:"var(--s1)"},{key:"gpu",label:"GPU",color:"var(--s2)"}],{ymax:100,unit:"%"});
@@ -734,19 +924,36 @@ let chKv=null;
     return ((t&&t.childNodes[0]&&t.childNodes[0].textContent)||"panel")
       .trim().toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");};
   panels.forEach(p=>p.dataset.panel=slug(p));
+  // panels renamed since a layout may have been saved: old slug -> new
+  const RENAMED={model:"cpu"};
   try{  // restore saved order; unknown/new panels keep their markup position
     const saved=JSON.parse(localStorage.getItem(LAYOUT_KEY)||"null");
     if(saved){
       const byId={}; panels.forEach(p=>byId[p.dataset.panel]=p);
-      saved.forEach((ids,ci)=>(ids||[]).forEach(id=>{
+      saved.forEach((ids,ci)=>(ids||[]).forEach(id=>{ id=RENAMED[id]||id;
         if(byId[id]&&cols[ci]) cols[ci].appendChild(byId[id]);}));
     }
   }catch(e){}
-  const save=()=>localStorage.setItem(LAYOUT_KEY,JSON.stringify(
-    cols.map(c=>[...c.children].filter(x=>x.dataset.panel).map(x=>x.dataset.panel))));
+  // storage can be full, blocked or absent (private windows) — layout is a
+  // convenience, so a failed save is silently dropped
+  const save=()=>{try{localStorage.setItem(LAYOUT_KEY,JSON.stringify(
+    cols.map(c=>[...c.children].filter(x=>x.dataset.panel).map(x=>x.dataset.panel))));}catch(e){}};
+  window.resetLayout=()=>{try{localStorage.removeItem(LAYOUT_KEY);}catch(e){} location.reload();};
   let dragEl=null;
   panels.forEach(p=>{
     const h=p.querySelector("h2");
+    // visible grip (hover/focus) so the drag is discoverable; with focus,
+    // ↑/↓ move the panel for keyboard users
+    const g=document.createElement("span"); g.className="grip"; g.textContent="⠿";
+    g.title="Drag to reorder (or focus and press ↑/↓)"; g.tabIndex=0;
+    g.setAttribute("role","button"); g.setAttribute("aria-label","Reorder panel: use up and down arrows");
+    g.onkeydown=e=>{
+      if(e.key!=="ArrowUp"&&e.key!=="ArrowDown")return; e.preventDefault();
+      const sib=e.key==="ArrowUp"?p.previousElementSibling:p.nextElementSibling;
+      if(!sib||!sib.dataset.panel)return;
+      e.key==="ArrowUp"?p.parentNode.insertBefore(p,sib):p.parentNode.insertBefore(sib,p);
+      g.focus(); save(); };
+    h.appendChild(g);
     h.addEventListener("mousedown",e=>{
       if(e.target.closest("button,select,input,a"))return;
       p.draggable=true;});
@@ -777,37 +984,79 @@ let chKv=null;
 let CFG={backends:[],llama_ports:[8081],kv_chart_ports:[8081],proxy_port:8080,
          logs:["llama","launch"],links:[],defaults:{},hf_available:false};
 const KV_COLORS=["var(--s1)","var(--s2)","var(--s3)","var(--s4)"];
+let cfgApplied=false, kvPortsSig="";
+const kvSeen=new Set();   // KV chart ports that have had an instance on them
 function applyConfig(cfg){
   CFG=Object.assign(CFG,cfg||{});
-  // backend picker
-  const bs=$("backend-sel");
+  const first=!cfgApplied; cfgApplied=true;
+  // chart cap + cadence (older decks don't send these: keep 600 × 1 s)
+  if(CFG.history_len>0) HIST_LEN=+CFG.history_len;
+  if(CFG.sample_interval>0) SAMPLE_S=+CFG.sample_interval;
+  const hz=SAMPLE_S>=1?`every ${+SAMPLE_S.toFixed(1)} s`:`${+(1/SAMPLE_S).toFixed(1)} Hz`;
+  $("hist-meta").textContent=`${durTxt(HIST_LEN*SAMPLE_S)} · ${SAMPLE_S===1?"1 Hz":hz}`;
+  // backend picker: keep the user's current pick across a re-apply
+  const bs=$("backend-sel"), bcur=first?null:bs.value;
   bs.innerHTML=(CFG.backends||[]).map(b=>
-    `<option value="${escA(b)}"${b===CFG.default_backend?" selected":""}>backend: ${escH(b)}</option>`).join("")
+    `<option value="${escA(b)}"${b===(bcur||CFG.default_backend)?" selected":""}>backend: ${escH(b)}</option>`).join("")
     || '<option value="">no llama-server configured</option>';
-  // launch defaults
+  // launch defaults: only on the first apply — a settings save must not
+  // reset what the user has typed into the launch form
   const d=CFG.defaults||{};
-  if(d.ctx) $("ctx-in").value=d.ctx;
-  if(d.slots) $("slots-sel").value=String(d.slots);
-  if(d.spec) $("spec-sel").value=d.spec;
-  if(d.thinking) $("think-sel").value=d.thinking;
+  if(first){
+    if(d.ctx) $("ctx-in").value=d.ctx;
+    if(d.slots) $("slots-sel").value=String(d.slots);
+    if(d.spec) $("spec-sel").value=d.spec;
+    if(d.thinking) $("think-sel").value=d.thinking;
+  }
   ctxPerSlot();
   // multimodal panel
   $("mm-proxy").textContent="proxy :"+CFG.proxy_port;
   $("mm-links").innerHTML=(CFG.links||[]).map(l=>
-    `<button onclick="window.open('http://'+location.hostname+':${l.port}/','_blank')">`
+    `<button onclick="window.open('http://'+location.hostname+':${parseInt(l.port)||0}/','_blank')">`
     +`Open ${escH(l.label)} ↗</button>`).join("");
   $("hf-open").style.display=CFG.hf_available?"":"none";
-  // KV chart: one series per llama port the deck actually watches
+  // KV chart: one series per llama port the deck actually watches. Rebuilt
+  // only when that port list changes (a re-apply used to stack a second SVG)
   const ports=CFG.kv_chart_ports||[];
-  $("kv-legend").innerHTML=ports.map((p,i)=>
-    `<span><i style="background:${KV_COLORS[i]}"></i>:${p}</span>`).join("")
-    +'<span class="sub" style="margin-left:auto">KV cache fill %</span>';
-  chKv=lineChart($("ch-kv"),ports.map((p,i)=>
-    ({key:"kv"+(i+1),label:":"+p,color:KV_COLORS[i]})),{ymax:100,unit:"%"});
-  // log tabs
-  $("log-tabs").innerHTML=(CFG.logs||[]).map(x=>
-    `<button id="tab-${x}" onclick="setLog('${x}')">${escH(x)}</button>`).join("");
+  const sig=JSON.stringify(ports);
+  if(sig!==kvPortsSig){
+    kvPortsSig=sig;
+    if(chKv) chKv.destroy();
+    $("ch-kv").innerHTML=""; $("kv-legend").dataset.sig="-";
+    chKv=lineChart($("ch-kv"),ports.map((p,i)=>
+      ({key:"kv"+(i+1),label:":"+p,color:KV_COLORS[i%KV_COLORS.length]})),{ymax:100,unit:"%"});
+    if(!first) api("/api/state","GET",undefined,{quiet:true}).then(d=>seedKv(d.history)).catch(()=>{});
+  }
+  kvLegend();
+  // log tabs: build with DOM nodes (names are data), keep the active tab
+  const lt=$("log-tabs"); lt.innerHTML="";
+  for(const x of CFG.logs||[]){
+    const b=document.createElement("button"); b.id="tab-"+x; b.textContent=x;
+    b.onclick=()=>setLog(x); lt.appendChild(b);
+  }
   if(!(CFG.logs||[]).includes(curLog)) curLog=(CFG.logs||["launch"])[0];
+  if(!first) setLog(curLog);
+}
+function seedKv(h){
+  if(!chKv||!h)return;
+  const o={}; (CFG.kv_chart_ports||[]).forEach((p,i)=>o["kv"+(i+1)]=h["kv"+(i+1)]);
+  chKv.seed(h.ts,o);
+  (CFG.kv_chart_ports||[]).forEach((p,i)=>{ if(chKv.has("kv"+(i+1))) kvSeen.add(p); });
+  kvLegend();
+}
+// the legend (and the drawn series) list only ports that have had an
+// instance — four flat zero lines on top of each other told nobody anything
+function kvLegend(){
+  const ports=CFG.kv_chart_ports||[];
+  const on=ports.map((p,i)=>[p,i]).filter(([p])=>kvSeen.has(p));
+  const sig=on.map(([p])=>p).join();
+  if($("kv-legend").dataset.sig===sig)return;
+  $("kv-legend").dataset.sig=sig;
+  $("kv-legend").innerHTML=(on.length?on.map(([p,i])=>
+    `<span><i style="background:${KV_COLORS[i%KV_COLORS.length]}"></i>:${escH(p)}</span>`).join("")
+    :'<span class="sub">no llama instance on the charted ports yet</span>')
+    +'<span class="sub" style="margin-left:auto">KV cache fill %</span>';
+  if(chKv) chKv.setVisible(on.map(([,i])=>"kv"+(i+1)));
 }
 
 /* ---------- helpers ---------- */
@@ -818,11 +1067,14 @@ function setTheme(t){
 }
 $("theme-sel").value=document.documentElement.dataset.theme||"neuraldeck";
 async function api(url,method="GET",body,{quiet=false}={}){
-  const r=await fetch(url,{method,headers:body?{"Content-Type":"application/json"}:{},
-    body:body?JSON.stringify(body):undefined});
+  let r;
+  try{ r=await fetch(url,{method,headers:body?{"Content-Type":"application/json"}:{},
+    body:body?JSON.stringify(body):undefined}); }
+  catch(e){ if(!quiet) toast(`${url}: dashboard unreachable`,"err"); throw e; }
   if(!r.ok){const e=await r.json().catch(()=>({detail:r.statusText}));
-    if(!quiet) alert(`${url}: ${e.detail||r.status}`);
-    throw new Error(e.detail||url);}
+    const msg=errText(e,String(r.status));
+    if(!quiet) toast(`${url.split("?")[0]}: ${msg}`,"err",{ms:9000});
+    const err=new Error(msg); err.status=r.status; err.body=e; throw err;}
   return r.json();
 }
 const setBar=(bid,pid,pct)=>{ $(bid).style.width=Math.min(100,pct||0)+"%";
@@ -830,7 +1082,7 @@ const setBar=(bid,pid,pct)=>{ $(bid).style.width=Math.min(100,pct||0)+"%";
 
 /* ---------- snapshot rendering ---------- */
 function renderSnapshot(s){
-  $("hw-line").textContent=`${s.cpu.name||""}`;
+  $("hw-line").textContent=`${s.cpu.name||""}`; $("hw-line").title=s.cpu.name||"";
   const up=s.system.uptime_s;
   $("uptime").textContent=`${Math.floor(up/3600)}h ${Math.floor(up%3600/60)}m`;
 
@@ -850,7 +1102,11 @@ function renderSnapshot(s){
 
   // GPU panel
   $("g-name").textContent=s.gpu.name||"—";
-  $("g-temp").textContent=s.gpu.temp!=null?fmt(s.gpu.temp)+"°C (edge)":"—";
+  // "Unified" / "edge" are APU (amdgpu) notions — a discrete card has its
+  // own VRAM and reports a single core temperature
+  const apu=!!s.gpu.gtt_total_gb||(s.gpu.sources||[]).some(x=>/amdgpu/.test(x));
+  $("vram-lbl").textContent=apu&&s.gpu.gtt_total_gb?"VRAM (Unified)":"VRAM";
+  $("g-temp").textContent=s.gpu.temp!=null?fmt(s.gpu.temp)+"°C"+(apu?" (edge)":""):"—";
   // a row with no counter behind it on this hardware is hidden, not left
   // showing a dash forever
   const grow=(id,val,txt)=>{
@@ -906,7 +1162,7 @@ function renderSnapshot(s){
   // models (e.g. 26B-A4B) only the active experts are read each token, so
   // parse "<total>B-A<active>B" from the name and scale the bytes down.
   $("rl-peak").textContent="peak "+s.gpu.peak_bw_gbs+" GB/s";
-  const cur=modelsCache.find(m=>fuzzyEq(m.name,ll.model));
+  const cur=matchModel(ll.model,modelsCache);
   let gb=cur?cur.vram_bytes/1073741824:null, moe="";
   if(cur&&gb){
     const tot=/(\d+(?:\.\d+)?)B/.exec(cur.name), act=/-A(\d+(?:\.\d+)?)B/i.exec(cur.name);
@@ -919,21 +1175,33 @@ function renderSnapshot(s){
   $("rl-now").textContent=dec?fmt(dec)+" tok/s":"N/A";
   const eff=(ceil&&dec)?dec/ceil*100:0;
   setBar("b-roof","p-roof",eff);
+  // above the ceiling is only physical when speculation verifies several
+  // tokens per weight read; without it the configured peak is wrong
+  const specOn=ll.draft_rate!=null||(s.llama_instances||[]).some(i=>i.spec);
+  const badCeil=dec&&eff>110&&!specOn;
   $("rl-verdict").textContent=!dec?"N/A":
+    badCeil?"above the theoretical ceiling — the peak bandwidth setting looks too low":
     eff>110?"above ceiling — speculative decode amortizes weight reads":
     eff>65?"memory-bound (near ceiling)":eff>30?"balanced":"compute/overhead-bound";
+  $("rl-verdict").style.color=badCeil?"var(--yellow)":"";
+  $("rl-note").style.display=badCeil?"":"none";
+  if(badCeil&&!$("rl-note").firstChild){
+    $("rl-note").innerHTML=`Decode can't beat the memory roofline without speculation, so the
+      configured peak (${escH(s.gpu.peak_bw_gbs)} GB/s) is probably not this GPU's. `
+      +'<button class="rl-fix" onclick="gotoSetting(\'peak_bw_gbs\')">Set Peak memory bandwidth →</button>';
+  } else if(!badCeil) $("rl-note").innerHTML="";
 
   // io / procs
   $("storage").innerHTML=(s.disk.mounts||[]).map(m=>`
-    <div class="meter"><div class="row"><b>${m.label}</b>
+    <div class="meter"><div class="row"><b>${escH(m.label)}</b>
       <span>${Math.round(m.used_gb)} / ${Math.round(m.total_gb)} GB · ${Math.round(m.free_gb)} free</span></div>
-    <div class="barwrap"><div class="bar"><i style="width:${m.pct}%"></i></div>
+    <div class="barwrap"><div class="bar"><i style="width:${Math.min(100,+m.pct||0)}%"></i></div>
       <span class="barpct">${fmt(m.pct)}%</span></div></div>`).join("");
   $("io-disk").textContent=`${fmt(s.disk.read_mbs)} / ${fmt(s.disk.write_mbs)} MB/s`;
   $("io-net").textContent=`${fmt(s.net.up_mbs)} / ${fmt(s.net.down_mbs)} MB/s`;
   $("io-threads").textContent=s.system.threads;
   $("procs").innerHTML=(s.system.top||[]).slice(0,5).map(p=>
-    `<tr><td>${p.name}</td><td class="num">${fmt(p.cpu)}%</td><td class="num">${fmt(p.mem)}%</td></tr>`).join("");
+    `<tr><td>${escH(p.name)}</td><td class="num">${fmt(p.cpu)}%</td><td class="num">${fmt(p.mem)}%</td></tr>`).join("");
 
   // servers panel + model serving dots + prompt-lab model list
   renderServers(s);
@@ -949,8 +1217,22 @@ function renderSnapshot(s){
   $("x-errs").textContent=x.errors??"—";
   $("x-last").textContent=x.last||"—";
 
-  // inference
+  // inference: these stats come from the newest llama log, i.e. one
+  // instance — say which, and list the rest compactly
   $("inf-build").textContent=ll.build||"";
+  const insts=s.llama_instances||[];
+  const infI=ll.model?matchModel(ll.model,insts,i=>i.model_path||i.alias):null;
+  $("inf-which").textContent=!insts.length?"no instance running":
+    infI?`describes :${infI.port}${insts.length>1?` (newest log) — ${insts.length} instances running`:""}`
+    :insts.length>1?`newest log — ${insts.length} instances running`:"";
+  const isig=JSON.stringify(insts.map(i=>[i.port,i.alias,i.kv_pct,i.kv_tokens,i.ctx_total]));
+  if(insts.length>1&&$("inf-insts").dataset.sig!==isig){
+    $("inf-insts").dataset.sig=isig;
+    $("inf-insts").innerHTML=insts.map(i=>`<div class="instrow"><span class="port">:${escH(i.port)}</span>`
+      +`<span style="color:var(--ink-2);overflow-wrap:anywhere">${escH(i.alias||"?")}</span>`
+      +(i.ctx_total?`<span>ctx ${escH(ktok(i.ctx_total))}</span>`:"")
+      +(i.kv_pct!=null?`<span>kv ${fmt(i.kv_pct)}%</span>`:"")+`</div>`).join("");
+  } else if(insts.length<=1){ $("inf-insts").innerHTML=""; $("inf-insts").dataset.sig=""; }
   $("inf-health").textContent=s.services.llama.up?"OK":"DOWN";
   $("inf-health").style.color=s.services.llama.up?"var(--green)":"var(--critical)";
   $("inf-status").textContent=ll.live_active?"Generating":"Idle";
@@ -974,22 +1256,31 @@ function renderSnapshot(s){
 const SVC_LABELS={llama:"llama-server",proxy:"multimodal proxy",whisper:"whisper-server",comfy:"ComfyUI",tts:"TTS server"};
 const svcLabel=(name,svc)=>(svc&&svc.label)||SVC_LABELS[name]||name;
 const rssFmt=r=>r>1073741824?fmt(r/1073741824)+"G":Math.round((r||0)/1048576)+"M";
-function serverRow(host,{port,upState,label,pid,cpu,rss,sub,stop,start}){
+// pending Stop/Start clicks, keyed by row: shown as "stopping…" until the
+// state flips (or 30 s pass), so a click is visibly acknowledged
+const svcPending={};
+function svcAct(key,verb,url,wasUp){
+  svcPending[key]={verb,wasUp,t:Date.now()}; renderServers(lastSnap);
+  api(url,"POST").then(()=>toast(`${key}: ${verb==="stopping"?"stop":"start"} requested`,"ok",{ms:3000}))
+    .catch(()=>{ delete svcPending[key]; renderServers(lastSnap); });
+}
+function serverRow(host,{key,port,upState,label,detail,stop,start}){
   const d=document.createElement("div"); d.className="srow";
   const top=document.createElement("div"); top.className="srow-top";
-  top.innerHTML=`<span class="port">:${port}</span>
+  top.innerHTML=`<span class="port">:${escH(port)}</span>
     <span class="${upState?"state-up":"state-down"}">${upState?"running":"stopped"}</span>
-    <span class="meta">${label}</span>
+    <span class="meta" style="overflow-wrap:anywhere;min-width:0">${escH(label)}</span>
     <span class="spacer"></span>`;
-  if(stop){ const b=document.createElement("button"); b.textContent="Stop"; b.className="danger";
-    b.onclick=stop; top.appendChild(b); }
-  if(start){ const b=document.createElement("button"); b.textContent="Start";
-    b.onclick=start; top.appendChild(b); }
+  const pend=svcPending[key];
+  const mkBtn=(txt,cls,fn,busy)=>{ const b=document.createElement("button");
+    b.textContent=busy||txt; if(cls)b.className=cls; b.disabled=!!busy;
+    b.setAttribute("aria-label",`${txt} ${label} on port ${port}`);
+    b.onclick=fn; top.appendChild(b); };
+  if(stop) mkBtn("Stop","danger",stop,pend&&pend.verb==="stopping"?"stopping…":null);
+  if(start) mkBtn("Start","",start,pend&&pend.verb==="starting"?"starting…":null);
   d.appendChild(top);
-  const detail=[sub,upState&&pid!=null
-    ?`pid ${pid} · ${fmt(cpu)}% · ${rssFmt(rss)}`:""].filter(Boolean).join(" · ");
-  if(detail){ const s=document.createElement("div"); s.className="ssub";
-    s.innerHTML=detail; d.appendChild(s); }
+  const s=document.createElement("div"); s.className="ssub";
+  s.innerHTML=detail; s.dataset.v=detail; if(!detail)s.style.display="none"; d.appendChild(s);
   host.appendChild(d);
 }
 // exact when the value is a clean multiple of 1024, else full digits
@@ -1002,47 +1293,78 @@ function llamaSub(i){
       ? `ctx ${ktok(i.ctx_total)} \u00f7${i.slots} slots = `
         +`<span style="color:var(--yellow)">${ktok(i.ctx_per_req)}/req</span>`
       : `ctx ${ktok(i.ctx_total)} \u00b7 1 slot`);
+  // null = unknown (C6): omit rather than show a made-up 0
   if(i.kv_tokens!=null)
-    parts.push(`kv ${i.kv_tokens.toLocaleString()}`
+    parts.push(`kv ${Number(i.kv_tokens).toLocaleString()}`
       +(i.kv_pct!=null?` (${fmt(i.kv_pct)}%)`:""));
+  else if(i.kv_pct!=null) parts.push(`kv ${fmt(i.kv_pct)}%`);
   // what this instance was actually launched with — the features are only
   // knowable from its flags, not from any runtime endpoint
   const feats=[];
-  if(i.spec) feats.push(`<span style="color:var(--green)" title="${i.draft_model||"speculative decoding"}">`
-    +`\u26a1${String(i.spec).replace(/^draft-/,"")}</span>`);
-  if(i.mmproj) feats.push(`<span title="${i.mmproj}">\ud83d\udc41 vision</span>`);
+  if(i.spec) feats.push(`<span style="color:var(--green)" title="${escA(i.draft_model||"speculative decoding")}">`
+    +`\u26a1${escH(String(i.spec).replace(/^draft-/,""))}</span>`);
+  if(i.mmproj) feats.push(`<span title="${escA(i.mmproj)}">\ud83d\udc41 vision</span>`);
   if(i.embeddings) feats.push("\ud83e\uddec embed");
-  if(i.kv_type) feats.push(`cache ${i.kv_type}`);
+  if(i.kv_type) feats.push(`cache ${escH(i.kv_type)}`);
   if(i.reasoning_budget===0) feats.push("think off");
   else if(i.reasoning_budget>0) feats.push(`think ${ktok(i.reasoning_budget)}`);
   if(feats.length) parts.push(feats.join(" \u00b7 "));
   return parts.join(" \u00b7 ");
 }
+/* Rows are rebuilt only when their structure (which rows, up/down, which
+   buttons, pending clicks) changes; per-tick numbers (pid/cpu/rss/kv) are
+   patched into the existing rows, so a Stop click can't land on a button
+   that was replaced a moment ago. */
+let lastSnap=null, srvSig="";
 function renderServers(s){
-  const host=$("servers"); host.innerHTML=""; let up=0;
-  const sep=t=>{const d=document.createElement("div");
-    d.className="grpsep"; d.textContent=t; host.appendChild(d);};
+  if(!s)return; lastSnap=s;
   const inst=s.llama_instances||[];
-  // running first: llama instances, then the other services that are up
-  for(const i of inst){ up++;
-    serverRow(host,{port:i.port,upState:true,
-      label:`llama-server \u00b7 ${i.backend}${i.alias?" \u00b7 "+i.alias.slice(0,34):""}`,
-      sub:llamaSub(i), pid:i.pid,cpu:i.cpu,rss:i.rss,
-      stop:()=>{if(confirm(`Stop llama on :${i.port}?`))api(`/api/llama/${i.port}/stop`,"POST");}});
-  }
   const others=Object.entries(s.services||{}).filter(([n])=>n!=="llama");
-  const svcRow=([name,svc])=>serverRow(host,{port:svc.port,upState:svc.up,
-    label:svcLabel(name,svc), pid:svc.pid,cpu:svc.cpu,rss:svc.rss,
-    sub:(!svc.up&&svc.can_start===false)?"not installed here — start it yourself":"",
-    stop:svc.up?()=>{if(confirm(`Stop ${svcLabel(name,svc)}?`))api(`/api/service/${name}/stop`,"POST");}:null,
-    start:(!svc.up&&svc.can_start!==false)?()=>api(`/api/service/${name}/start`,"POST"):null});
-  for(const e of others.filter(([,v])=>v.up)){ up++; svcRow(e); }
-  const down=others.filter(([,v])=>!v.up);
-  if(down.length||!inst.length) sep("not running");
-  if(!inst.length) serverRow(host,{port:(CFG.llama_ports||[8081])[0],
-    upState:false,label:"llama-server"});
-  down.forEach(svcRow);
-  $("srv-count").textContent=up+" running";
+  // expire pending clicks once the state flipped, or after 30 s
+  const upNow={}; inst.forEach(i=>upNow["llama:"+i.port]=true);
+  others.forEach(([n,v])=>upNow[n]=!!v.up);
+  for(const k in svcPending){ const p=svcPending[k];
+    if(!!upNow[k]!==p.wasUp||Date.now()-p.t>30000) delete svcPending[k]; }
+  const rows=[];
+  const perf=(up,pid,cpu,rss)=>up&&pid!=null?`pid ${escH(pid)} · ${fmt(cpu)}% · ${rssFmt(rss)}`:"";
+  // running first: llama instances, then the other services that are up
+  for(const i of inst){
+    const key="llama:"+i.port;
+    rows.push({key,port:i.port,upState:true,
+      label:`llama-server · ${i.backend||"?"}${i.alias?" · "+i.alias.slice(0,34):""}`,
+      detail:[llamaSub(i),perf(true,i.pid,i.cpu,i.rss)].filter(Boolean).join(" · "),
+      stop:()=>{if(confirm(`Stop llama on :${i.port}?\n${i.alias||""}`))
+        svcAct(key,"stopping",`/api/llama/${i.port}/stop`,true);}});
+  }
+  const svcRow=([name,svc])=>({key:name,port:svc.port,upState:svc.up,label:svcLabel(name,svc),
+    detail:[(!svc.up&&svc.can_start===false)?"not installed here — start it yourself":"",
+      perf(svc.up,svc.pid,svc.cpu,svc.rss)].filter(Boolean).join(" · "),
+    stop:svc.up?()=>{if(confirm(`Stop ${svcLabel(name,svc)}?`))
+      svcAct(name,"stopping",`/api/service/${encodeURIComponent(name)}/stop`,true);}:null,
+    start:(!svc.up&&svc.can_start!==false)?()=>svcAct(name,"starting",
+      `/api/service/${encodeURIComponent(name)}/start`,false):null});
+  const upSvc=others.filter(([,v])=>v.up), down=others.filter(([,v])=>!v.up);
+  upSvc.forEach(e=>rows.push(svcRow(e)));
+  const sepAt=rows.length;
+  if(!inst.length) rows.push({key:"llama:none",port:(CFG.llama_ports||[8081])[0],
+    upState:false,label:"llama-server",detail:""});
+  down.forEach(e=>rows.push(svcRow(e)));
+  const sig=JSON.stringify(rows.map(r=>[r.key,r.port,r.upState,r.label,!!r.stop,!!r.start,
+    svcPending[r.key]&&svcPending[r.key].verb]))+sepAt;
+  const host=$("servers");
+  if(sig!==srvSig){
+    srvSig=sig; host.innerHTML="";
+    rows.forEach((r,n)=>{
+      if(n===sepAt&&(down.length||!inst.length)){ const d=document.createElement("div");
+        d.className="grpsep"; d.textContent="not running"; host.appendChild(d); }
+      serverRow(host,r);
+    });
+  } else {
+    const subs=host.querySelectorAll(".srow .ssub");
+    rows.forEach((r,n)=>{ const el=subs[n]; if(!el||el.dataset.v===r.detail)return;
+      el.dataset.v=r.detail; el.innerHTML=r.detail; el.style.display=r.detail?"":"none"; });
+  }
+  $("srv-count").textContent=(inst.length+upSvc.length)+" running";
 }
 
 /* ---------- model manager ---------- */
@@ -1054,21 +1376,34 @@ function ctxPerSlot(){
     ctx?`= ${Math.floor(ctx/slots).toLocaleString()} tok/request`:"";
 }
 let servingPorts={};  // model display name -> llama port currently serving it
+let launching=false, launchPoll=null;
 async function loadModels(){
-  const d=await api("/api/models");
-  modelsCache=d.models;
+  let d;
+  try{ d=await api("/api/models","GET",undefined,{quiet:true}); }
+  catch(e){ if(!modelsCache.length) $("models").innerHTML=
+    '<div class="advisory">could not list models — retrying on the next change</div>'; throw e; }
+  modelsCache=d.models||[];
+  $("mm-count").textContent=modelsCache.length?modelsCache.length+" found":"";
+  servingPorts={}; updateServing(lastSnap&&lastSnap.llama_instances);
   renderModels();
 }
+/* Each instance maps to at most one model: the alias the deck launched it
+   with is the model's name, so an exact match settles it; otherwise fall
+   back to the alias, then the -m file, through matchModel (exact, or a
+   prefix only when it is unambiguous). */
 function updateServing(instances){
   const map={};
-  for(const m of modelsCache){
-    const inst=(instances||[]).find(i=>i.alias&&fuzzyEq(i.alias,m.name));
-    if(inst) map[m.name]=inst.port;
+  for(const i of instances||[]){
+    const m=modelsCache.find(x=>x.name===i.alias)
+      || matchModel(i.alias,modelsCache) || matchModel(i.model_path,modelsCache);
+    if(m&&!(m.name in map)) map[m.name]=i.port;
   }
   if(JSON.stringify(map)!==JSON.stringify(servingPorts)){ servingPorts=map; renderModels(); }
 }
 function renderModels(){
   const host=$("models"); host.innerHTML="";
+  if(!modelsCache.length){ host.innerHTML='<div class="advisory">no models found in the model '
+    +'directories — add a folder in Settings'+(CFG.hf_available?', or use ⬇ Get models':'')+'</div>'; return; }
   // models currently being served float to the top, rest keep discovery order
   const ordered=[...modelsCache].sort((a,b)=>
     (servingPorts[b.name]?1:0)-(servingPorts[a.name]?1:0));
@@ -1082,40 +1417,72 @@ function renderModels(){
     wasServing=!!port;
     const g=(m.vram_bytes/1073741824).toFixed(1);
     const icons=[
-      m.vision?'<span title="vision — image input (mmproj)">👁</span>':null,
-      m.vision?'<span title="video — frames extracted by the proxy">🎬</span>':null,
-      m.mtp?'<span title="MTP/NextN speculative decoding">⚡</span>':null,
-      m.thinking?'<span title="thinking/reasoning — chat template has think markup; set the level at launch">💭</span>':null,
-      m.embed?'<span title="embedding model (--embeddings)">🧬</span>':null,
+      m.vision?'<span title="vision — image input (mmproj)">👁<span class="vh"> vision</span></span>':null,
+      m.vision?'<span title="video — frames extracted by the proxy">🎬<span class="vh"> video</span></span>':null,
+      m.mtp?'<span title="MTP/NextN speculative decoding">⚡<span class="vh"> MTP</span></span>':null,
+      m.thinking?'<span title="thinking/reasoning — chat template has think markup; set the level at launch">💭<span class="vh"> thinking</span></span>':null,
+      m.embed?'<span title="embedding model (--embeddings)">🧬<span class="vh"> embedding</span></span>':null,
     ].filter(Boolean).join(" ");
     const d=document.createElement("div"); d.className="mrow";
     d.innerHTML=`<div class="top">
-        <span class="dot ${port?"on":""}">${port?"●":"○"}</span>
-        <span class="name">${m.name}</span>
+        <span class="dot ${port?"on":""}" aria-hidden="true">${port?"●":"○"}</span>
+        <span class="name">${escH(m.name)}</span>
         <span class="micons">${icons}</span>
-        ${port?`<span class="serving">· serving on :${port}</span>`:""}
         <span class="btns"></span></div>
-      <div class="meta">${g} GiB${m.source?" · "+m.source:""}</div>`;
+      <div class="meta">${port?`<span class="serving">serving on :${escH(port)}</span> · `:""}${g} GiB${m.source?" · "+escH(m.source):""}</div>`;
     const btn=document.createElement("button");
     btn.textContent=port?"Relaunch":"Launch"; if(port)btn.className="primary";
-    btn.onclick=()=>doLaunch(m.name);
+    btn.disabled=launching;
+    if(launching) btn.title="a launch is in progress";
+    btn.onclick=()=>doLaunch(m);
     d.querySelector(".btns").appendChild(btn);
-    const del=document.createElement("button");
-    del.textContent="✕"; del.className="danger";
-    if(port){ del.disabled=true; del.title="stop the serving instance first"; }
-    else del.title="delete model files from disk";
-    del.onclick=()=>doDelete(m);
-    d.querySelector(".btns").appendChild(del);
+    // a serving model can't be deleted: no button at all, the meta line
+    // already says it is serving
+    if(!port){
+      const del=document.createElement("button");
+      del.textContent="✕"; del.className="danger"; del.disabled=launching;
+      del.title="delete this model's files from disk";
+      del.setAttribute("aria-label",`Delete ${m.name}`);
+      del.onclick=()=>doDelete(m);
+      d.querySelector(".btns").appendChild(del);
+    }
     host.appendChild(d);
   }
 }
 async function doDelete(m){
   const g=(m.vram_bytes/1073741824).toFixed(1);
-  if(!confirm(`PERMANENTLY delete from disk:\n${m.name} (${g} GiB)\n\nThis cannot be undone.`))return;
-  try{ await api("/api/models/delete","POST",{name:m.name}); }finally{ loadModels(); }
+  if(!confirm(`PERMANENTLY delete from disk:\n${m.name} (${g} GiB)\n\nIts weights plus any mmproj/draft files beside it. This cannot be undone.`))return;
+  try{
+    const r=await api("/api/models/delete","POST",{name:m.name});
+    const n=(r.removed||[]).length;
+    toast(`deleted ${m.name}`+(n?` — ${n} file${n===1?"":"s"}`:"")+(r.folder_removed?", folder removed":""),"ok");
+  }catch(e){}
+  finally{ loadModels().catch(()=>{}); }
 }
-let launchPoll=null;
-async function doLaunch(model){
+// keep a log box pinned to the bottom only if the reader is already there,
+// never replace text they are selecting, and skip no-op updates
+function setLogText(el,text){
+  if(el.textContent===text)return;
+  const sel=getSelection();
+  if(sel&&!sel.isCollapsed&&sel.anchorNode&&el.contains(sel.anchorNode))return;
+  const stick=el.scrollHeight-el.scrollTop-el.clientHeight<24;
+  el.textContent=text;
+  if(stick)el.scrollTop=el.scrollHeight;
+}
+function launchStatus(txt,kind){
+  const h=$("launch-status"); h.innerHTML="";
+  if(!txt)return;
+  const s=document.createElement("span"); s.textContent=txt; s.style.flex="1";
+  if(kind)s.style.color=kind==="err"?"var(--critical)":kind==="ok"?"var(--green)":"";
+  const b=document.createElement("button"); b.textContent="✕ close"; b.style.cssText="padding:0 8px;font-size:11px";
+  b.setAttribute("aria-label","Close launch log");
+  b.disabled=launching;
+  b.onclick=()=>{ $("launch-log").style.display="none"; h.innerHTML=""; };
+  h.append(s,b);
+}
+async function doLaunch(m){
+  if(launching)return;
+  const model=m.name, relaunch=!!servingPorts[model];
   const backend=$("backend-sel").value, slots=+$("slots-sel").value;
   const thinking=$("think-sel").value;
   const ctx=parseInt($("ctx-in").value)||0;
@@ -1123,184 +1490,268 @@ async function doLaunch(model){
   const replace=$("replace-chk").checked;
   const already=Object.keys(servingPorts).length>0;
   const modeTxt=replace?"REPLACES all running instances (brief outage)":
+    relaunch?`RESTARTS the instance on :${servingPorts[model]} with these settings (brief outage for it)`:
     already?"adds a NEW instance on the next free port (running ones stay up)":
     `starts on :${(CFG.llama_ports||[8081])[0]}`;
-  if(!confirm(`Launch:\n${model}\nbackend=${backend} · slots=${slots} · ctx=${ctx?ctx.toLocaleString():"default"} · thinking=${thinking} · spec=${spec}\n\n${modeTxt}`))return;
-  const setButtons=v=>document.querySelectorAll(".mrow button").forEach(b=>b.disabled=v);
-  setButtons(true);
-  $("launch-log").style.display="block";
-  const payload={model,backend,slots,thinking,spec,ctx,replace};
-  let r=await fetch("/api/llama/launch",{method:"POST",
-    headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
-  if(r.status===409){
-    const d=await r.json().catch(()=>({}));
-    if(/VRAM/i.test(d.detail||"") &&
-       confirm(d.detail+"\n\nForce the launch anyway? (may hang the instance)")){
-      r=await fetch("/api/llama/launch",{method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({...payload,force:true})});
-    } else { alert(d.detail||"launch refused"); setButtons(false); return; }
+  if(!confirm(`${relaunch?"Relaunch":"Launch"}:\n${model}\nbackend=${backend} · slots=${slots} · ctx=${ctx?ctx.toLocaleString():"default"} · thinking=${thinking} · spec=${spec}\n\n${modeTxt}`))return;
+  launching=true; renderModels();
+  $("launch-log").style.display="block"; $("launch-log").textContent="";
+  launchStatus(`launching ${model}…`);
+  const payload={model,backend,slots,thinking,spec,ctx,replace,relaunch};
+  const post=b=>fetch("/api/llama/launch",{method:"POST",
+    headers:{"Content-Type":"application/json"},body:JSON.stringify(b)});
+  let started=false;
+  try{
+    let r=await post(payload);
+    if(r.status===409){
+      const d=await r.json().catch(()=>({})), msg=errText(d,"launch refused");
+      if(/VRAM/i.test(msg) && confirm(msg+"\n\nForce the launch anyway? (may hang the instance)"))
+        r=await post({...payload,force:true});
+      else { launchStatus("launch refused: "+msg,"err"); toast("launch refused: "+msg,"err",{ms:9000}); return; }
+    }
+    if(!r.ok){ const d=await r.json().catch(()=>({})), msg=errText(d,"HTTP "+r.status);
+      launchStatus("launch failed: "+msg,"err"); toast("launch failed: "+msg,"err",{ms:9000}); return; }
+    started=true;
+  }catch(e){
+    launchStatus("launch failed: "+e.message,"err"); toast("launch failed: "+e.message,"err");
+  }finally{
+    if(!started){ launching=false; renderModels();
+      const b=$("launch-status").querySelector("button"); if(b)b.disabled=false; }
   }
-  if(!r.ok){ const d=await r.json().catch(()=>({}));
-    alert(d.detail||r.status); setButtons(false); return; }
-  launchPoll=setInterval(async()=>{
+  if(!started)return;
+  if(launchPoll)clearInterval(launchPoll);
+  let busy=false;
+  const id=setInterval(async()=>{
+    if(busy)return; busy=true;
     let st;
-    try{ st=await api("/api/launch/status"); }
+    try{ st=await api("/api/launch/status","GET",undefined,{quiet:true}); }
     catch(e){ return; }  // transient — keep polling
-    $("launch-log").textContent=st.lines.join("\n");
-    $("launch-log").scrollTop=$("launch-log").scrollHeight;
-    $("mm-note").textContent=st.running?`launching… ${Math.round(st.elapsed)}s`:`done (exit ${st.returncode})`;
-    if(!st.running){clearInterval(launchPoll); setButtons(false); loadModels();}
+    finally{ busy=false; }
+    setLogText($("launch-log"),(st.lines||[]).join("\n"));
+    if(st.running){ launchStatus(`launching ${model}… ${Math.round(st.elapsed||0)}s`); return; }
+    clearInterval(id); if(launchPoll===id)launchPoll=null;
+    launching=false; renderModels(); loadModels().catch(()=>{});
+    const ok=st.returncode===0||st.returncode==null;
+    launchStatus(ok?`${model} is up`:`${model} failed to start (exit ${st.returncode}) — see the log below`,ok?"ok":"err");
+    toast(ok?`${model} launched`:`launch of ${model} failed (exit ${st.returncode})`,ok?"ok":"err",{ms:ok?5000:10000});
   },1500);
+  launchPoll=id;
 }
 
 /* ---------- logs ---------- */
 let curLog="llama";
-function setLog(s){curLog=s;
-  (CFG.logs||[]).forEach(x=>{const b=$("tab-"+x); if(b)b.classList.toggle("active",x===s);});
-  refreshLog();}
-async function refreshLog(){
+let logBusy=false;
+function setLog(s){
+  const changed=s!==curLog; curLog=s;
+  (CFG.logs||[]).forEach(x=>{const b=$("tab-"+x); if(b){b.classList.toggle("active",x===s);
+    b.setAttribute("aria-pressed",x===s);}});
+  if(changed){ $("log-view").textContent="…"; logBusy=false; }
+  refreshLog(changed);}
+async function refreshLog(jump){
+  if(logBusy)return; logBusy=true;
+  const want=curLog, el=$("log-view");
   // polled every 3s — errors go in the panel, never an alert()
-  try{const d=await api(`/api/logs/${curLog}?lines=150`,"GET",undefined,{quiet:true});
-    $("log-view").textContent=d.lines.join("\n")||(d.path?"(empty)":`(no log for '${curLog}' yet)`);
-    $("log-view").scrollTop=$("log-view").scrollHeight;
-  }catch(e){$("log-view").textContent="(no log)";}
+  try{const d=await api(`/api/logs/${encodeURIComponent(want)}?lines=150`,"GET",undefined,{quiet:true});
+    if(want!==curLog)return;   // tab switched while this was in flight
+    setLogText(el,(d.lines||[]).join("\n")||(d.path?"(empty)":`(no log for '${want}' yet)`));
+    if(jump)el.scrollTop=el.scrollHeight;
+  }catch(e){ if(want===curLog) setLogText(el,"(no log)"); }
+  finally{ if(want===curLog) logBusy=false; }
 }
-setInterval(refreshLog,3000);
+// only while someone can see it: dashboard view, tab in the foreground
+setInterval(()=>{ if(!document.hidden&&$("view-dash").style.display!=="none")refreshLog(); },3000);
 // the Benchmarks tab used to load only on tab switch, so runs recorded
 // while it was already open (lab runs, remote traffic) stayed invisible
 let benchBusy=false;
-setInterval(()=>{ if($("view-bench").style.display!=="none"&&!benchBusy)benchLoad(); },5000);
+setInterval(()=>{ if(!document.hidden&&$("view-bench").style.display!=="none"&&!benchBusy)benchLoad(); },5000);
 
 /* ---------- HF downloader ---------- */
-let hfFilesData=[], hfRepo=null, hfPoll=null, hfSort="trending", hfLoaded=false;
+let hfFilesData=[], hfRepo=null, hfPoll=null, hfPollMs=0, hfSort="trending", hfLoaded=false;
+let hfSearchSeq=0, hfFilesSeq=0;   // newest request wins; stale replies are dropped
 const gib=b=>(b/1073741824).toFixed(2)+" GiB";
 function hfIcons(caps){
   if(!caps) return "";
   return [
-    caps.vision?'<span title="vision — hub tags / mmproj present">👁</span>':null,
-    caps.audio?'<span title="audio-native model (hub tags)">🎙</span>':null,
-    caps.mtp?'<span title="MTP speculative head (from repo name)">⚡</span>':null,
-    caps.thinking?'<span title="thinking/reasoning (hub tags or chat template)">💭</span>':null,
-    caps.embed?'<span title="embedding model (hub tags)">🧬</span>':null,
+    caps.vision?'<span title="vision — hub tags / mmproj present">👁<span class="vh"> vision</span></span>':null,
+    caps.audio?'<span title="audio-native model (hub tags)">🎙<span class="vh"> audio</span></span>':null,
+    caps.mtp?'<span title="MTP speculative head (from repo name)">⚡<span class="vh"> MTP</span></span>':null,
+    caps.thinking?'<span title="thinking/reasoning (hub tags or chat template)">💭<span class="vh"> thinking</span></span>':null,
+    caps.embed?'<span title="embedding model (hub tags)">🧬<span class="vh"> embedding</span></span>':null,
   ].filter(Boolean).join(" ");
 }
-function openHF(){ $("hf-overlay").style.display="block"; $("hf-q").focus();
-  hfPollStatus(); if(!hfLoaded){hfSetSort(hfSort);} }
-function closeHF(){ $("hf-overlay").style.display="none"; if(hfPoll){clearInterval(hfPoll);hfPoll=null;} }
-function hfBack(){ $("hf-files").style.display="none"; $("hf-results").style.display="block"; }
+function openHF(){ const dl=$("hf-dialog"); if(!dl.open)dl.showModal(); $("hf-q").focus();
+  hfPollStatus(1500); if(!hfLoaded){hfSetSort(hfSort);} }
+// closing only slows the poll: a download that finishes with the modal
+// closed still refreshes the model list and the header indicator
+function closeHF(){ const dl=$("hf-dialog"); if(dl.open)dl.close(); }
+$("hf-dialog").addEventListener("close",()=>hfPollStatus(5000));
+function hfBack(){ hfFilesSeq++; $("hf-files").style.display="none"; $("hf-results").style.display="block"; }
 function hfSetSort(s){ hfSort=s;
-  for(const x of ["trending","downloads","likes"])
-    $("hfs-"+x).classList.toggle("active",x===s);
+  for(const x of ["trending","downloads","likes"]){
+    $("hfs-"+x).classList.toggle("active",x===s); $("hfs-"+x).setAttribute("aria-pressed",x===s);}
   hfSearch(); }
 async function hfSearch(){
-  const q=$("hf-q").value.trim();
+  const q=$("hf-q").value.trim(), seq=++hfSearchSeq;
   $("hf-results").innerHTML='<div class="advisory">'+(q?"searching…":"browsing the hub…")+'</div>';
-  $("hf-results").style.display="block"; $("hf-files").style.display="none";
-  try{
-    const d=await api("/api/hf/search?q="+encodeURIComponent(q)+"&sort="+hfSort+"&limit="+(q?20:30));
-    hfLoaded=true;
-    $("hf-results").innerHTML=d.results.length?"":'<div class="advisory">no GGUF repos found</div>';
-    for(const r of d.results){
-      const row=document.createElement("div"); row.className="mrow"; row.style.cursor="pointer";
-      row.innerHTML=`<div class="top"><span class="name">${r.id}</span>
-          <span class="micons">${hfIcons(r.caps)}</span><span class="spacer"></span></div>
-        <div class="meta">⬇ ${(r.downloads||0).toLocaleString()} · ♥ ${(r.likes||0).toLocaleString()} · ${r.updated}</div>`;
-      row.onclick=()=>hfShowFiles(r.id);
-      $("hf-results").appendChild(row);
-    }
-  }catch(e){ $("hf-results").innerHTML='<div class="advisory">search failed</div>'; }
+  $("hf-results").style.display="block"; $("hf-files").style.display="none"; hfFilesSeq++;
+  let d;
+  try{ d=await api("/api/hf/search?q="+encodeURIComponent(q)+"&sort="+encodeURIComponent(hfSort)
+         +"&limit="+(q?20:30),"GET",undefined,{quiet:true}); }
+  catch(e){ if(seq===hfSearchSeq) $("hf-results").innerHTML=
+    `<div class="advisory">search failed: ${escH(e.message)}</div>`; return; }
+  if(seq!==hfSearchSeq)return;
+  hfLoaded=true;
+  $("hf-results").innerHTML=d.results.length?"":'<div class="advisory">no GGUF repos found</div>';
+  for(const r of d.results){
+    // a focusable row: Enter/Space open it like a click
+    const row=document.createElement("div"); row.className="mrow hfrow"; row.style.cursor="pointer";
+    row.tabIndex=0; row.setAttribute("role","button");
+    row.setAttribute("aria-label",`Show files in ${r.id}`);
+    const meta=[`⬇ ${(r.downloads||0).toLocaleString()}`,`♥ ${(r.likes||0).toLocaleString()}`,r.updated]
+      .filter(Boolean).map(escH).join(" · ");
+    row.innerHTML=`<div class="top"><span class="name">${escH(r.id)}</span>
+        <span class="micons">${hfIcons(r.caps)}</span></div>
+      <div class="meta" style="margin-left:0">${meta}</div>`;
+    row.onclick=()=>hfShowFiles(r.id);
+    row.onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){e.preventDefault();hfShowFiles(r.id);} };
+    $("hf-results").appendChild(row);
+  }
 }
 async function hfShowFiles(repo){
-  hfRepo=repo; $("hf-repo-name").innerHTML=repo+' <span class="micons" id="hf-repo-icons"></span>';
+  const seq=++hfFilesSeq;
+  hfRepo=repo; hfFilesData=[];
+  $("hf-repo-name").innerHTML=escH(repo)+' <span class="micons" id="hf-repo-icons"></span>';
   $("hf-results").style.display="none"; $("hf-files").style.display="block";
-  $("hf-filelist").innerHTML='<div class="advisory">listing files…</div>';
-  try{
-    const d=await api("/api/hf/files?repo="+encodeURIComponent(repo));
-    hfFilesData=d.files;
-    $("hf-repo-icons").innerHTML=hfIcons(d.caps);
-    $("hf-filelist").innerHTML=d.files.length?"":'<div class="advisory">no .gguf files in this repo</div>';
-    d.files.forEach((f,i)=>{
-      const row=document.createElement("label");
-      row.style.cssText="display:flex;gap:8px;align-items:center;padding:4px 2px;border-bottom:1px solid var(--grid);cursor:pointer";
-      row.innerHTML=`<input type="checkbox" data-i="${i}" style="accent-color:var(--cyan)" onchange="hfSel()">
-        <span style="color:var(--ink-2);overflow-wrap:anywhere">${f.name}</span>
-        <span class="spacer" style="flex:1"></span>
-        <span style="color:var(--green)">${gib(f.size)}</span>`;
-      $("hf-filelist").appendChild(row);
-    });
-    hfSel();
-  }catch(e){ $("hf-filelist").innerHTML='<div class="advisory">file listing failed</div>'; }
+  $("hf-filelist").innerHTML='<div class="advisory">listing files…</div>'; hfSel();
+  let d;
+  try{ d=await api("/api/hf/files?repo="+encodeURIComponent(repo),"GET",undefined,{quiet:true}); }
+  catch(e){ if(seq===hfFilesSeq) $("hf-filelist").innerHTML=
+    `<div class="advisory">file listing failed: ${escH(e.message)}</div>`; return; }
+  // the user went back or opened another repo while this was loading
+  if(seq!==hfFilesSeq||repo!==hfRepo)return;
+  hfFilesData=d.files;
+  $("hf-repo-icons").innerHTML=hfIcons(d.caps);
+  $("hf-filelist").innerHTML=d.files.length?"":'<div class="advisory">no .gguf files in this repo</div>';
+  d.files.forEach((f,i)=>{
+    const row=document.createElement("label");
+    row.style.cssText="display:flex;gap:8px;align-items:center;padding:4px 2px;border-bottom:1px solid var(--grid);cursor:pointer";
+    row.innerHTML=`<input type="checkbox" data-i="${i}" style="accent-color:var(--cyan)" onchange="hfSel()">
+      <span style="color:var(--ink-2);overflow-wrap:anywhere;min-width:0">${escH(f.name)}</span>
+      <span class="spacer" style="flex:1"></span>
+      <span style="color:var(--green);white-space:nowrap">${gib(f.size)}</span>`;
+    $("hf-filelist").appendChild(row);
+  });
+  hfSel();
 }
 function hfSelected(){
-  return [...document.querySelectorAll('#hf-filelist input:checked')].map(c=>hfFilesData[+c.dataset.i]);
+  return [...document.querySelectorAll('#hf-filelist input:checked')].map(c=>hfFilesData[+c.dataset.i]).filter(Boolean);
 }
 function hfSel(){
   const sel=hfSelected(), tot=sel.reduce((a,f)=>a+f.size,0);
+  $("hf-dl").disabled=!sel.length;
   $("hf-selinfo").textContent=sel.length?`${sel.length} file(s) · ${gib(tot)}`:"select the quant(s) to download — include the mmproj for vision";
 }
 async function hfDownload(){
-  const sel=hfSelected();
-  if(!sel.length){alert("select at least one file");return;}
+  const sel=hfSelected(); if(!sel.length)return;
   const total=sel.reduce((a,f)=>a+f.size,0);
   if(!confirm(`Queue download from ${hfRepo}:\n${sel.map(f=>f.name).join("\n")}`
     +`\n\nTotal ${gib(total)} → ${CFG.download_dir||"the model directory"}`))return;
-  const r=await api("/api/hf/download","POST",
-    {repo:hfRepo,files:sel.map(f=>f.name),total_bytes:total});
+  $("hf-dl").disabled=true;
+  let r;
+  try{ r=await api("/api/hf/download","POST",{repo:hfRepo,files:sel.map(f=>f.name),total_bytes:total}); }
+  catch(e){ hfSel(); return; }
+  hfSel();
   $("hf-selinfo").textContent=r.position>1
     ? `queued at position ${r.position} — keep browsing to add more`
     : "started — keep browsing to add more";
-  hfPollStatus();
+  hfPollStatus($("hf-dialog").open?1500:5000);
 }
-function hfDequeue(id){ api("/api/hf/cancel","POST",{id}); }
-let hfLastDone=null;
-function hfPollStatus(){
+function hfDequeue(id){ api("/api/hf/cancel","POST",{id}).then(()=>hfTick()).catch(()=>{}); }
+function hfCancelCurrent(){
+  if(!confirm("Cancel the running download? It stops after the file it is on."))return;
+  api("/api/hf/cancel","POST",{}).then(()=>toast("download cancelling after the current file","warn")).catch(()=>{});
+}
+let hfLastDone=null, hfPrevActive=null, hfBusy=false;
+// fast while the modal is open, slow while closed, stopped when idle
+function hfPollStatus(ms){
+  if(hfPoll&&hfPollMs===ms)return;
   if(hfPoll)clearInterval(hfPoll);
-  hfPoll=setInterval(async()=>{
-    let st; try{ st=await api("/api/hf/status"); }catch(e){ return; }
-    const q=st.queue||[];
-    const show=st.active||q.length||(st.returncode!==null&&st.repo);
-    $("hf-progress").style.display=show?"block":"none";
-    if(!show)return;
-    $("hf-prog-label").textContent=(st.active?"downloading ":"")+(st.repo||"");
-    const pct=st.total_bytes?Math.min(100,st.done_bytes/st.total_bytes*100):0;
-    $("hf-prog-bar").style.width=pct+"%";
-    $("hf-prog-pct").textContent=pct.toFixed(1)+"%";
-    $("hf-prog-v").textContent=`${gib(st.done_bytes)} / ${gib(st.total_bytes)}`
-      +(st.active?"":" \u00b7 done (exit "+st.returncode+")");
-    $("hf-log").textContent=(st.lines||[]).join("\n");
-    $("hf-cancel").style.display=st.active?"":"none";
+  hfPollMs=ms; hfPoll=setInterval(hfTick,ms); hfTick();
+}
+async function hfTick(){
+  if(hfBusy)return; hfBusy=true;
+  let st; try{ st=await api("/api/hf/status","GET",undefined,{quiet:true}); }
+  catch(e){ return; } finally{ hfBusy=false; }
+  const q=st.queue||[];
+  const pct=st.total_bytes?Math.min(100,st.done_bytes/st.total_bytes*100):0;
+  // header indicator, visible with the modal closed
+  $("hf-mini").textContent=st.active?`⬇ ${pct.toFixed(0)}%`+(q.length?` +${q.length} queued`:""):"";
+  $("hf-mini").title=st.active?`downloading ${st.repo||""} — ${gib(st.done_bytes)} / ${gib(st.total_bytes)}`:"";
+  // a job finished (the active id changed or went idle): refresh models once
+  if(hfPrevActive&&(!st.active||st.id!==hfPrevActive)&&hfPrevActive!==hfLastDone){
+    hfLastDone=hfPrevActive; loadModels().catch(()=>{});
+    if(!st.active&&st.returncode===0) toast(`download finished: ${st.repo||""}`,"ok");
+    else if(!st.active&&st.returncode!=null) toast(`download ended (exit ${st.returncode}): ${st.repo||""}`,"warn",{ms:9000});
+  }
+  hfPrevActive=st.active?st.id:null;
+  if(!st.active&&!q.length&&!$("hf-dialog").open&&hfPoll){ clearInterval(hfPoll); hfPoll=null; hfPollMs=0; }
+  const show=st.active||q.length||(st.returncode!==null&&st.repo);
+  $("hf-progress").style.display=show?"block":"none";
+  if(!show)return;
+  $("hf-prog-label").textContent=(st.active?"downloading ":"")+(st.repo||"");
+  $("hf-prog-bar").style.width=pct+"%";
+  $("hf-prog-pct").textContent=pct.toFixed(1)+"%";
+  $("hf-prog-v").textContent=`${gib(st.done_bytes)} / ${gib(st.total_bytes)}`
+    +(st.active?"":" · done (exit "+st.returncode+")");
+  setLogText($("hf-log"),(st.lines||[]).join("\n"));
+  $("hf-cancel").style.display=st.active?"":"none";
+  const qsig=JSON.stringify(q);
+  if($("hf-queue").dataset.sig!==qsig){
+    $("hf-queue").dataset.sig=qsig;
     $("hf-queue").innerHTML=q.length
       ? `<div class="sub" style="margin:7px 0 2px">queued (${q.length}):</div>`
-        +q.map((j,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:2px 0">
+        +q.map((j,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:2px 0;flex-wrap:wrap">
             <span class="sub">${i+1}.</span>
-            <span style="color:var(--ink-2);overflow-wrap:anywhere">${j.name}</span>
-            <span class="sub">${gib(j.total_bytes)} \u00b7 ${j.files} file(s)</span>
+            <span style="color:var(--ink-2);overflow-wrap:anywhere;min-width:0">${escH(j.name)}</span>
+            <span class="sub">${gib(j.total_bytes)} · ${escH(j.files)} file(s)</span>
             <span style="flex:1"></span>
-            <button class="danger" style="padding:0 7px"
-              onclick="hfDequeue('${j.id}')">\u2715</button></div>`).join("")
+            <button class="danger" style="padding:0 7px" data-id="${escA(j.id)}"
+              aria-label="Remove ${escA(j.name)} from the queue" title="remove from queue">✕</button></div>`).join("")
       : "";
-    // refresh the model list once when a job finishes, not every tick
-    if(!st.active&&!q.length&&st.returncode===0&&st.id&&st.id!==hfLastDone){
-      hfLastDone=st.id; loadModels();
-    }
-  },1500);
+    $("hf-queue").querySelectorAll("button[data-id]").forEach(b=>b.onclick=()=>hfDequeue(b.dataset.id));
+  }
 }
 
 /* ---------- view tabs ---------- */
 const VIEWS=["dash","prompt","bench","settings"];
+let curView=null;
 function setView(v){
   if(!VIEWS.includes(v))v="dash";
   try{localStorage.setItem("nd-view",v);}catch(e){}
   for(const x of VIEWS){
     $("view-"+x).style.display=x===v?"":"none";
     $("vt-"+x).classList.toggle("active",x===v);
+    if(x===v)$("vt-"+x).setAttribute("aria-current","page"); else $("vt-"+x).removeAttribute("aria-current");
   }
+  const was=curView; curView=v;
   if(v==="bench")benchLoad();
-  if(v==="settings")stLoad();
+  // unsaved edits survive a trip to another tab: only (re)load settings
+  // when there is nothing pending
+  if(v==="settings"&&(was!=="settings")&&(!stSchema||!Object.keys(stDirty).length))stLoad();
+  if(v==="dash")refreshLog();
 }
 
 /* ---------- shared streaming client (prompt lab + bench runner) ---------- */
+// llama.cpp: prompt_progress is {total,cache,processed,time_ms} with
+// return_progress:true; older builds sent a bare fraction
+function progFrac(p){
+  if(typeof p==="number")return p;
+  if(p&&typeof p==="object"&&p.total>0){
+    const c=p.cache||0, span=p.total-c;
+    return span>0?Math.max(0,(p.processed-c)/span):(p.processed||0)/p.total;
+  }
+  return null;
+}
 async function streamChat(body,cb={},signal){
   const t0=performance.now();
   let tFirst=null,timings=null,acc="",think="",served=null,err=null;
@@ -1308,41 +1759,59 @@ async function streamChat(body,cb={},signal){
     headers:{"Content-Type":"application/json"},
     body:JSON.stringify(body),signal});
   if(!r.ok||!r.body){
-    let m=""+r.status; try{m=(await r.json()).detail||m;}catch(e){}
-    throw new Error(m);
+    // the proxy answers with real status codes and a JSON body, either
+    // OpenAI's {"error":{"message"}} or FastAPI's {"detail"}
+    let m="HTTP "+r.status;
+    try{ const t=await r.text(); let j=null; try{j=JSON.parse(t);}catch(e){}
+      m=j?errText(j,m):(t.trim().slice(0,300)||m); }catch(e){}
+    const e=new Error(m); e.status=r.status; throw e;
   }
   const rd=r.body.getReader(),dec=new TextDecoder(); let buf="";
+  const handle=(ev,d)=>{
+    d=d.trim(); if(!d||d==="[DONE]")return;
+    let j; try{j=JSON.parse(d);}catch(e){ if(ev==="error")err=d; return; }
+    if(ev==="error"){ err=errText(j,d); return; }
+    if(j.error){ err=errText(j,"stream error"); return; }
+    if(j.model)served=j.model;
+    if(j.timings)timings=j.timings;
+    if(j.prompt_progress!=null&&cb.onProgress){ const f=progFrac(j.prompt_progress);
+      if(f!=null&&f<1)cb.onProgress(f); }
+    const del=j.choices?.[0]?.delta||{};
+    if(del.reasoning_content){
+      if(tFirst===null)tFirst=performance.now();
+      think+=del.reasoning_content;
+      if(cb.onThink)cb.onThink(think);
+    }
+    if(del.content){
+      if(tFirst===null)tFirst=performance.now();
+      acc+=del.content;
+      if(cb.onText)cb.onText(acc);
+    }
+  };
+  // one SSE event = lines up to a blank line; "event: error" names the
+  // payload that follows, a bare "error:" line carries it directly
+  const event=chunk=>{
+    let ev="message", data=[];
+    for(const ln of chunk.split("\n")){
+      if(ln.startsWith("event:")) ev=ln.slice(6).trim();
+      else if(ln.startsWith("data:")) data.push(ln.slice(5).replace(/^ /,""));
+      else if(ln.startsWith("error:")) handle("error",ln.slice(6));
+    }
+    if(data.length) handle(ev,data.join("\n"));
+  };
   for(;;){
-    const {done,value}=await rd.read(); if(done)break;
-    buf+=dec.decode(value,{stream:true});
+    const {done,value}=await rd.read();
+    if(done){ buf+=dec.decode(); break; }
+    // normalise CRLF; a lone trailing \r waits for the next read
+    buf=(buf+dec.decode(value,{stream:true})).replace(/\r\n|\r(?=.)/gs,"\n");
     let i;
     while((i=buf.indexOf("\n\n"))>=0){
-      const chunk=buf.slice(0,i); buf=buf.slice(i+2);
-      for(const ln of chunk.split("\n")){
-        if(!ln.startsWith("data: "))continue;
-        const d=ln.slice(6).trim();
-        if(!d||d==="[DONE]")continue;
-        let j; try{j=JSON.parse(d);}catch(e){continue;}
-        if(j.error){err=j.error.message||JSON.stringify(j.error);continue;}
-        if(j.model)served=j.model;
-        if(j.timings)timings=j.timings;
-        if(typeof j.prompt_progress==="number"&&j.prompt_progress<1&&cb.onProgress)
-          cb.onProgress(j.prompt_progress);
-        const del=j.choices?.[0]?.delta||{};
-        if(del.reasoning_content){
-          if(tFirst===null)tFirst=performance.now();
-          think+=del.reasoning_content;
-          if(cb.onThink)cb.onThink(think);
-        }
-        if(del.content){
-          if(tFirst===null)tFirst=performance.now();
-          acc+=del.content;
-          if(cb.onText)cb.onText(acc);
-        }
-      }
+      const chunk=buf.slice(0,i); buf=buf.slice(i+2); event(chunk);
     }
     if(cb.onTick)cb.onTick({t0,tFirst,timings,acc});
   }
+  buf=buf.replace(/\r\n?/g,"\n");
+  if(buf.trim()) event(buf);   // a final event without the trailing blank line
   return {t0,tFirst,timings,text:acc,think,served,err,
           wall:(performance.now()-t0)/1000};
 }
@@ -1359,58 +1828,84 @@ function postBench(kind,res,body){
 }
 
 /* ---------- prompt lab ---------- */
-let plAbort=null, plModelNames=[];
-const escH=s=>s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-const escA=s=>escH(String(s)).replace(/"/g,"&quot;");
-function renderMd(t){
-  // split on ``` fences: even parts are prose, odd parts are code
-  // (an unclosed final fence renders as an open block while streaming)
-  return t.split("```").map((part,i)=>{
-    if(i%2===0)
-      return escH(part).replace(/`([^`\n]{1,120})`/g,'<code class="ic">$1</code>');
-    const nl=part.indexOf("\n");
-    let lang=part, body="";
-    if(nl>=0){lang=part.slice(0,nl); body=part.slice(nl+1);}
-    else {lang=""; body=part;}
-    if(lang.length>24){body=part; lang="";}  // no language tag, code on fence line
-    return `<div class="codeblk"><div class="codehdr"><span>${escH(lang.trim())||"code"}</span>`+
-      `<button onclick="copyCode(this)">copy</button></div><pre>${escH(body)}</pre></div>`;
-  }).join("");
+let plAbort=null, plModelNames=null, plParts=[];
+// one ``` fence part -> HTML: even parts are prose, odd parts are code
+// (an unclosed final fence renders as an open block while streaming)
+function renderPart(part,i){
+  if(i%2===0)
+    return escH(part).replace(/`([^`\n]{1,120})`/g,'<code class="ic">$1</code>');
+  const nl=part.indexOf("\n");
+  let lang=part, body="";
+  if(nl>=0){lang=part.slice(0,nl); body=part.slice(nl+1);}
+  else {lang=""; body=part;}
+  if(lang.length>24){body=part; lang="";}  // no language tag, code on fence line
+  return `<div class="codeblk"><div class="codehdr"><span>${escH(lang.trim())||"code"}</span>`+
+    `<button onclick="copyCode(this)" aria-label="Copy code">copy</button></div><pre>${escH(body)}</pre></div>`;
 }
-function copyCode(btn){
+async function copyCode(btn){
   const text=btn.closest(".codeblk").querySelector("pre").textContent;
-  if(navigator.clipboard&&window.isSecureContext){
-    navigator.clipboard.writeText(text);
-  }else{  // plain-http fallback
-    const ta=document.createElement("textarea");
-    ta.value=text; document.body.appendChild(ta);
-    ta.select(); document.execCommand("copy"); ta.remove();
-  }
-  btn.textContent="copied"; setTimeout(()=>btn.textContent="copy",1200);
+  let ok=true;
+  try{
+    if(navigator.clipboard&&window.isSecureContext) await navigator.clipboard.writeText(text);
+    else {  // plain-http fallback
+      const ta=document.createElement("textarea");
+      ta.value=text; ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta);
+      ta.select(); ok=document.execCommand("copy"); ta.remove();
+    }
+  }catch(e){ ok=false; }
+  btn.textContent=ok?"copied":"copy failed"; setTimeout(()=>btn.textContent="copy",1500);
 }
+/* Streaming re-renders only the fence part that changed (in practice the
+   last one), so finished code blocks — and their copy buttons — stay put
+   while tokens arrive. */
 function plOutSet(t){
   const el=$("pl-out");
   // only auto-follow when the user is already at the bottom — never
   // fight an upward scroll while tokens stream in
   const stick=el.scrollHeight-el.scrollTop-el.clientHeight<48;
-  el.innerHTML=renderMd(t);
+  if(el.dataset.mode!=="md"){ el.innerHTML=""; plParts=[]; el.dataset.mode="md"; }
+  const parts=t.split("```");
+  // a part keeps its kind by index; a changed or new part gets a fresh node
+  while(el.children.length>parts.length){ el.lastChild.remove(); plParts.pop(); }
+  parts.forEach((p,i)=>{
+    if(plParts[i]===p&&el.children[i])return;
+    const node=document.createElement(i%2?"div":"span");
+    node.innerHTML=renderPart(p,i);
+    const n=i%2?node.firstChild:node;
+    if(el.children[i]) el.replaceChild(n,el.children[i]); else el.appendChild(n);
+    plParts[i]=p;
+  });
   if(stick)el.scrollTop=el.scrollHeight;
 }
+function plPlaceholder(){
+  const el=$("pl-out"); el.dataset.mode=""; plParts=[];
+  el.innerHTML=`<span style="color:var(--muted)">${plModelNames&&plModelNames.length
+    ?"Type a prompt above and press Send (or Ctrl+Enter). The reply streams here; "
+      +"timings appear in the Benchmark panel."
+    :"No model is running — launch one from the Dashboard's Models panel, then come back."}</span>`;
+}
+function plValid(){ $("pl-send").disabled=!!plAbort||!$("pl-in").value.trim(); }
+function bnValid(){ $("bn-run").disabled=benchBusy||!$("bn-model").value; }
 function plUpdateModels(instances){
   const names=(instances||[]).map(i=>i.alias).filter(Boolean);
-  if(JSON.stringify(names)===JSON.stringify(plModelNames))return;
+  if(plModelNames&&JSON.stringify(names)===JSON.stringify(plModelNames))return;
+  const firstTime=!plModelNames;
   plModelNames=names;
+  const opt=(n,cur)=>`<option value="${escA(n)}"${n===cur?" selected":""}>${escH(n)}</option>`;
   const sel=$("pl-model"), cur=sel.value;
-  sel.innerHTML='<option value="">model: auto (default instance)</option>'+
-    names.map(n=>`<option value="${n}" ${n===cur?"selected":""}>${n}</option>`).join("");
+  sel.innerHTML='<option value="">'+(names.length?"model: auto (default instance)":"model: none running")+'</option>'+
+    names.map(n=>opt(n,cur)).join("");
   const bsel=$("bn-model"), bcur=bsel.value;
-  bsel.innerHTML='<option value="">bench which model?</option>'+
-    names.map(n=>`<option value="${n}" ${n===bcur?"selected":""}>${n}</option>`).join("");
+  bsel.innerHTML='<option value="">'+(names.length?"bench which model?":"no model running")+'</option>'+
+    names.map(n=>opt(n,bcur)).join("");
+  bnValid();
+  // refresh the empty-state hint unless there is output worth keeping
+  if(firstTime||$("pl-out").dataset.mode!=="md") plPlaceholder();
 }
 function plClear(){
-  $("pl-out").textContent="—"; $("pl-think").textContent="";
+  plPlaceholder(); $("pl-think").textContent="";
   $("pl-think").style.display="none"; $("pl-bench").innerHTML="";
-  $("pl-status").textContent="idle";
+  $("pl-status").textContent="idle"; $("pl-status").style.color="";
 }
 function plBench(t0,tFirst,tm,charCount,wall){
   const rows=[];
@@ -1428,7 +1923,8 @@ function plBench(t0,tFirst,tm,charCount,wall){
     if(gs>0.2) rows.push(["Chars/sec",(charCount/gs).toFixed(0)]);
   }
   if(wall!=null) rows.push(["Wall time",wall.toFixed(2)+" s"]);
-  $("pl-bench").innerHTML=rows.map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join("");
+  const html=rows.map(([k,v])=>`<dt>${escH(k)}</dt><dd>${escH(v)}</dd>`).join("");
+  if($("pl-bench").innerHTML!==html) $("pl-bench").innerHTML=html;
 }
 async function plSend(){
   if(plAbort)return;
@@ -1436,39 +1932,43 @@ async function plSend(){
   const msgs=[];
   const sys=$("pl-sys").value.trim(); if(sys)msgs.push({role:"system",content:sys});
   msgs.push({role:"user",content:prompt});
-  const body={messages:msgs,stream:true,timings_per_token:true};
+  // return_progress makes llama.cpp stream prompt_progress during prefill
+  const body={messages:msgs,stream:true,timings_per_token:true,return_progress:true};
   if($("pl-model").value)body.model=$("pl-model").value;
   const t=parseFloat($("pl-temp").value); if(!isNaN(t))body.temperature=t;
   const mt=parseInt($("pl-max").value); if(mt>0)body.max_tokens=mt;
-  $("pl-out").textContent=""; $("pl-think").textContent=""; $("pl-think").style.display="none";
-  $("pl-bench").innerHTML=""; $("pl-status").textContent="sending…";
-  $("pl-send").disabled=true; $("pl-stop").style.display="";
-  plAbort=new AbortController();
+  const st=$("pl-status"); st.style.color="";
+  plOutSet(""); $("pl-think").textContent=""; $("pl-think").style.display="none";
+  $("pl-bench").innerHTML=""; st.textContent="sending…";
+  $("pl-stop").style.display="";
+  plAbort=new AbortController(); plValid();
   let res=null, errMsg=null;
   try{
     res=await streamChat(body,{
-      onProgress:p=>$("pl-status").textContent="prefill "+(p*100).toFixed(0)+"%",
+      onProgress:p=>st.textContent="prefill "+(p*100).toFixed(0)+"%",
       onThink:t=>{const th=$("pl-think");
         const stick=th.scrollHeight-th.scrollTop-th.clientHeight<48;
         th.style.display=""; th.textContent=t;
         if(stick)th.scrollTop=th.scrollHeight;},
-      onText:t=>{plOutSet(t);
-        $("pl-status").textContent="generating…";},
+      onText:t=>{plOutSet(t); st.textContent="generating…";},
       onTick:s=>plBench(s.t0,s.tFirst,s.timings,s.acc.length,null),
     },plAbort.signal);
-    if(res.err)plOutSet((res.text?res.text+"\n":"")+"[error] "+res.err);
+    if(res.err){ errMsg=res.err; plOutSet((res.text?res.text+"\n\n":"")+"[error] "+res.err); }
   }catch(e){
     if(e.name!=="AbortError"){errMsg=e.message;
       plOutSet("[error] "+e.message);}
   }
   const aborted=plAbort&&plAbort.signal.aborted;
-  plAbort=null; $("pl-send").disabled=false; $("pl-stop").style.display="none";
-  if(res){
-    $("pl-status").textContent=(aborted?"stopped":"done")+" · "+res.wall.toFixed(1)+"s";
+  plAbort=null; plValid(); $("pl-stop").style.display="none";
+  if(errMsg){
+    st.textContent="error"+(res?" · "+res.wall.toFixed(1)+"s":""); st.style.color="var(--critical)";
+    if(res)plBench(res.t0,res.tFirst,res.timings,res.text.length,res.wall);
+  }else if(res){
+    st.textContent=(aborted?"stopped":"done")+" · "+res.wall.toFixed(1)+"s";
     plBench(res.t0,res.tFirst,res.timings,res.text.length,res.wall);
-    if(!aborted&&!errMsg)postBench("lab",res,body);
+    if(!aborted)postBench("lab",res,body);
   }else{
-    $("pl-status").textContent=aborted?"stopped":"error";
+    st.textContent=aborted?"stopped":"error";
   }
 }
 $("pl-in").addEventListener("keydown",e=>{
@@ -1477,20 +1977,24 @@ $("pl-in").addEventListener("keydown",e=>{
 /* ---------- benchmarks tab ---------- */
 const BENCH_PROMPT="Explain, in about 250 words, how a lithium-ion battery charges "
  +"and discharges, covering the role of the anode, cathode, and electrolyte.";
-let benchData=[];
+let benchData=[], benchLoading=false, benchAggs=[];
+const benchHidden=new Set();   // runs deleted locally, awaiting the undo window
 const median=a=>{const s=[...a].sort((x,y)=>x-y);const m=Math.floor(s.length/2);
   return s.length%2?s[m]:(s[m-1]+s[m])/2;};
 async function benchLoad(){
-  try{benchData=(await api("/api/bench")).runs;}catch(e){benchData=[];}
-  renderBench();
+  if(benchLoading)return; benchLoading=true;
+  // polled: a failed fetch keeps what is on screen instead of blanking it
+  try{ benchData=(await api("/api/bench","GET",undefined,{quiet:true})).runs||[]; renderBench(); }
+  catch(e){ if(!benchData.length) renderBench(); }
+  finally{ benchLoading=false; }
 }
 async function benchRun(){
   const model=$("bn-model").value;
-  if(!model){alert("pick a model to benchmark");return;}
-  benchBusy=true; $("bn-run").disabled=true;
+  if(!model||benchBusy)return;
+  benchBusy=true; bnValid();
   $("bn-status").textContent="running standard bench on "+model.slice(0,40)+"…";
   const body={model,messages:[{role:"user",content:BENCH_PROMPT}],
-    stream:true,timings_per_token:true,temperature:0,max_tokens:320};
+    stream:true,timings_per_token:true,return_progress:true,temperature:0,max_tokens:320};
   try{
     const res=await streamChat(body,{
       onProgress:p=>$("bn-status").textContent="prefill "+(p*100).toFixed(0)+"%",
@@ -1501,79 +2005,98 @@ async function benchRun(){
     await postBench("std",res,body);
     $("bn-status").textContent="done · "+res.wall.toFixed(1)+"s — decode "
       +(res.timings.predicted_per_second||0).toFixed(1)+" tok/s";
-    await benchLoad();
+    benchBusy=false; await benchLoad();
   }catch(e){$("bn-status").textContent="failed: "+e.message;}
-  benchBusy=false; $("bn-run").disabled=false;
+  benchBusy=false; bnValid();
 }
 async function benchClearAll(){
-  if(!confirm("Delete ALL benchmark history?"))return;
-  await api("/api/bench/clear","POST",{}); benchLoad();
+  if(!confirm("Delete ALL benchmark history?\n\nThis cannot be undone."))return;
+  try{ await api("/api/bench/clear","POST",{}); toast("benchmark history cleared","ok"); }catch(e){}
+  benchLoad();
 }
-async function benchDelete(id){
-  await api("/api/bench/delete","POST",{id}); benchLoad();
+// delete with an undo window: the row disappears now, the POST goes out
+// when the toast expires (there is no server-side undelete)
+function benchDelete(id){
+  benchHidden.add(id); renderBench();
+  let undone=false;
+  toast("benchmark run deleted","",{ms:6000,actionLabel:"undo",
+    action:()=>{ undone=true; benchHidden.delete(id); renderBench(); }});
+  setTimeout(async()=>{ if(undone)return;
+    try{ await api("/api/bench/delete","POST",{id}); }catch(e){}
+    benchHidden.delete(id); benchLoad(); },6000);
 }
+// drawn at the container's real pixel width so text is a fixed 10px; under
+// ~560px each row puts its label on its own line above the two bars
 function benchChart(aggs){
+  benchAggs=aggs;
+  const host=$("bn-chart");
   if(!aggs.length){
-    $("bn-chart").innerHTML='<div class="advisory">no benchmark data yet \u2014 '
+    const h='<div class="advisory">no benchmark data yet — '
       +'run a standard bench or use the Prompt Lab</div>';
+    if(host.innerHTML!==h) host.innerHTML=h;
     return;
   }
   // Prefill and decode differ by ~20x (up to ~1130 vs ~80 tok/s), so one
   // shared scale renders decode as a sliver. Two columns, each scaled to
   // its own metric, sharing one label gutter — comparable down a column,
   // never across.
-  const W=700, GUT=286, COLW=190, GAP=10, rowH=17, HEAD=22;
-  const H=aggs.length*rowH+HEAD+4;
+  const W=Math.max(280,Math.floor(host.clientWidth||700));
+  const narrow=W<560, CH=6.1, FS=10;          // 10px monospace advance
+  const GAP=12, NW=36;
+  const GUT=narrow?0:Math.round(Math.min(440,Math.max(200,W*0.4)));
+  const COLW=Math.floor((W-GUT-GAP*(narrow?1:2))/2);
+  const rowH=narrow?34:20, HEAD=22, H=aggs.length*rowH+HEAD+4;
   const cols=[
-    {key:"dc", title:"decode tok/s", color:"var(--s2)", dp:1, x:GUT+GAP},
-    {key:"pf", title:"prefill tok/s", color:"var(--s1)", dp:0, x:GUT+GAP+COLW+GAP},
+    {key:"dc", title:"decode tok/s", color:"var(--s2)", dp:1, x:narrow?0:GUT+GAP},
+    {key:"pf", title:"prefill tok/s", color:"var(--s1)", dp:0, x:(narrow?0:GUT+GAP)+COLW+GAP},
   ];
   for(const c of cols){
     c.max=Math.max(...aggs.map(a=>a[c.key]||0),1);
-    c.barW=COLW-46;                      // leave room for the value
+    c.barW=COLW-(c.dp?52:46);                 // leave room for the value
   }
-  // the row label is clipped to the gutter and the run count is pinned to its
-  // right edge, so a long model/backend/spec label can never run into the
-  // decode column; the full name lives in a <title> tooltip
-  const NW=34, CH=4.8;                 // \u00d7N reserve, 8px monospace advance
-  let s=`<svg viewBox="0 0 ${W} ${H}" style="width:100%">`
-    +`<defs><clipPath id="bn-lab"><rect x="0" y="0" width="${GUT-NW}" height="${H}"/></clipPath></defs>`;
+  // the row label is clipped to its box and the run count is pinned to the
+  // right edge, so a long model/backend/spec label never runs into the bars;
+  // the full name lives in a <title> tooltip
+  const LABW=narrow?W:GUT;
+  let s=`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Benchmark medians per model">`
+    +`<defs><clipPath id="bn-lab"><rect x="0" y="0" width="${LABW-NW}" height="${H}"/></clipPath></defs>`;
   const T=(x,y,t,fill,anchor,size)=>`<text x="${x}" y="${y}" text-anchor="${anchor||"start"}"`
-    +` style="font:${size||9.5}px ui-monospace,monospace;fill:${fill}">${t}</text>`;
+    +` style="font:${size||FS}px ui-monospace,monospace;fill:${fill}">${escH(t)}</text>`;
   // column headers carry each scale's maximum, so the two are never read
   // as one axis
   for(const c of cols){
-    s+=T(c.x,10,c.title,"var(--cyan)");
-    s+=T(c.x+COLW,10,`max ${c.max.toFixed(c.dp)}`,"var(--muted)","end",9);
-    s+=`<line x1="${c.x}" y1="14" x2="${c.x+COLW}" y2="14" stroke="var(--grid)"/>`;
+    s+=T(c.x,11,c.title,"var(--cyan)");
+    s+=T(c.x+COLW,11,`max ${c.max.toFixed(c.dp)}`,"var(--muted)","end");
+    s+=`<line x1="${c.x}" y1="15" x2="${c.x+COLW}" y2="15" stroke="var(--grid)"/>`;
   }
   aggs.forEach((a,i)=>{
-    const y=HEAD+i*rowH, mid=y+rowH/2;
+    const y=HEAD+i*rowH, mid=narrow?y+rowH-9:y+rowH/2, ly=narrow?y+12:mid+3.5;
     if(i%2) s+=`<rect x="0" y="${y}" width="${W}" height="${rowH}" fill="var(--stripe)"/>`;
     const spec=a.spec?`${specLabel(a.spec)}${a.acc!=null?" "+a.acc.toFixed(0)+"%":""}`:"";
-    const tagTxt=` \u00b7 ${a.backend}`+(spec?` \u00b7 ${spec}`:"");
-    const tags=`<tspan style="fill:var(--yellow)"> \u00b7 ${escH(a.backend)}</tspan>`
-      +(spec?`<tspan style="fill:var(--green)"> \u00b7 ${escH(spec)}</tspan>`:"");
+    const tagTxt=` · ${a.backend}`+(spec?` · ${spec}`:"");
+    const tags=`<tspan style="fill:var(--yellow)"> · ${escH(a.backend)}</tspan>`
+      +(spec?`<tspan style="fill:var(--green)"> · ${escH(spec)}</tspan>`:"");
     // the backend/spec tags get their characters first; whatever is left of
-    // the gutter is what the name may use, so the tags are never the part
-    // that spills out
-    const budget=Math.max(10,Math.floor((GUT-NW-4)/CH)-tagTxt.length);
-    const name=a.model.length>budget?a.model.slice(0,budget-1)+"\u2026":a.model;
-    const full=`${a.model}${tagTxt} \u00b7 ${a.n} run${a.n===1?"":"s"}`;
+    // the label box is what the name may use, so the tags never spill out
+    const budget=Math.max(10,Math.floor((LABW-NW-4)/CH)-tagTxt.length);
+    const name=a.model.length>budget?a.model.slice(0,budget-1)+"…":a.model;
+    const full=`${a.model}${tagTxt} · ${a.n} run${a.n===1?"":"s"}`;
     s+=`<g clip-path="url(#bn-lab)">`
-      +`<text x="0" y="${mid+3}" style="font:8px ui-monospace,monospace;fill:var(--ink-2)">`
+      +`<text x="0" y="${ly}" style="font:${FS}px ui-monospace,monospace;fill:var(--ink-2)">`
       +`<title>${escH(full)}</title>`
       +`${escH(name)}${tags}</text></g>`;
-    s+=T(GUT-6,mid+3,`\u00d7${a.n}`,"var(--muted)","end",9.5);
+    s+=T(LABW-6,ly,`×${a.n}`,"var(--muted)","end");
     for(const c of cols){
       const v=a[c.key]||0;
       const w=Math.max(1,c.barW*(v/c.max));
-      s+=`<rect x="${c.x}" y="${mid-3.5}" width="${w.toFixed(1)}" height="7" rx="2" fill="${c.color}"/>`;
-      s+=T(c.x+COLW,mid+3,v.toFixed(c.dp),"var(--ink-2)","end",9.5);
+      s+=`<rect x="${c.x}" y="${mid-4}" width="${w.toFixed(1)}" height="8" rx="2" fill="${c.color}"/>`;
+      s+=T(c.x+COLW,mid+3.5,v.toFixed(c.dp),"var(--ink-2)","end");
     }
   });
-  $("bn-chart").innerHTML=s+"</svg>";
+  s+="</svg>";
+  if(host.dataset.svg!==s){ host.dataset.svg=s; host.innerHTML=s; }
 }
+onResize($("bn-chart"),()=>benchChart(benchAggs));
 // exclusion sets: empty = show everything, so models added later
 // (new benchmarks, new backends) appear without touching the filter
 let benchEx={backends:new Set(), models:new Set()}, benchOptSig="";
@@ -1593,7 +2116,7 @@ function benchSelectAll(on){
 }
 function renderBenchFilters(all,force){
   const models=[...new Set(all.map(r=>r.model))].sort();
-  const backends=[...new Set(all.map(r=>r.backend||"\u2014"))].sort();
+  const backends=[...new Set(all.map(r=>r.backend||"—"))].sort();
   const sig=JSON.stringify([models,backends]);
   if(sig===benchOptSig&&!force) return;   // don't rebuild under the cursor
   benchOptSig=sig;
@@ -1602,8 +2125,10 @@ function renderBenchFilters(all,force){
   const bh=$("bn-backends"); bh.innerHTML="";
   for(const b of backends){
     const btn=document.createElement("button");
-    btn.className="chip"+(benchEx.backends.has(b)?"":" on");
-    btn.textContent=b;
+    const on=!benchEx.backends.has(b);
+    btn.className="chip"+(on?" on":"");
+    btn.textContent=b; btn.setAttribute("aria-pressed",on);
+    btn.title=on?"shown — click to hide this backend":"hidden — click to show this backend";
     btn.onclick=()=>benchToggle("backends",b);
     bh.appendChild(btn);
   }
@@ -1616,7 +2141,7 @@ function renderBenchFilters(all,force){
     cb.onchange=()=>benchToggle("models",m);
     lab.appendChild(cb);
     lab.appendChild(document.createTextNode(
-      m.length>34?m.slice(0,33)+"\u2026":m));
+      m.length>34?m.slice(0,33)+"…":m));
     mh.appendChild(lab);
   }
 }
@@ -1626,10 +2151,11 @@ function renderBench(){
   renderBenchFilters(benchData);
   const q=($("bn-search").value||"").toLowerCase();
   const runs=benchData.filter(r=>
-    (!stdOnly||r.kind==="std")
+    !benchHidden.has(r.id)
+    && (!stdOnly||r.kind==="std")
     && !benchEx.models.has(r.model)
-    && !benchEx.backends.has(r.backend||"\u2014")
-    && (!q||r.model.toLowerCase().includes(q)));
+    && !benchEx.backends.has(r.backend||"—")
+    && (!q||String(r.model||"").toLowerCase().includes(q)));
   const byKey={};
   for(const r of runs){
     const k=r.model+" "+(r.backend||"?")+" "+(r.spec||"");
@@ -1639,7 +2165,7 @@ function renderBench(){
     const nums=k=>rs.map(r=>r[k]).filter(v=>typeof v==="number");
     const accs=rs.filter(r=>r.draft_n&&r.draft_acc!=null)
                  .map(r=>r.draft_acc/r.draft_n*100);
-    return {model:rs[0].model,backend:rs[0].backend||"\u2014",
+    return {model:String(rs[0].model||""),backend:rs[0].backend||"—",
       spec:rs[0].spec||(accs.length?"?":null), acc:accs.length?median(accs):null, n:rs.length,
       pf:nums("prompt_tps").length?median(nums("prompt_tps")):0,
       dc:nums("decode_tps").length?median(nums("decode_tps")):0,
@@ -1655,53 +2181,94 @@ function renderBench(){
   benchChart(aggs);
   $("bn-count").textContent=`· ${runs.length} run(s) across ${aggs.length} model/backend pair(s)`
     +(runs.length>150?" — newest 150 listed":"")+", newest first";
-  $("bn-agg").querySelector("tbody").innerHTML=aggs.map(a=>
-    `<tr><td title="${escA(a.model)}">${escH(a.model.slice(0,46))}${a.model.length>46?"\u2026":""}</td><td>${a.backend}</td>
-     <td style="color:${a.spec?"var(--green)":"var(--muted)"}">${specLabel(a.spec)}</td>
-     <td class="num">${a.acc!=null?a.acc.toFixed(0)+"%":"\u2014"}</td><td class="num">${a.n}</td>
+  // the 5 s poll re-renders; the tables are only touched when their HTML
+  // actually changed, so a hovered/focused ✕ isn't swapped out underneath
+  const setBody=(tbl,html)=>{ const tb=$(tbl).querySelector("tbody");
+    if(tb.dataset.html!==html){ tb.dataset.html=html; tb.innerHTML=html; } };
+  setBody("bn-agg",aggs.map(a=>
+    `<tr><td title="${escA(a.model)}">${escH(a.model.slice(0,46))}${a.model.length>46?"…":""}</td><td>${escH(a.backend)}</td>
+     <td style="color:${a.spec?"var(--green)":"var(--muted)"}">${escH(specLabel(a.spec))}</td>
+     <td class="num">${a.acc!=null?a.acc.toFixed(0)+"%":"—"}</td><td class="num">${a.n}</td>
      <td class="num">${a.ttft!=null?(a.ttft/1000).toFixed(2)+"s":"—"}</td>
      <td class="num">${a.pf.toFixed(0)}</td><td class="num">${a.dc.toFixed(1)}</td>
-     <td class="num">${a.best!=null?a.best.toFixed(1):"—"}</td></tr>`).join("");
-  $("bn-runs").querySelector("tbody").innerHTML=[...runs].reverse().slice(0,150).map(r=>{
+     <td class="num">${a.best!=null?a.best.toFixed(1):"—"}</td></tr>`).join(""));
+  setBody("bn-runs",[...runs].reverse().slice(0,150).map(r=>{
     const d=new Date((r.ts||0)*1000);
     const t=`${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
-    return `<tr><td>${t}</td><td>${r.kind}</td><td title="${escA(r.model||"")}">${escH((r.model||"").slice(0,44))}${(r.model||"").length>44?"\u2026":""}</td>
-      <td>${r.backend||"—"}</td>
-      <td style="color:${r.spec||r.draft_n?"var(--green)":"var(--muted)"}">${specLabel(r.spec||(r.draft_n?"?":null))}${r.draft_n&&r.draft_acc!=null?" "+Math.round(r.draft_acc/r.draft_n*100)+"%":""}</td>
-      <td class="num">${r.prompt_n??"—"}</td>
-      <td class="num">${r.predicted_n??"—"}</td>
+    const m=String(r.model||"");
+    return `<tr><td>${t}</td><td>${escH(r.kind)}</td><td title="${escA(m)}">${escH(m.slice(0,44))}${m.length>44?"…":""}</td>
+      <td>${escH(r.backend||"—")}</td>
+      <td style="color:${r.spec||r.draft_n?"var(--green)":"var(--muted)"}">${escH(specLabel(r.spec||(r.draft_n?"?":null)))}${r.draft_n&&r.draft_acc!=null?" "+Math.round(r.draft_acc/r.draft_n*100)+"%":""}</td>
+      <td class="num">${escH(r.prompt_n??"—")}</td>
+      <td class="num">${escH(r.predicted_n??"—")}</td>
       <td class="num">${r.prompt_tps!=null?r.prompt_tps.toFixed(0):"—"}</td>
       <td class="num">${r.decode_tps!=null?r.decode_tps.toFixed(1):"—"}</td>
       <td class="num">${r.ttft_ms!=null?(r.ttft_ms/1000).toFixed(2)+"s":"—"}</td>
       <td class="num">${r.wall_s!=null?r.wall_s.toFixed(1)+"s":"—"}</td>
-      <td><button class="danger" style="padding:0 7px" onclick="benchDelete('${r.id}')">✕</button></td></tr>`;
-  }).join("");
+      <td><button class="danger" style="padding:0 7px" data-id="${escA(r.id)}" aria-label="Delete run" title="delete this run">✕</button></td></tr>`;
+  }).join(""));
 }
+// one delegated handler: ids never pass through an inline JS string
+$("bn-runs").addEventListener("click",e=>{
+  const b=e.target.closest("button[data-id]"); if(b) benchDelete(b.dataset.id); });
 
 /* ---------- settings ----------
    The page is rendered from the schema the deck serves, so a new setting
    appears here without touching this file. Only fields the user actually
    changed are submitted: the API treats a missing key as "leave alone" and
    an empty one as "go back to the default". */
-let stSchema=null, stDirty={}, stNeedsRestart=[];
+let stSchema=null, stDirty={}, stNeedsRestart=[], stLoading=null;
 const stVal=f=>(f.key in stDirty)?stDirty[f.key]
   :(f.value!=null?f.value:f.effective);
-function stMark(key,val){
-  stDirty[key]=val;
-  $("st-save").disabled=false; $("st-revert").disabled=false;
+const stId=k=>"st-f-"+String(k).replace(/[^a-zA-Z0-9_-]/g,"_");
+// per-field picker copy: what to pick and why
+const FP_HINTS={
+  model_dirs:["Choose a model directory","pick the folder that holds your model folders"],
+  download_dir:["Choose the download folder","new models from the downloader are saved here"],
+  whisper_bin:["Choose the whisper-server binary","the whisper.cpp server executable"],
+  whisper_model:["Choose a Whisper model","a ggml-*.bin model file",".bin"],
+  ffmpeg:["Choose the ffmpeg binary","the ffmpeg executable (only needed for video input)"],
+  backends:["Choose a llama-server binary","the llama-server executable for this build"],
+};
+function stStatus(txt,kind){ const d=$("st-dirty"); d.textContent=txt; d.className="sub"+(kind?" "+kind:""); }
+function stDirtyNote(){
   const n=Object.keys(stDirty).length;
-  $("st-dirty").textContent=`${n} change${n===1?"":"s"} not saved`;
-  const row=document.querySelector(`.strow[data-k="${key}"]`);
+  $("st-save").disabled=!n; $("st-revert").disabled=!n;
+  if(n) stStatus(`${n} change${n===1?"":"s"} not saved`,"warn");
+}
+function stMark(key,val){
+  stDirty[key]=val; stDirtyNote();
+  const row=document.querySelector(`.strow[data-k="${CSS.escape(key)}"]`);
   if(row)row.classList.add("dirty");
 }
-async function stLoad(){
-  stDirty={}; $("st-save").disabled=true; $("st-revert").disabled=true;
-  $("st-dirty").textContent="";
-  try{ stSchema=await api("/api/settings"); }
-  catch(e){ $("st-body").innerHTML='<div class="advisory">could not load settings</div>'; return; }
-  $("st-where").textContent=stSchema.config_file;
-  stRender();
+// keepDirty: re-read the schema but keep edits that were not part of a save
+function stLoad(keepDirty){
+  if(!keepDirty) stDirty={};
+  stDirtyNote(); if(!keepDirty) stStatus("");
+  return stLoading=(async()=>{
+    try{ stSchema=await api("/api/settings","GET",undefined,{quiet:true}); }
+    catch(e){ $("st-body").innerHTML=`<div class="advisory">could not load settings: ${escH(e.message)}</div>`; return; }
+    $("st-where").textContent=stSchema.config_file||"";
+    // a config file that failed to parse is running on defaults: say so
+    // before anything else on the page
+    $("st-notes").querySelectorAll(".cfgerr").forEach(x=>x.remove());
+    if(stSchema.config_error){
+      const d=document.createElement("div"); d.className="stnote warn cfgerr"; d.setAttribute("role","alert");
+      d.innerHTML=`<b>The config file could not be read</b> — NeuralDeck is running on defaults `
+        +`for everything in it. Saving here rewrites it.<br><code class="ic">${escH(stSchema.config_error)}</code>`;
+      $("st-notes").prepend(d);
+    }
+    stRender();
+  })();
 }
+function stDiscard(){
+  const n=Object.keys(stDirty).length;
+  if(n&&!confirm(`Discard ${n} unsaved change${n===1?"":"s"}?`))return;
+  stLoad();
+}
+// an unsaved edit survives a tab switch; closing the page asks first
+addEventListener("beforeunload",e=>{
+  if(Object.keys(stDirty).length){ e.preventDefault(); e.returnValue=""; } });
 function stRender(){
   const host=$("st-body"); host.innerHTML="";
   for(const g of stSchema.groups){
@@ -1719,60 +2286,86 @@ function stRender(){
     +` · benchmarks <span style="color:var(--ink-2)">${escH(stSchema.bench_file)}</span>`;
   host.appendChild(info);
 }
+const RESTART_BADGE={
+  true:["restart","read at startup — changing it needs a NeuralDeck restart"],
+  proxy:["proxy restart","the proxy reads it at startup — saving restarts a running proxy"],
+  both:["restart + proxy","needs a NeuralDeck restart, and saving restarts a running proxy"],
+};
 function stRow(f){
   const row=document.createElement("div");
   row.className="strow"+(f.key in stDirty?" dirty":"");
   row.dataset.k=f.key;
   const lab=document.createElement("div"); lab.className="lab";
-  lab.innerHTML=`${escH(f.label)}<small>${escH(f.key)}</small>`;
-  if(f.locked)lab.innerHTML+='<span class="badge env" title="set in the environment — '
-    +'the config file cannot override it">env</span>';
-  if(f.restart)lab.innerHTML+='<span class="badge restart" title="read at startup — '
-    +'changing it needs a restart">restart</span>';
+  const grouped=f.type==="dirlist"||f.type==="map";
+  // single controls get a real <label for>; lists are labelled groups
+  const l=document.createElement(grouped?"span":"label");
+  l.id=stId(f.key)+"-l"; if(!grouped) l.htmlFor=stId(f.key);
+  l.textContent=f.label; lab.appendChild(l);
+  lab.insertAdjacentHTML("beforeend",`<small>${escH(f.key)}</small>`);
+  if(f.locked)lab.insertAdjacentHTML("beforeend",'<span class="badge env" title="set in the environment — '
+    +'the config file cannot override it">env</span>');
+  const rb=RESTART_BADGE[String(f.restart)];
+  if(f.restart&&rb)lab.insertAdjacentHTML("beforeend",
+    `<span class="badge restart" title="${escA(rb[1])}">${escH(rb[0])}</span>`);
   row.appendChild(lab);
   const ctl=document.createElement("div");
   ctl.appendChild(stControl(f));
   row.appendChild(ctl);
   const bits=[];
   if(f.help)bits.push(escH(f.help));
-  if(f.locked)bits.push(`fixed by NEURALDECK_${f.key.toUpperCase()}=${escH(f.env)}`);
+  if(f.locked)bits.push(`fixed by NEURALDECK_${escH(f.key.toUpperCase())}=${escH(f.env)}`);
   else if(f.value==null)bits.push("using the default");
   if(bits.length){
     const help=document.createElement("div"); help.className="help";
+    help.id=stId(f.key)+"-h";
     help.innerHTML=bits.join(" · ");
     if(f.value!=null&&!f.locked){
       const b=document.createElement("button");
       b.textContent="use default"; b.style.cssText="margin-left:8px;padding:0 7px;font-size:10px";
+      b.setAttribute("aria-label",`Use the default for ${f.label}`);
       b.onclick=()=>{stMark(f.key,Array.isArray(f.effective)?[]:
         (f.effective&&typeof f.effective==="object"?{}:"")); stRender();};
       help.appendChild(b);
     }
     row.appendChild(help);
+    const c=ctl.querySelector("input,select,textarea"); if(c&&!grouped)c.setAttribute("aria-describedby",help.id);
   }
   return row;
 }
+// backend labels as they stand, including an unsaved edit of the map
+function stBackendLabels(){
+  const bf=stSchema&&stSchema.fields.find(x=>x.key==="backends");
+  const m=bf?stVal(bf):null;
+  return m&&typeof m==="object"&&Object.keys(m).length?Object.keys(m):(CFG.backends||[]);
+}
 function stControl(f){
-  const v=stVal(f), dis=f.locked;
+  const v=stVal(f), dis=f.locked, id=stId(f.key);
   const wrap=document.createElement("div");
   const missing=p=>f.exists&&p in f.exists&&!f.exists[p];
+  const hint=FP_HINTS[f.key]||[];
   if(f.type==="bool"){
-    const cb=document.createElement("input"); cb.type="checkbox";
+    const cb=document.createElement("input"); cb.type="checkbox"; cb.id=id;
     cb.checked=!!v; cb.disabled=dis; cb.style.accentColor="var(--cyan)";
     cb.onchange=()=>stMark(f.key,cb.checked);
     wrap.appendChild(cb);
-  }else if(f.type==="choice"){
-    const sel=document.createElement("select"); sel.disabled=dis;
-    sel.innerHTML=(f.choices||[]).map(c=>
-      `<option value="${escA(c)}"${String(v)===c?" selected":""}>${escH(c)}</option>`).join("");
+  }else if(f.type==="choice"||(f.key==="default_backend"&&!f.choices)){
+    // Default build names a key of the backends map: offer those labels
+    // (plus whatever is stored now, so an old value isn't silently lost)
+    let choices=f.type==="choice"?(f.choices||[]):stBackendLabels();
+    if(v&&!choices.includes(String(v))) choices=[String(v),...choices];
+    const sel=document.createElement("select"); sel.disabled=dis; sel.id=id;
+    sel.innerHTML=(f.type==="choice"?"":`<option value=""${!v?" selected":""}>(first build)</option>`)
+      +choices.map(c=>`<option value="${escA(c)}"${String(v)===c?" selected":""}>${escH(c)}</option>`).join("");
     sel.onchange=()=>stMark(f.key,sel.value);
     wrap.appendChild(sel);
   }else if(f.type==="strlist"){
     const ta=document.createElement("textarea"); ta.rows=Math.max(2,(v||[]).length+1);
-    ta.disabled=dis; ta.value=(v||[]).join("\n");
+    ta.disabled=dis; ta.value=(v||[]).join("\n"); ta.id=id;
     ta.placeholder="one per line";
     ta.onchange=()=>stMark(f.key,ta.value.split("\n").filter(x=>x.trim()));
     wrap.appendChild(ta);
   }else if(f.type==="dirlist"){
+    wrap.setAttribute("role","group"); wrap.setAttribute("aria-labelledby",id+"-l");
     const list=v||[];
     list.forEach((p,i)=>{
       const r=document.createElement("div"); r.className="pathrow";
@@ -1781,6 +2374,7 @@ function stControl(f){
       if(!dis){
         const x=document.createElement("button"); x.className="danger";
         x.textContent="✕"; x.style.padding="0 7px";
+        x.setAttribute("aria-label",`Remove ${p}`); x.title="remove from the list";
         x.onclick=()=>{const n=list.slice(); n.splice(i,1); stMark(f.key,n); stRender();};
         r.appendChild(x);
       }
@@ -1794,38 +2388,48 @@ function stControl(f){
       const add=document.createElement("button"); add.textContent="+ add folder…";
       add.onclick=()=>fpOpen(list[list.length-1]||"",picked=>{
         if(list.includes(picked))return;
-        stMark(f.key,list.concat([picked])); stRender();});
+        stMark(f.key,list.concat([picked])); stRender();},
+        {mode:"dir",title:hint[0],hint:hint[1]});
       wrap.appendChild(add);
     }
   }else if(f.type==="map"){
+    wrap.setAttribute("role","group"); wrap.setAttribute("aria-labelledby",id+"-l");
     const m=v||{};
     Object.entries(m).forEach(([label,path])=>{
       const r=document.createElement("div"); r.className="pathrow";
-      r.innerHTML=`<span style="color:var(--cyan);flex:none;min-width:90px">${escH(label)}</span>`
+      r.innerHTML=`<span style="color:var(--cyan);flex:none;min-width:90px;max-width:40%;overflow-wrap:anywhere">${escH(label)}</span>`
         +`<span class="p${missing(path)?" gone":""}">${escH(path)}`
         +`${missing(path)?' <span class="badge missing">not found</span>':""}</span>`;
       if(!dis){
         const x=document.createElement("button"); x.className="danger";
         x.textContent="✕"; x.style.padding="0 7px";
+        x.setAttribute("aria-label",`Remove ${label}`); x.title="remove this entry";
         x.onclick=()=>{const n={...m}; delete n[label]; stMark(f.key,n); stRender();};
         r.appendChild(x);
       }
       wrap.appendChild(r);
     });
     if(!dis){
-      const r=document.createElement("div"); r.className="pathrow";
+      const r=document.createElement("div"); r.className="pathrow"; r.style.flexWrap="wrap";
       const name=document.createElement("input"); name.type="text";
-      name.placeholder="label (e.g. upstream)"; name.style.maxWidth="150px";
+      name.placeholder="label (e.g. upstream)"; name.style.cssText="flex:0 1 180px;width:180px";
+      name.setAttribute("aria-label","New entry label");
       const path=document.createElement("input"); path.type="text";
-      path.placeholder="path to llama-server";
-      const add=document.createElement("button"); add.textContent="+ add";
-      add.onclick=()=>{
-        if(!name.value.trim()||!path.value.trim()){alert("both a label and a path");return;}
+      path.placeholder="path to llama-server"; path.style.flex="1 1 200px";
+      path.setAttribute("aria-label","New entry path");
+      const br=document.createElement("button"); br.textContent="browse…";
+      br.onclick=()=>fpOpen(path.value,picked=>{path.value=picked; ok();},
+        {mode:"file",title:hint[0]||"Choose a file",hint:hint[1],ext:hint[2]});
+      const add=document.createElement("button"); add.textContent="+ add"; add.disabled=true;
+      // enabled once both halves are filled, instead of an alert after the fact
+      const ok=()=>add.disabled=!(name.value.trim()&&path.value.trim());
+      name.oninput=path.oninput=ok;
+      add.onclick=()=>{ if(add.disabled)return;
         stMark(f.key,{...m,[name.value.trim()]:path.value.trim()}); stRender();};
-      r.append(name,path,add); wrap.appendChild(r);
+      r.append(name,path,br,add); wrap.appendChild(r);
     }
   }else{
-    const inp=document.createElement("input");
+    const inp=document.createElement("input"); inp.id=id;
     inp.type=(f.type==="int"||f.type==="float")?"number":"text";
     if(f.type==="float")inp.step="any";
     if(f.min!=null)inp.min=f.min; if(f.max!=null)inp.max=f.max;
@@ -1836,7 +2440,10 @@ function stControl(f){
       r.appendChild(inp);
       if(!dis){
         const b=document.createElement("button"); b.textContent="browse…";
-        b.onclick=()=>fpOpen(inp.value,picked=>{inp.value=picked;stMark(f.key,picked);});
+        b.setAttribute("aria-label",`Browse for ${f.label}`);
+        b.onclick=()=>fpOpen(inp.value,picked=>{inp.value=picked;stMark(f.key,picked);},
+          {mode:f.type,title:hint[0]||(f.type==="file"?"Choose a file":"Choose a folder"),
+           hint:hint[1],ext:hint[2]});
         r.appendChild(b);
       }
       wrap.appendChild(r);
@@ -1853,69 +2460,125 @@ function stNote(kind,html){
   d.innerHTML=html; $("st-notes").appendChild(d);
 }
 async function stSave(){
-  if(!Object.keys(stDirty).length)return;
-  $("st-save").disabled=true;
-  $("st-notes").innerHTML="";
+  const sent={...stDirty};
+  if(!Object.keys(sent).length)return;
+  $("st-save").disabled=true; stStatus("saving…");
+  $("st-notes").querySelectorAll(".stnote:not(.cfgerr)").forEach(x=>x.remove());
   let r;
-  try{ r=await api("/api/settings","POST",stDirty); }
-  catch(e){ $("st-save").disabled=false; return; }   // api() already reported it
-  stDirty={}; $("st-dirty").textContent="";
-  const parts=[];
-  if(r.saved.length)parts.push(`saved ${r.saved.join(", ")}`);
-  if(r.cleared.length)parts.push(`reset ${r.cleared.join(", ")} to default`);
-  stNote("ok",parts.join(" · ")||"nothing changed");
-  for(const w of r.warnings||[])stNote("warn",escH(w));
+  try{ r=await api("/api/settings","POST",sent,{quiet:true}); }
+  catch(e){ $("st-save").disabled=false; stStatus("save failed: "+e.message,"err");
+    toast("settings not saved: "+e.message,"err",{ms:9000}); return; }
+  // only what was sent is now clean; an edit made while saving stays dirty
+  for(const k in sent) if(JSON.stringify(stDirty[k])===JSON.stringify(sent[k])) delete stDirty[k];
+  const parts=[], warn=[];
+  if((r.saved||[]).length)parts.push(`saved ${r.saved.join(", ")}`);
+  if((r.cleared||[]).length)parts.push(`reset ${r.cleared.join(", ")} to default`);
+  const okTxt=parts.join(" · ")||"nothing changed";
+  stNote("ok",escH(okTxt));
+  for(const w of r.warnings||[]){ stNote("warn",escH(w)); warn.push(w); }
+  if((r.proxy_restart||[]).length){
+    if(r.proxy_error){ const t=`proxy restart failed: ${r.proxy_error}`; stNote("warn",escH(t)); warn.push(t); }
+    else if(r.proxy_restarted) stNote("ok",`proxy restarted to apply ${escH(r.proxy_restart.join(", "))}`);
+    else stNote("warn",`${escH(r.proxy_restart.join(", "))} apply when the proxy next starts (it isn't running)`);
+  }
   stNeedsRestart=[...new Set(stNeedsRestart.concat(r.needs_restart||[]))];
   if(stNeedsRestart.length){
-    stNote("warn",`<b>${escH(stNeedsRestart.join(", "))}</b> ${stNeedsRestart.length===1?"was":"were"}`
-      +" read when NeuralDeck started — restart for it to take effect.");
+    const t=`${stNeedsRestart.join(", ")} ${stNeedsRestart.length===1?"was":"were"} read when NeuralDeck started — restart for ${stNeedsRestart.length===1?"it":"them"} to take effect.`;
+    stNote("warn",escH(t)); warn.push("restart needed");
     $("st-restart").style.display="";
   }
-  await stLoad();
+  // the result goes next to the Save button (the notes are at the top of a
+  // long page) and into a toast
+  const summary=okTxt+(r.proxy_restarted?" · proxy restarted":"")+(warn.length?" · "+warn.join(" · "):"");
+  toast(summary,warn.length?"warn":"ok",{ms:warn.length?10000:5000});
+  await stLoad(true);
+  stStatus(Object.keys(stDirty).length?`saved · ${Object.keys(stDirty).length} change(s) still pending`
+    :(warn.length?"saved · "+warn.join(" · "):"saved ✓"),warn.length?"warn":"ok");
   // the rest of the page reads its ports, backends and defaults from the
   // deck, so pick the new ones up without a reload
-  try{ applyConfig(await api("/api/config")); }catch(e){}
-  loadModels();
+  try{ applyConfig(await api("/api/config","GET",undefined,{quiet:true})); }catch(e){}
+  loadModels().catch(()=>{});
 }
 async function stRestart(){
   if(!confirm("Restart NeuralDeck now?\n\nRunning models are not affected — "
     +"they are separate processes."))return;
-  const before=CFG.deck_port;
+  // compare against the port this page was actually loaded from — CFG
+  // may already hold the new, saved-but-not-yet-live port
+  const here=parseInt(location.port)||(location.protocol==="https:"?443:80);
   let r; try{ r=await api("/api/restart","POST",{}); }catch(e){ return; }
-  const port=r.port||before;
-  $("st-notes").innerHTML="";
-  stNote("ok","restarting…");
-  if(port!==before){
+  const port=parseInt(r.port)||here;
+  $("st-notes").querySelectorAll(".stnote:not(.cfgerr)").forEach(x=>x.remove());
+  stNote("ok","restarting…"); stStatus("restarting…");
+  if(port!==here){
     const url=`${location.protocol}//${location.hostname}:${port}/`;
-    stNote("warn",`the dashboard has moved to <a class="ext" href="${escA(url)}">${escH(url)}</a>`
-      +" — opening it in a moment");
-    setTimeout(()=>location.href=url,3000);
+    const link=`<a class="ext" href="${escA(url)}">${escH(url)}</a>`;
+    stNote("warn",`the dashboard is moving to ${link} — this page follows once it answers`);
+    $("st-dirty").innerHTML=`moved → ${link}`;
+    toast(`NeuralDeck is moving to ${url}`,"warn",{ms:0});
+    // a cross-origin no-cors fetch resolves (opaquely) once something
+    // listens there, which is all we need to know
+    let tries=0;
+    const poll=setInterval(async()=>{
+      tries++;
+      try{ await fetch(url+"api/config",{mode:"no-cors",cache:"no-store"}); clearInterval(poll); location.href=url; }
+      catch(e){ if(tries>60){ clearInterval(poll); stNote("warn",`${link} did not answer — `
+        +"check the terminal NeuralDeck was started from"); } }
+    },1000);
     return;
   }
-  // same port: wait for it to answer again, then reload
+  // same port: wait for it to go away and answer again, then reload
   let tries=0;
   const poll=setInterval(async()=>{
     tries++;
-    try{ await fetch("/api/config",{cache:"no-store"}); clearInterval(poll); location.reload(); }
+    try{ const x=await fetch("/api/config",{cache:"no-store"});
+      if(x.ok&&tries>1){ clearInterval(poll); location.reload(); } }
     catch(e){ if(tries>40){clearInterval(poll); stNote("warn","it did not come back — "
       +"check the terminal NeuralDeck was started from");} }
   },700);
 }
+// jump to one setting (e.g. from the roofline panel) and focus it
+async function gotoSetting(key){
+  setView("settings");
+  if(stLoading) await stLoading;
+  const el=$(stId(key)); if(!el)return;
+  el.closest(".strow").scrollIntoView({block:"center",behavior:"smooth"});
+  el.focus({preventScroll:true});
+}
 
-/* ---------- folder picker ---------- */
-let fpCb=null, fpPath="";
-function fpOpen(start,cb){ fpCb=cb; $("fp-overlay").style.display="block"; fpGo(start||""); }
-function fpClose(){ $("fp-overlay").style.display="none"; fpCb=null; }
+/* ---------- file / folder picker ---------- */
+let fpCb=null, fpPath="", fpParent=null, fpOpts={}, fpSel=null, fpSeq=0;
+function fpOpen(start,cb,opts={}){
+  fpCb=cb; fpOpts=opts; fpSel=null;
+  const file=opts.mode==="file";
+  $("fp-title").textContent=opts.title||(file?"Choose a file":"Choose a folder");
+  $("fp-use").textContent=file?"Use this file":"Use this folder";
+  const dl=$("fp-dialog"); if(!dl.open)dl.showModal();
+  fpGo(start||"");
+}
+function fpClose(){ const dl=$("fp-dialog"); if(dl.open)dl.close(); }
+$("fp-dialog").addEventListener("close",()=>{ fpCb=null; });
 function fpUp(){ if(fpParent!=null)fpGo(fpParent); }
-let fpParent=null;
+function fpHere(d){
+  const file=fpOpts.mode==="file";
+  $("fp-use").disabled=file&&!fpSel;
+  $("fp-here").textContent=file
+    ?(fpSel?`selected: ${fpSel.split(/[\\/]/).pop()}`:(fpOpts.hint?fpOpts.hint+" — ":"")+"select a file below")
+    :(d&&d.ggufs_here?`${d.ggufs_here} .gguf file(s) directly in this folder · `:"")+(fpOpts.hint||"");
+}
 async function fpGo(path){
+  const file=fpOpts.mode==="file", seq=++fpSeq;
+  let q=[];
+  if(path)q.push("path="+encodeURIComponent(path));
+  if(file){ q.push("mode=file"); if(fpOpts.ext)q.push("ext="+encodeURIComponent(fpOpts.ext)); }
   let d;
-  try{ d=await api("/api/browse"+(path?"?path="+encodeURIComponent(path):"")); }
-  catch(e){ return; }
+  try{ d=await api("/api/browse"+(q.length?"?"+q.join("&"):""),"GET",undefined,{quiet:true}); }
+  catch(e){ if(seq===fpSeq) $("fp-here").textContent="cannot open: "+e.message; return; }
+  if(seq!==fpSeq)return;
   fpPath=d.path; fpParent=d.parent;
   $("fp-path").value=d.path;
-  $("fp-here").textContent=d.ggufs_here?`${d.ggufs_here} .gguf file(s) directly in this folder`
-    :"pick the folder that holds your model folders";
+  // a typed file path opens its folder with that file preselected
+  fpSel=file&&path&&(d.files||[]).some(f=>f.path===path)?path:null;
+  fpHere(d);
   $("fp-roots").innerHTML="";
   for(const r of d.roots||[]){
     const b=document.createElement("button"); b.textContent=r;
@@ -1923,45 +2586,79 @@ async function fpGo(path){
     b.onclick=()=>fpGo(r); $("fp-roots").appendChild(b);
   }
   const list=$("fp-list"); list.innerHTML="";
-  if(!d.dirs.length)list.innerHTML='<div class="advisory" style="padding:8px">no subfolders</div>';
+  const files=file?(d.files||[]):[];
+  if(!d.dirs.length&&!files.length)list.innerHTML=`<div class="advisory" style="padding:8px">${file?"no subfolders or matching files":"no subfolders"}</div>`;
+  // rows are <button>s: focusable, Enter/Space work without extra wiring
   for(const dir of d.dirs){
-    const row=document.createElement("div"); row.className="d";
-    row.innerHTML=`<span class="n">${escH(dir.name)}</span>`
-      +(dir.ggufs?`<span class="g">${dir.ggufs} gguf</span>`:"");
+    const row=document.createElement("button"); row.className="d"; row.type="button";
+    row.innerHTML=`<span class="n">📁 ${escH(dir.name)}</span>`
+      +(dir.ggufs?`<span class="g">${escH(dir.ggufs)} gguf</span>`:"");
+    row.setAttribute("aria-label",`Open folder ${dir.name}`);
     row.onclick=()=>fpGo(dir.path);
     list.appendChild(row);
   }
+  for(const f of files){
+    const row=document.createElement("button"); row.className="d file"+(f.path===fpSel?" sel":""); row.type="button";
+    row.innerHTML=`<span class="n">${escH(f.name)}</span><span class="g" style="color:var(--muted)">${
+      f.size!=null?escH((f.size/1048576).toFixed(1))+" MiB":""}</span>`;
+    row.setAttribute("aria-pressed",f.path===fpSel);
+    row.onclick=()=>{ fpSel=f.path; list.querySelectorAll(".d.file").forEach(x=>{
+      x.classList.toggle("sel",x===row); x.setAttribute("aria-pressed",x===row);}); fpHere(d); };
+    row.ondblclick=()=>{ fpSel=f.path; fpPick(); };
+    list.appendChild(row);
+  }
+  if(file&&!("files" in d)) $("fp-here").textContent=
+    "this dashboard version can't list files — navigate to the folder and type the file name at the end of the path";
 }
-function fpPick(){ const cb=fpCb, p=$("fp-path").value||fpPath; fpClose(); if(cb)cb(p); }
+function fpPick(){
+  const cb=fpCb;
+  let p=fpOpts.mode==="file"?(fpSel||(($("fp-path").value||"")!==fpPath?$("fp-path").value:null))
+    :($("fp-path").value||fpPath);
+  if(!p)return;
+  fpClose(); if(cb)cb(p);
+}
 
 /* ---------- boot ---------- */
+// note which charted ports have had an instance, so the KV legend and
+// series only show those
+function kvTrack(insts){
+  const ports=CFG.kv_chart_ports||[]; let add=false;
+  for(const i of insts||[]) if(ports.includes(i.port)&&!kvSeen.has(i.port)){ kvSeen.add(i.port); add=true; }
+  if(add) kvLegend();
+}
 (async function boot(){
-  try{ applyConfig(await api("/api/config")); }
+  try{ applyConfig(await api("/api/config","GET",undefined,{quiet:true})); }
   catch(e){ applyConfig(null); }
   try{
-    const d=await api("/api/state"), h=d.history;
+    const d=await api("/api/state","GET",undefined,{quiet:true}), h=d.history||{ts:[]};
     chUtil.seed(h.ts,{cpu:h.cpu,gpu:h.gpu});
     chTps.seed(h.ts,{prefill:h.prefill,decode:h.decode});
     chVram.seed(h.ts,{vram:h.vram});
     chTemp.seed(h.ts,{gpu_temp:h.gpu_temp});
-    if(chKv)chKv.seed(h.ts,{kv1:h.kv1,kv2:h.kv2,kv3:h.kv3,kv4:h.kv4});
-    if(d.snapshot&&d.snapshot.ts) renderSnapshot(d.snapshot);
+    seedKv(h);
+    if(d.snapshot&&d.snapshot.ts){ kvTrack(d.snapshot.llama_instances); renderSnapshot(d.snapshot); }
   }catch(e){}
   setView((()=>{try{return localStorage.getItem("nd-view")||"dash";}catch(e){return "dash";}})());
-  await loadModels(); setLog(curLog);
+  // a failed model listing must not keep the live stream from starting
+  try{ await loadModels(); }catch(e){ setTimeout(()=>loadModels().catch(()=>{}),5000); }
+  setLog(curLog);
+  if(CFG.hf_available) hfPollStatus(5000);   // pick up a download already running
   const es=new EventSource("/api/stream");
   es.onopen=()=>{$("conn").textContent="live";$("conn").className="pill gen";};
   es.onerror=()=>{$("conn").textContent="reconnecting…";$("conn").className="pill warn";};
   es.onmessage=ev=>{
-    const s=JSON.parse(ev.data), ll=s.llama||{};
-    renderSnapshot(s);
+    let s; try{ s=JSON.parse(ev.data); }catch(e){ return; }
+    const ll=s.llama||{};
+    kvTrack(s.llama_instances);
+    try{ renderSnapshot(s); }catch(e){ console.error(e); }
     chUtil.push(s.ts,{cpu:s.cpu.util,gpu:s.gpu.util||0});
     chTps.push(s.ts,{prefill:ll.prefill_tps_weighted||0,decode:ll.decode_tps_weighted||0});
     chVram.push(s.ts,{vram:s.gpu.vram_used_gb});
-    chTemp.push(s.ts,{gpu_temp:s.gpu.temp||0});
+    chTemp.push(s.ts,{gpu_temp:s.gpu.temp});
     const byPort={}; for(const i of (s.llama_instances||[])) byPort[i.port]=i;
+    // null (no instance, or KV unknown) breaks the line instead of drawing 0
     if(chKv){const kv={};(CFG.kv_chart_ports||[]).forEach((p,i)=>
-      kv["kv"+(i+1)]=(byPort[p]||{}).kv_pct||0); chKv.push(s.ts,kv);}
+      kv["kv"+(i+1)]=byPort[p]&&byPort[p].kv_pct!=null?byPort[p].kv_pct:null); chKv.push(s.ts,kv);}
   };
 })();
 </script>

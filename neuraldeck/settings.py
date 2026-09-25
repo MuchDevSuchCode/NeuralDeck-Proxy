@@ -10,15 +10,22 @@ three:
   * a setting fixed in the environment cannot be changed by writing the
     file, so it is reported as locked rather than silently ignored;
   * some settings take effect the moment the file is re-read, others were
-    captured when the process started (a bound port, a deque's length), so
-    each row says which it is;
+    captured when a process started (a bound port, a deque's length), so
+    each row says which: `restart` is False (applies at once), True (the
+    dashboard needs a restart), "proxy" (read by the proxy process, which
+    is restarted for you) or "both";
   * a default is not a stored value — clearing a field means "go back to
     the default", not "set it to empty".
 """
 
+import ipaddress
 import json
+import math
 import os
+import re
 import shutil
+import tempfile
+import threading
 from pathlib import Path
 
 from . import config
@@ -27,6 +34,10 @@ SPEC_CHOICES = ["auto", "ngram", "off"]
 THINK_CHOICES = ["off", "low", "medium", "high"]
 
 
+# restart: False  — the dashboard re-reads it on save, applies at once
+#          True   — captured when the dashboard started; restart it
+#          "proxy"— read by the proxy process at startup; saving restarts it
+#          "both" — both of the above
 def _f(key, label, type_, group, help_="", restart=False, choices=None,
        min_=None, max_=None, placeholder=""):
     return {"key": key, "label": label, "type": type_, "group": group,
@@ -51,10 +62,13 @@ SCHEMA = [
     _f("default_backend", "Default build", "str", "Backends",
        "Which label the launch form starts on."),
     _f("llama_port_range", "llama port range", "str", "Backends",
-       "Ports the deck launches into and the proxy discovers, e.g. 8081-8089.",
-       restart=True, placeholder="8081-8089"),
+       "Ports the deck launches into and the proxy discovers, e.g. 8081-8089 "
+       f"(at most {config.MAX_LLAMA_PORTS}). Saving restarts the proxy; "
+       "running instances keep their ports.",
+       restart="proxy", placeholder="8081-8089"),
     _f("llama_host", "llama bind address", "str", "Backends",
-       "What launched instances bind to. 127.0.0.1 keeps them off the network.",
+       "What launched instances bind to. 127.0.0.1 keeps them off the "
+       "network. Applies to the next launch.",
        placeholder="0.0.0.0"),
 
     # ── Launch defaults ───────────────────────────────────────────────────
@@ -96,52 +110,59 @@ SCHEMA = [
        min_=1, max_=65535),
     _f("deck_host", "Dashboard bind address", "str", "Ports",
        "0.0.0.0 serves the whole network with no authentication; "
-       "127.0.0.1 keeps it on this machine.", restart=True),
+       "127.0.0.1 keeps it on this machine. Changing it needs a restart.",
+       restart=True),
     _f("proxy_port", "Proxy port", "int", "Ports",
-       "The client-facing endpoint your apps point at.", restart=True,
-       min_=1, max_=65535),
-    _f("proxy_host", "Proxy bind address", "str", "Ports", "", restart=True),
+       "The client-facing endpoint your apps point at. Saving restarts the "
+       "proxy on the new port.", restart="proxy", min_=1, max_=65535),
+    _f("proxy_host", "Proxy bind address", "str", "Ports",
+       "Saving restarts the proxy.", restart="proxy"),
 
     # ── Speech, vision and video ──────────────────────────────────────────
     _f("whisper_bin", "whisper-server binary", "file", "Speech & video",
-       "whisper.cpp's server, for speech input. Optional."),
+       "whisper.cpp's server, for speech input. Optional. Used the next "
+       "time whisper-server is started."),
     _f("whisper_model", "Whisper model", "file", "Speech & video",
-       "A ggml-*.bin model file."),
-    _f("whisper_port", "Whisper port", "int", "Speech & video", "",
-       restart=True, min_=1, max_=65535),
+       "A ggml-*.bin model file. Used the next time whisper-server is "
+       "started."),
+    _f("whisper_port", "Whisper port", "int", "Speech & video",
+       "Saving restarts the proxy; restart whisper-server from the "
+       "dashboard to move it.", restart="proxy", min_=1, max_=65535),
     _f("ffmpeg", "ffmpeg", "file", "Speech & video",
        "Needed only for video input. Without it, video requests fail and "
-       "everything else works."),
+       "everything else works. Read by the proxy.", restart="proxy"),
     _f("video_fps", "Video frame rate", "float", "Speech & video",
        "Frames per second extracted from video for vision models.",
-       min_=0.1, max_=30),
+       restart="proxy", min_=0.1, max_=30),
     _f("max_frames", "Max frames per video", "int", "Speech & video", "",
-       min_=1, max_=500),
+       restart="proxy", min_=1, max_=500),
     _f("tts_endpoint", "TTS endpoint", "str", "Speech & video",
-       "An OpenAI-compatible /v1/audio/speech backend.", restart=True),
+       "An OpenAI-compatible /v1/audio/speech backend.", restart="proxy"),
     _f("tts_default_voice", "Default voice", "str", "Speech & video",
-       "Filled in when a client does not name one."),
+       "Filled in when a client does not name one.", restart="proxy"),
 
     # ── Proxy behaviour ───────────────────────────────────────────────────
     _f("strict_model_routing", "Strict model routing", "bool", "Proxy",
        "On: a request naming a model nothing is serving is an error. Off: "
        "it is answered by the default instance, which misattributes "
-       "benchmarks.", restart=True),
+       "benchmarks.", restart="proxy"),
     _f("llama_timeout", "LLM timeout (s)", "float", "Proxy", "",
-       restart=True, min_=1, max_=7200),
+       restart="proxy", min_=1, max_=7200),
     _f("whisper_timeout", "Whisper timeout (s)", "float", "Proxy", "",
-       restart=True, min_=1, max_=7200),
+       restart="proxy", min_=1, max_=7200),
 
     # ── Dashboard ─────────────────────────────────────────────────────────
     _f("peak_bw_gbs", "Peak memory bandwidth (GB/s)", "float", "Dashboard",
-       "Used by the roofline panel to estimate a decode ceiling. Set it to "
-       "your machine's real figure or the panel means nothing.",
+       "Used by the roofline panel to estimate a decode ceiling. The "
+       "default (89.6) is a dual-channel DDR5 figure: set it to your GPU's "
+       "or APU's real memory bandwidth or the panel means nothing.",
        min_=1, max_=100000),
     _f("vram_total_gb", "VRAM total override (GiB)", "float", "Dashboard",
        "Only used when no driver reports a total. 0 leaves it unknown.",
        min_=0, max_=100000),
     _f("history_len", "History length (samples)", "int", "Dashboard",
-       "Points kept in the charts, at one per second.", restart=True,
+       "Points kept in the charts, one per sample interval. Changing it "
+       "needs a restart.", restart=True,
        min_=60, max_=86400),
     _f("sample_interval", "Sample interval (s)", "float", "Dashboard",
        "How often telemetry is collected. Takes effect immediately.",
@@ -150,13 +171,15 @@ SCHEMA = [
     # ── Optional services ─────────────────────────────────────────────────
     _f("tts_cmd", "TTS start command", "strlist", "Optional services",
        "Command to start a TTS server, one argument per entry. Leave empty "
-       "if you start it yourself.", restart=True),
-    _f("tts_port", "TTS port", "int", "Optional services", "", restart=True,
-       min_=1, max_=65535),
+       "if you start it yourself. Used the next time it is started."),
+    _f("tts_port", "TTS port", "int", "Optional services",
+       "Where the dashboard looks for the TTS server, and the proxy's TTS "
+       "endpoint unless one is set. Saving restarts the proxy.",
+       restart="proxy", min_=1, max_=65535),
     _f("comfy_cmd", "ComfyUI start command", "strlist", "Optional services",
-       "", restart=True),
+       "One argument per entry. Used the next time it is started."),
     _f("comfy_port", "ComfyUI port", "int", "Optional services", "",
-       restart=True, min_=1, max_=65535),
+       min_=1, max_=65535),
 ]
 
 BY_KEY = {f["key"]: f for f in SCHEMA}
@@ -216,6 +239,9 @@ def describe() -> dict:
         "bench_file": str(config.BENCH_FILE),
         "platform": "windows" if config.IS_WINDOWS else "posix",
         "path_sep": os.sep,
+        # why config.json is not in use (unparseable, wrong shape), or None;
+        # saving is refused until it is fixed, so the page must show this
+        "config_error": config.FILE_ERROR,
     }
 
 
@@ -252,26 +278,65 @@ class Invalid(ValueError):
     """A submitted value the schema will not accept."""
 
 
+HOST_KEYS = ("deck_host", "proxy_host", "llama_host")
+PORT_KEYS = ("deck_port", "proxy_port", "whisper_port", "tts_port", "comfy_port")
+_LABEL = re.compile(r"^(?!-)[A-Za-z0-9-]{1,63}(?<!-)$")
+
+
+def _valid_host(h: str) -> bool:
+    """An IP literal (0.0.0.0, ::, 127.0.0.1 …) or a bare hostname — no
+    scheme, port, brackets or spaces, since it goes straight to bind()."""
+    try:
+        ipaddress.ip_address(h)
+        return True
+    except ValueError:
+        pass
+    if len(h) > 253:
+        return False
+    labels = h.rstrip(".").split(".")
+    if all(x.isdigit() for x in labels):     # 999.1.1.1 is not a hostname
+        return False
+    return all(_LABEL.match(x) for x in labels)
+
+
 def _coerce(field: dict, raw):
     key, t = field["key"], field["type"]
-    if raw is None or raw == "" or raw == [] or raw == {}:
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
         return None                      # cleared: fall back to the default
     try:
         if t == "int":
-            v = int(raw)
+            if isinstance(raw, bool):
+                raise ValueError
+            num = raw if isinstance(raw, int) else float(str(raw).strip())
+            if isinstance(num, float):
+                if not math.isfinite(num) or not num.is_integer():
+                    raise Invalid(f"{key}: must be a whole number")
+            v = int(num)
         elif t == "float":
-            v = float(raw)
+            if isinstance(raw, bool):
+                raise ValueError
+            v = float(str(raw).strip()) if isinstance(raw, str) else float(raw)
+            if not math.isfinite(v):
+                raise Invalid(f"{key}: must be a finite number")
         elif t == "bool":
-            v = raw if isinstance(raw, bool) else \
-                str(raw).strip().lower() in ("1", "true", "yes", "on")
+            if isinstance(raw, bool):
+                v = raw
+            else:
+                word = str(raw).strip().lower()
+                if word in ("1", "true", "yes", "on"):
+                    v = True
+                elif word in ("0", "false", "no", "off"):
+                    v = False
+                else:
+                    raise ValueError
         elif t == "choice":
-            v = str(raw)
+            v = str(raw).strip()
             if field["choices"] and v not in field["choices"]:
                 raise Invalid(f"{key}: must be one of "
                               f"{', '.join(field['choices'])}")
         elif t in ("dirlist", "strlist"):
             if isinstance(raw, str):
-                raw = [x for x in raw.splitlines() if x.strip()]
+                raw = raw.splitlines()
             if not isinstance(raw, list):
                 raise Invalid(f"{key}: expected a list")
             v = [str(x).strip() for x in raw if str(x).strip()]
@@ -288,37 +353,72 @@ def _coerce(field: dict, raw):
             v = str(raw).strip()
     except Invalid:
         raise
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         raise Invalid(f"{key}: '{raw}' is not a valid {t}")
+    # whitespace-only entries strip to nothing: that is a clear, not a value
+    # (an empty model_dirs would leave the deck with nowhere to look)
+    if v == [] or v == {} or v == "":
+        return None
     if t in ("int", "float"):
         if field["min"] is not None and v < field["min"]:
             raise Invalid(f"{key}: must be at least {field['min']}")
         if field["max"] is not None and v > field["max"]:
             raise Invalid(f"{key}: must be at most {field['max']}")
+    if key in HOST_KEYS and not _valid_host(v):
+        raise Invalid(f"{key}: '{v}' is not an IP address or hostname "
+                      "(no scheme, port or spaces — e.g. 0.0.0.0 or 127.0.0.1)")
+    if key == "llama_port_range":
+        bounds = config.parse_port_range(v)
+        if bounds is None:
+            raise Invalid("llama_port_range: expected something like 8081-8089, "
+                          f"ports 1-65535, at most {config.MAX_LLAMA_PORTS} of them")
+        v = f"{bounds[0]}-{bounds[1]}"   # stored the right way round
     return v
 
 
-def _cross_check(pending: dict) -> list:
-    """Checks that only make sense once the whole submission is known."""
+def _cross_check(pending: dict, cleared: list, merged: dict,
+                 computed: dict) -> list:
+    """Checks that only make sense once the whole submission is known.
+
+    `computed` is config as it would be after the save, so a cleared key is
+    checked at its default and an env-fixed key at its env value — not at
+    whatever happens to be in force right now. Conflicts that involve no
+    submitted key are warned about rather than refused, since the page may
+    not be able to fix them (an environment variable, say).
+    """
     warnings = []
-    backends = pending.get("backends") or _effective("backends") or {}
-    default = pending.get("default_backend") or _effective("default_backend")
-    if backends and default and default not in backends:
-        raise Invalid(f"default_backend: '{default}' is not one of the "
-                      f"configured builds ({', '.join(backends)})")
-    rng = pending.get("llama_port_range") or _effective("llama_port_range")
-    if rng:
-        lo, _, hi = str(rng).partition("-")
-        try:
-            lo_i, hi_i = int(lo), int(hi or lo)
-            if hi_i < lo_i:
-                raise ValueError
-        except ValueError:
-            raise Invalid("llama_port_range: expected something like 8081-8089")
-    ports = {"deck_port": pending.get("deck_port") or _effective("deck_port"),
-             "proxy_port": pending.get("proxy_port") or _effective("proxy_port")}
-    if ports["deck_port"] == ports["proxy_port"]:
-        raise Invalid("deck_port and proxy_port cannot be the same")
+    touched = set(pending) | set(cleared)
+
+    backends = computed["BACKENDS"]
+    default = config._get("default_backend", None, merged)
+    if default is not None and str(default) not in backends:
+        msg = (f"default_backend: '{default}' is not one of the configured "
+               f"builds ({', '.join(backends)})")
+        if touched & {"backends", "default_backend"}:
+            raise Invalid(msg)
+        warnings.append(msg + f" — using '{computed['DEFAULT_BACKEND']}'")
+
+    ports = {"deck_port": computed["DECK_PORT"],
+             "proxy_port": computed["PROXY_PORT"],
+             "whisper_port": computed["WHISPER_PORT"],
+             "tts_port": computed["TTS_PORT"],
+             "comfy_port": computed["COMFY_PORT"]}
+    llama = computed["LLAMA_PORTS"]
+    problems = []
+    keys = list(ports)
+    for i, a in enumerate(keys):
+        for b in keys[i + 1:]:
+            if ports[a] == ports[b]:
+                problems.append(({a, b}, f"{a} and {b} are both {ports[a]}"))
+        if ports[a] in llama:
+            problems.append(({a, "llama_port_range"},
+                             f"{a} {ports[a]} is inside llama_port_range "
+                             f"{computed['LLAMA_PORT_RANGE']}"))
+    for involved, msg in problems:
+        if involved & touched:
+            raise Invalid(msg)
+        warnings.append(msg)
+
     for key in ("model_dirs",):
         for path in pending.get(key) or []:
             if not os.path.isdir(path):
@@ -327,6 +427,34 @@ def _cross_check(pending: dict) -> list:
         if not (os.path.isfile(binary) or shutil.which(binary)):
             warnings.append(f"backend '{label}': {binary} not found right now")
     return warnings
+
+
+# One save at a time: each one reads, merges and replaces the whole file.
+_save_lock = threading.Lock()
+
+
+def _write_atomic(data: dict) -> None:
+    """Replace config.json in one step via a uniquely named temp file beside
+    it — never a half-written config, and two writers never share a temp."""
+    target = config.CONFIG_FILE
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=".config.",
+                               suffix=".json.tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(data, indent=2, sort_keys=True) + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        # mkstemp creates 0600; keep the mode the file already had
+        mode = os.stat(target).st_mode & 0o777 if target.exists() else 0o644
+        os.chmod(tmp, mode)
+        os.replace(tmp, target)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def save(submitted: dict) -> dict:
@@ -354,38 +482,61 @@ def save(submitted: dict) -> dict:
         else:
             pending[key] = value
 
-    warnings = _cross_check(pending)
+    with _save_lock:
+        stored, error = config._read_file()
+        if error:
+            # never overwrite a file we could not read: it may hold settings
+            # the user wrote by hand, and saving would silently drop them
+            raise Invalid(f"{error}. Fix or remove that file, then save "
+                          "again — nothing was written.")
+        before = {k: stored.get(k) for k in list(pending) + cleared}
+        merged = dict(stored)
+        merged.update(pending)
+        for key in cleared:
+            merged.pop(key, None)
 
-    stored = config._load_file()
-    before = {k: stored.get(k) for k in list(pending) + cleared}
-    stored.update(pending)
-    for key in cleared:
-        stored.pop(key, None)
+        # prove the result still loads before it replaces the file
+        try:
+            computed = config._compute(merged, make_dirs=False)
+        except Exception as e:
+            raise Invalid(f"these settings would not load ({e}); "
+                          "nothing was written")
+        warnings = _cross_check(pending, cleared, merged, computed)
 
-    config.CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = config.CONFIG_FILE.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(stored, indent=2, sort_keys=True) + "\n")
-    tmp.replace(config.CONFIG_FILE)      # atomic: never a half-written config
-    config.reload()
+        _write_atomic(merged)
+        config.reload()
 
     changed = [k for k in list(pending) + cleared
-               if before.get(k) != stored.get(k)]
-    needs_restart = sorted({k for k in changed if BY_KEY[k]["restart"]})
+               if before.get(k) != merged.get(k)]
+    needs_restart = sorted(k for k in changed
+                           if BY_KEY[k]["restart"] in (True, "both"))
+    proxy_restart = sorted(k for k in changed
+                           if BY_KEY[k]["restart"] in ("proxy", "both"))
     if locked:
         warnings += [f"{k} is fixed by NEURALDECK_{k.upper()} in the "
                      "environment and was not changed" for k in locked]
     return {"saved": sorted(changed), "cleared": sorted(cleared),
-            "needs_restart": needs_restart, "warnings": warnings,
-            "locked": sorted(locked), "config_file": str(config.CONFIG_FILE)}
+            "needs_restart": needs_restart, "proxy_restart": proxy_restart,
+            "warnings": warnings, "locked": sorted(locked),
+            "config_file": str(config.CONFIG_FILE)}
 
 
 # ── directory browsing (there is no native file picker in a browser) ───────
 
-def browse(path: str = None) -> dict:
-    """Subdirectories of `path`, with a GGUF count so model folders stand out."""
+def browse(path: str = None, mode: str = "dir", ext: str = None) -> dict:
+    """Subdirectories of `path`, with a GGUF count so model folders stand out.
+
+    mode="file" also lists the regular files there — for picking a binary
+    or a model file — optionally only those whose extension is in `ext`
+    (comma-separated, e.g. ".bin,.gguf"; case does not matter).
+    """
+    if mode not in ("dir", "file"):
+        raise Invalid("mode must be 'dir' or 'file'")
     if not path:
         path = config.MODEL_DIRS[0] if config.MODEL_DIRS else str(Path.home())
     target = Path(os.path.expanduser(path))
+    if target.is_file():                 # a file path: open its folder
+        target = target.parent
     if not target.is_dir():
         target = Path.home()
     dirs = []
@@ -407,10 +558,33 @@ def browse(path: str = None) -> dict:
                    if f.is_file() and f.suffix.lower() == ".gguf")
     except OSError:
         pass
-    return {"path": str(target),
-            "parent": str(target.parent) if target.parent != target else None,
-            "dirs": dirs, "ggufs_here": here, "roots": _roots(),
-            "sep": os.sep}
+    out = {"path": str(target),
+           "parent": str(target.parent) if target.parent != target else None,
+           "dirs": dirs, "ggufs_here": here, "roots": _roots(),
+           "sep": os.sep}
+    if mode == "file":
+        exts = {("." + e.strip().lstrip(".")).lower()
+                for e in (ext or "").split(",") if e.strip().lstrip(".")}
+        files = []
+        try:
+            for child in target.iterdir():
+                if child.name.startswith("."):
+                    continue
+                try:
+                    if not child.is_file():
+                        continue
+                    if exts and child.suffix.lower() not in exts:
+                        continue
+                    size = child.stat().st_size
+                except OSError:
+                    continue
+                files.append({"name": child.name, "path": str(child),
+                              "size": size})
+        except OSError:
+            pass
+        files.sort(key=lambda f: f["name"].lower())
+        out["files"] = files
+    return out
 
 
 def _roots() -> list:

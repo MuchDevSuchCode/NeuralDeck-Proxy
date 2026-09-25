@@ -41,8 +41,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from starlette.background import BackgroundTask
 
-from . import (bench, config, launcher, llama_log, models, procs, services,
-               settings, sysinfo)
+from . import (bench, config, gguf, launcher, llama_log, models, procs,
+               services, settings, sysinfo)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -53,6 +53,9 @@ latest_snapshot: dict = {}
 _prev = {"io": None, "net": None, "t": None}
 _launcher = launcher.Launcher()
 CPU_NAME = sysinfo.cpu_name()        # static: read once, not every sample
+# The port this process listens on — config.DECK_PORT can change under it
+# when the settings page saves, and a restart must say where it was.
+_serving = {"port": config.DECK_PORT}
 
 
 # ---------------------------------------------------------------------------
@@ -157,6 +160,7 @@ def collect_snapshot() -> dict:
         except Exception:
             llama = None
 
+    procs.reap_children()                 # exited servers we started
     instances = procs.llama_instances()
     svcs = services.snapshot()
     primary = instances[0] if instances else {}
@@ -222,7 +226,9 @@ async def sampler():
             history["decode"].append(round(ll.get("decode_tps_weighted") or 0, 1))
             by_port = {i["port"]: i for i in snap.get("llama_instances", [])}
             for n, kp in enumerate(config.KV_CHART_PORTS, start=1):
-                history[f"kv{n}"].append((by_port.get(kp) or {}).get("kv_pct") or 0)
+                # None, not 0: an idle port or an unreadable log is "unknown",
+                # and the chart breaks the line rather than drawing a fake 0%
+                history[f"kv{n}"].append((by_port.get(kp) or {}).get("kv_pct"))
             await asyncio.to_thread(bench.collect_traffic,
                                     snap.get("llama_instances", []))
         except Exception as e:
@@ -260,6 +266,11 @@ async def ui_config():
         "kv_chart_ports": config.KV_CHART_PORTS,
         "proxy_port": config.PROXY_PORT,
         "deck_port": config.DECK_PORT,
+        # what the charts hold: the history buffers are sized at startup,
+        # so report their real length rather than the configured one
+        "history_len": history["ts"].maxlen
+                       or getattr(config, "HISTORY_LEN", 600),
+        "sample_interval": getattr(config, "SAMPLE_INTERVAL", 1.0),
         "logs": services.log_names(),
         "links": _links(),
         "defaults": {"ctx": config.CTX_DEFAULT, "slots": config.SLOTS_DEFAULT,
@@ -333,15 +344,37 @@ async def settings_post(body: dict):
         raise HTTPException(400, str(e))
     except OSError as e:
         raise HTTPException(500, f"could not write {config.CONFIG_FILE}: {e}")
+    # The proxy is its own process and read its settings when it started;
+    # a change it depends on only lands once it is restarted. save() has
+    # already reloaded the config, so the new proxy starts with it.
+    result = dict(result)
+    result["proxy_restarted"], result["proxy_error"] = False, None
+    if result.get("proxy_restart"):
+        result["proxy_restarted"], result["proxy_error"] = \
+            await asyncio.to_thread(_restart_proxy)
     return JSONResponse(result)
 
 
-@app.get("/api/browse")
-async def browse(path: str = None):
-    """Directory listing for the settings page's folder picker — a browser
-    cannot open a native one, and typing paths by hand is worse."""
+def _restart_proxy() -> tuple:
+    """(restarted, error). Only a proxy that is running is restarted."""
+    if services.find("proxy") is None:
+        return False, None
     try:
-        return JSONResponse(await asyncio.to_thread(settings.browse, path))
+        services.stop("proxy")
+        services.start("proxy")
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+
+@app.get("/api/browse")
+async def browse(path: str = None, mode: str = "dir", ext: str = None):
+    """Directory listing for the settings page's folder and file pickers — a
+    browser cannot open a native one, and typing paths by hand is worse.
+    mode=file adds the files there, filtered by a comma-separated ext list."""
+    try:
+        return JSONResponse(await asyncio.to_thread(settings.browse, path,
+                                                    mode, ext))
     except settings.Invalid as e:
         raise HTTPException(400, str(e))
 
@@ -354,18 +387,36 @@ async def restart():
     page knows the restart was accepted (and where to reconnect) instead of
     just seeing the connection drop.
     """
+    argv = _restart_argv()
+
     async def go():
         await asyncio.sleep(0.4)
         print("restarting on request from the settings page", flush=True)
-        # -m neuraldeck works whether this was started as a module or via
-        # the installed console script; the listening socket is not
-        # inherited across exec, so the new process can bind it.
-        os.execv(sys.executable,
-                 [sys.executable, "-m", "neuraldeck", *sys.argv[1:]])
+        # The listening socket is not inherited across exec, so the new
+        # process can bind it.
+        os.execv(sys.executable, argv)
 
     asyncio.create_task(go())
-    return JSONResponse({"restarting": True, "port": config.DECK_PORT,
+    return JSONResponse({"restarting": True, "old_port": _serving["port"],
+                         "port": config.DECK_PORT,
                          "url": f"http://HOST:{config.DECK_PORT}/"})
+
+
+def _restart_argv() -> list:
+    """The command that started this process, as a module invocation.
+
+    `-m neuraldeck` covers the console script and `python -m neuraldeck`,
+    and keeps the subcommand (`deck` or `up`) from argv. Run directly as
+    `python -m neuraldeck.deck` there is no subcommand, and re-execing the
+    package would turn a dashboard-only start into `up`. --open is dropped:
+    the tab that asked for the restart is already open.
+    """
+    args = [a for a in sys.argv[1:] if a != "--open"]
+    spec = getattr(sys.modules.get("__main__"), "__spec__", None)
+    if (spec is not None and spec.name == "neuraldeck.deck") \
+            or os.path.basename(sys.argv[0] or "") == "deck.py":
+        return [sys.executable, "-m", "neuraldeck.deck", *args]
+    return [sys.executable, "-m", "neuraldeck", *args]
 
 
 # ---------------------------------------------------------------------------
@@ -377,12 +428,13 @@ async def list_models():
     found = await asyncio.to_thread(models.discover)
     last = None
     try:
-        last = config.LAST_MODEL_FILE.read_text().strip()
+        last = config.LAST_MODEL_FILE.read_text(encoding="utf-8").strip()
     except Exception:
         pass
     return JSONResponse({
         "models": [{k: v for k, v in m.items()
-                    if k not in ("path", "mmproj_path", "draft_path")}
+                    if k not in ("path", "mmproj_path", "draft_path", "files",
+                                 "root")}
                    for m in found],
         "last": last})
 
@@ -392,26 +444,86 @@ async def delete_model(body: dict):
     """Delete a model's files.
 
     The path comes from discovery, never from the client; a serving instance
-    blocks the delete; and a model living loose in a root loses only its own
-    .gguf, never the shared directory.
+    blocks the delete; and only the files discovery attributed to this model
+    go — never a sibling quant, never anything outside a model root.
     """
     name = body.get("name")
     model = await asyncio.to_thread(models.by_name, name)
     if model is None:
         raise HTTPException(404, f"unknown model '{name}'")
-    for inst in procs.llama_instances():
+    for inst in await asyncio.to_thread(procs.llama_instances):
         if models.fuzzy_eq(inst.get("alias") or "", name):
             raise HTTPException(409, f"'{name}' is serving on :{inst['port']} "
                                      "— stop it first")
-    folder = os.path.realpath(os.path.dirname(model["path"]))
-    roots = {os.path.realpath(r) for r in config.MODEL_DIRS}
-    if folder in roots:
-        os.remove(model["path"])
-        removed = model["path"]
-    else:
-        shutil.rmtree(folder)
-        removed = folder
-    return JSONResponse({"deleted": name, "removed": removed})
+    try:
+        removed, folder_removed = await asyncio.to_thread(_delete_model_files,
+                                                          model)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except OSError as e:
+        raise HTTPException(500, f"could not delete '{name}': {e}")
+    return JSONResponse({"deleted": name, "removed": removed,
+                         "folder_removed": folder_removed})
+
+
+def _inside(path: str, root_real: str) -> bool:
+    try:
+        return os.path.commonpath([root_real, path]) == root_real
+    except ValueError:                     # different drives on Windows
+        return False
+
+
+def _delete_model_files(model: dict) -> tuple:
+    """(removed paths, folder removed?) for one discovered model.
+
+    Paths are used as discovery found them, never resolved: a model folder
+    that is a symlink loses the link, not its target, and a .gguf that is a
+    symlink loses the link. The folder itself goes only once it is empty.
+    """
+    root = os.path.normpath(model["root"])
+    root_real = os.path.realpath(root)
+    if root not in {os.path.normpath(r) for r in config.MODEL_DIRS} \
+            or not os.path.isdir(root_real):
+        raise PermissionError(f"{root} is not a configured model folder")
+    folder = os.path.normpath(os.path.dirname(model["path"]))
+    loose = folder == root
+    if not loose and os.path.dirname(folder) != root:
+        raise PermissionError(f"refusing: {folder} is not directly inside {root}")
+    files = [os.path.normpath(f) for f in model["files"]]
+    if any(os.path.dirname(f) != folder for f in files):
+        raise PermissionError("refusing: model files span more than one folder")
+
+    if not loose and os.path.islink(folder):
+        os.unlink(folder)
+        return [folder], True
+    # The folder, resolved, must still be inside the (resolved) root: a
+    # junction or bind mount inside a root is not the root's to empty.
+    if not _inside(os.path.realpath(folder), root_real):
+        raise PermissionError(f"refusing: {folder} resolves outside {root}")
+
+    removed = []
+    for f in files:
+        if os.path.lexists(f):
+            os.remove(f)
+            removed.append(f)
+        gguf.forget(f)
+    folder_removed = False
+    if not loose:
+        # huggingface_hub leaves download metadata in .cache/huggingface;
+        # with the model gone it describes nothing.
+        cache = os.path.join(folder, ".cache")
+        try:
+            if os.listdir(folder) == [".cache"] and not os.path.islink(cache) \
+                    and os.listdir(cache) == ["huggingface"]:
+                shutil.rmtree(cache)
+        except OSError:
+            pass
+        try:
+            os.rmdir(folder)                # only succeeds when empty
+            folder_removed = True
+        except OSError:
+            pass
+    return removed, folder_removed
 
 
 # ---------------------------------------------------------------------------
@@ -420,15 +532,16 @@ async def delete_model(body: dict):
 
 @app.get("/api/logs/{service}")
 async def logs(service: str, lines: int = 120):
+    lines = min(2000, max(1, lines))      # [-0:] would be the whole tail
     if service == "launch":
         return JSONResponse({"lines": _launcher.status()["lines"][-lines:]})
-    path = services.log_path(service)
     if service not in services.log_names():
         raise HTTPException(404, f"unknown log '{service}'")
+    path = await asyncio.to_thread(services.log_path, service)
     if not path or not os.path.exists(path):
         # normal before the first launch; the dashboard polls this
         return JSONResponse({"path": None, "lines": []})
-    text = procs.tail_text(path, 256 * 1024)
+    text = await asyncio.to_thread(procs.tail_text, path, 256 * 1024)
     return JSONResponse({"path": str(path), "lines": text.splitlines()[-lines:]})
 
 
@@ -473,16 +586,15 @@ async def llama_launch(body: dict):
         raise HTTPException(400, "spec must be auto, ngram or off")
     if not 1024 <= ctx <= 1048576:
         raise HTTPException(400, "ctx must be between 1024 and 1048576 tokens")
-    if model:
-        try:
-            config.LAST_MODEL_FILE.write_text(model)
-        except OSError:
-            pass
     try:
-        return JSONResponse(await _launcher.start(
+        result = await _launcher.start(
             model_name=model, backend=backend, ctx=ctx, slots=slots,
             thinking=thinking, spec=spec, replace=bool(body.get("replace")),
-            force=bool(body.get("force"))))
+            force=bool(body.get("force")),
+            relaunch=bool(body.get("relaunch")))
+        if model:
+            await asyncio.to_thread(_remember_model, model)
+        return JSONResponse(result)
     except LookupError as e:
         raise HTTPException(404, str(e))
     except FileNotFoundError as e:
@@ -493,6 +605,13 @@ async def llama_launch(body: dict):
         raise HTTPException(409, str(e))
 
 
+def _remember_model(model: str) -> None:
+    try:
+        config.LAST_MODEL_FILE.write_text(model, encoding="utf-8")
+    except OSError:
+        pass
+
+
 @app.get("/api/launch/status")
 async def launch_status():
     return JSONResponse(_launcher.status())
@@ -500,9 +619,11 @@ async def launch_status():
 
 @app.post("/api/llama/{port}/stop")
 async def llama_stop(port: int):
-    for inst in procs.llama_instances():
+    for inst in await asyncio.to_thread(procs.llama_instances):
         if inst["port"] == port:
-            await asyncio.to_thread(procs.stop_pid, inst["pid"])
+            if not await asyncio.to_thread(procs.stop_pid, inst["pid"]):
+                raise HTTPException(409, f"pid {inst['pid']} on :{port} did "
+                                         "not stop (not permitted?)")
             return JSONResponse({"stopped": inst["pid"], "port": port})
     raise HTTPException(404, f"no llama instance on port {port}")
 
@@ -547,25 +668,27 @@ async def chat_relay(request: Request):
 async def bench_add(body: dict):
     if not body.get("model"):
         raise HTTPException(400, "model required")
-    rec = bench.add_client_run(body, procs.llama_instances())
+    rec = await asyncio.to_thread(
+        lambda: bench.add_client_run(body, procs.llama_instances()))
     return JSONResponse({"saved": rec["id"]})
 
 
 @app.get("/api/bench")
 async def bench_list(limit: int = 1000):
-    return JSONResponse({"runs": bench.read(limit)})
+    limit = min(bench.MAX_RECORDS * 2, max(1, limit))
+    return JSONResponse({"runs": await asyncio.to_thread(bench.read, limit)})
 
 
 @app.post("/api/bench/delete")
 async def bench_delete(body: dict):
-    if not bench.delete(body.get("id")):
+    if not await asyncio.to_thread(bench.delete, body.get("id")):
         raise HTTPException(404, f"no benchmark record '{body.get('id')}'")
     return JSONResponse({"deleted": body.get("id")})
 
 
 @app.post("/api/bench/clear")
 async def bench_clear():
-    bench.clear()
+    await asyncio.to_thread(bench.clear)
     return JSONResponse({"cleared": True})
 
 
@@ -673,15 +796,49 @@ def _download_job(job: dict) -> int:
     every platform (the `hf` CLI is not always on PATH on Windows)."""
     from huggingface_hub import hf_hub_download
     os.makedirs(job["target"], exist_ok=True)
+    placed = set()
     for name in job["files"]:
         if download_state["cancelled"]:
             download_state["buffer"].append("[cancelled]")
             return 1
         download_state["buffer"].append(f"downloading {name}")
-        hf_hub_download(repo_id=job["repo"], filename=name,
-                        local_dir=job["target"])
-        download_state["buffer"].append(f"done {name}")
+        local = hf_hub_download(repo_id=job["repo"], filename=name,
+                                local_dir=job["target"])
+        final = _flatten(local, job["target"], name, placed)
+        download_state["buffer"].append(
+            f"done {name}" + (f" -> {os.path.basename(final)}"
+                              if os.path.basename(final) != os.path.basename(name)
+                              else ""))
     return 0
+
+
+def _flatten(local: str, target: str, name: str, placed: set) -> str:
+    """Move a file fetched from a repo subfolder up into the target folder.
+
+    local_dir keeps the repo's layout, so "Q4_K_M/x.gguf" lands in
+    target/Q4_K_M/, one level deeper than discovery looks. A clash with a
+    file this same job already placed keeps both, prefixed by subfolder;
+    a clash with a leftover from an earlier download is replaced.
+    """
+    sub = os.path.dirname(name.replace("\\", "/"))
+    if not sub:
+        placed.add(os.path.basename(name))
+        return local
+    base = os.path.basename(name)
+    if base in placed:
+        base = f"{sub.replace('/', '-')}-{base}"
+    dest = os.path.join(target, base)
+    os.replace(local, dest)
+    placed.add(base)
+    # drop the now-empty subfolders the download created
+    d = os.path.dirname(local)
+    for _ in sub.split("/"):
+        try:
+            os.rmdir(d)
+        except OSError:
+            break
+        d = os.path.dirname(d)
+    return dest
 
 
 async def _dl_run_queue():
@@ -728,16 +885,21 @@ async def hf_download(body: dict):
                          "target": job["target"], "position": len(download_queue)})
 
 
-@app.get("/api/hf/status")
-async def hf_status():
+def _dir_bytes(path) -> int:
     done = 0
-    if download_state["target"]:
-        for root, _, names in os.walk(download_state["target"]):
+    if path:
+        for root, _, names in os.walk(path):
             for n in names:
                 try:
                     done += os.path.getsize(os.path.join(root, n))
                 except OSError:
                     pass
+    return done
+
+
+@app.get("/api/hf/status")
+async def hf_status():
+    done = await asyncio.to_thread(_dir_bytes, download_state["target"])
     return JSONResponse({
         "active": download_state["proc"] is not None,
         "returncode": download_state.get("returncode"),
@@ -767,12 +929,17 @@ async def hf_cancel(body: dict = None):
                 return JSONResponse({"dequeued": job_id})
     if download_state["proc"] is None:
         raise HTTPException(404, "no download in progress")
+    # a stale id (a job that already finished) must not cancel whatever
+    # happens to be running now
+    if job_id and job_id != download_state["id"]:
+        raise HTTPException(404, f"no queued or running download '{job_id}'")
     download_state["cancelled"] = True
     return JSONResponse({"cancelling": True})
 
 
 def main():
     import uvicorn
+    _serving["port"] = config.DECK_PORT
     # Cap graceful shutdown: an open SSE stream (a dashboard tab left open)
     # must not hold the process half-dead through a restart.
     uvicorn.run(app, host=config.DECK_HOST, port=config.DECK_PORT,

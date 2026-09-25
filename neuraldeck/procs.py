@@ -112,26 +112,37 @@ _FLAGS_PATH = {"-md": "draft_model", "--model-draft": "draft_model",
                "--spec-draft-model": "draft_model", "--mmproj": "mmproj",
                "-m": "model_path", "--model": "model_path"}
 
+# Per-slot token counts. The update_slots line only appears at higher
+# verbosity; the release line is logged at the default level and gives what
+# the slot keeps cached after a request.
 RE_SLOT_KV = re.compile(
-    r"slot update_slots: id\s+(\d+) \|.*?slot\.prompt\.tokens\.size\(\) = (\d+)")
+    r"slot update_slots: id\s+(\d+) \|.*?slot\.prompt\.tokens\.size\(\) = (\d+)"
+    r"|slot\s+release: id\s+(\d+) \|.*?stop processing: n_tokens = (\d+)")
+# Where one run of a server begins in a log that may hold several.
+RUN_START = "load_model: loading model"
 
 
-def instance_kv_tokens(alias) -> int:
-    """Tokens currently held in KV, summed across slots.
+def instance_kv_tokens(alias):
+    """Tokens currently held in KV, summed across slots — None if unknown.
 
-    llama-server exposes no KV gauge on /metrics or /slots, but its
-    update_slots log lines carry the cached token count per slot; the last
-    value seen for each slot is that slot's occupancy.
+    llama-server exposes no KV gauge on /metrics or /slots, but its log
+    lines carry the cached token count per slot; the last value seen for
+    each slot, in the current run, is that slot's occupancy.
     """
     if not alias:
         return None
     path = config.LOG_DIR / f"{alias}.log"
     if not path.exists():
         return None
+    text = tail_text(path, 256 * 1024)
+    idx = text.rfind(RUN_START)
+    if idx >= 0:
+        text = text[idx:]
     per_slot = {}
-    for m in RE_SLOT_KV.finditer(tail_text(path, 128 * 1024)):
-        per_slot[m.group(1)] = int(m.group(2))
-    return sum(per_slot.values()) if per_slot else 0
+    for m in RE_SLOT_KV.finditer(text):
+        slot = m.group(1) if m.group(1) is not None else m.group(3)
+        per_slot[slot] = int(m.group(2) if m.group(2) is not None else m.group(4))
+    return sum(per_slot.values()) if per_slot else None
 
 
 def _norm(path) -> str:
@@ -173,9 +184,13 @@ def backend_of(exe, cmd: str) -> str:
 def llama_instances() -> list:
     """Every running llama-server, with what it was launched with."""
     out, seen = [], set()
-    for p in psutil.process_iter(["name", "cmdline"]):
+    for p in psutil.process_iter(["name", "cmdline", "status"]):
         try:
             if (p.info["name"] or "") not in LLAMA_NAMES:
+                continue
+            # An exited server nobody has reaped yet: no port, no command
+            # line, and nothing to stop.
+            if p.info["status"] == psutil.STATUS_ZOMBIE:
                 continue
             cmd = p.info["cmdline"] or []
             inst = {"port": None, "alias": None, "ctx_total": None, "slots": 1,
@@ -238,10 +253,30 @@ def port_in_use(port: int, host: str = "127.0.0.1") -> bool:
         return s.connect_ex((host, port)) == 0
 
 
-def next_free_llama_port():
-    used = {i["port"] for i in llama_instances()}
+def llama_probe_host() -> str:
+    """Where to reach a llama-server we launched: the configured host,
+    unless that is a wildcard bind, which loopback reaches."""
+    host = (config.LLAMA_HOST or "").strip()
+    return "127.0.0.1" if host in ("", "0.0.0.0", "::", "[::]", "*") else host
+
+
+def llama_port_busy(port: int) -> bool:
+    """Taken on loopback or on the host llama-server binds to — either one
+    makes the bind fail."""
+    if port_in_use(port):
+        return True
+    host = llama_probe_host()
+    try:
+        return host != "127.0.0.1" and port_in_use(port, host)
+    except OSError:
+        return False
+
+
+def next_free_llama_port(instances: list = None):
+    used = {i["port"] for i in (llama_instances() if instances is None
+                                else instances)}
     for port in config.LLAMA_PORTS:
-        if port not in used and not port_in_use(port):
+        if port not in used and not llama_port_busy(port):
             return port
     return None
 
@@ -252,14 +287,28 @@ def wait_port_free(port: int, timeout: float = 30.0) -> bool:
     import time
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if not port_in_use(port):
+        if not llama_port_busy(port):
             return True
         time.sleep(0.5)
-    return not port_in_use(port)
+    return not llama_port_busy(port)
+
+
+def _gone(p) -> bool:
+    try:
+        return not p.is_running() or p.status() == psutil.STATUS_ZOMBIE
+    except psutil.NoSuchProcess:
+        return True
+    except Exception:
+        return False
 
 
 def stop_pid(pid: int, timeout: float = 10.0) -> bool:
-    """Terminate one pid (and its children), escalating to kill."""
+    """Terminate one pid (and its children), escalating to kill.
+
+    True only if the pid is actually gone afterwards — a process we may not
+    signal (AccessDenied) is still running, and saying otherwise would have
+    a relaunch wait on a port that never frees.
+    """
     try:
         proc = psutil.Process(pid)
     except psutil.NoSuchProcess:
@@ -280,15 +329,48 @@ def stop_pid(pid: int, timeout: float = 10.0) -> bool:
             p.kill()
         except Exception:
             pass
-    return True
+    if alive:
+        psutil.wait_procs(alive, timeout=3.0)
+    reap_children()
+    return _gone(proc)
 
 
 def stop_all_llama() -> int:
+    """Stop the instances on the deck's own ports. A llama-server someone
+    runs elsewhere on the machine is not ours to stop."""
     stopped = 0
     for inst in llama_instances():
+        if inst.get("port") not in config.LLAMA_PORTS:
+            continue
         if inst.get("pid") and stop_pid(inst["pid"]):
             stopped += 1
     return stopped
+
+
+def reap_children() -> int:
+    """Collect exited children of this process (POSIX).
+
+    llama-servers and services are started detached but remain our
+    children, and one that exits — stopped, or crashed — stays a zombie
+    until reaped. Only pids already seen as zombie children are waited
+    on, so a live child's own Popen handle is never robbed of its status.
+    """
+    if config.IS_WINDOWS:
+        return 0
+    n = 0
+    try:
+        kids = psutil.Process().children()
+    except Exception:
+        return 0
+    for p in kids:
+        try:
+            if p.status() != psutil.STATUS_ZOMBIE:
+                continue
+            os.waitpid(p.pid, os.WNOHANG)
+            n += 1
+        except (psutil.Error, ChildProcessError, OSError):
+            continue
+    return n
 
 
 # ── log tails ──────────────────────────────────────────────────────────────

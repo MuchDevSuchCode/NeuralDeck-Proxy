@@ -21,7 +21,9 @@ Run it with `python -m neuraldeck.proxy` or `neuraldeck proxy`.
 
 import asyncio
 import base64
+import hashlib
 import json
+import math
 import mimetypes
 import os
 import re
@@ -30,14 +32,16 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections import OrderedDict
 from contextlib import asynccontextmanager
+from http.cookiejar import CookieJar, DefaultCookiePolicy
 from pathlib import Path
 from typing import List, Optional
 from urllib.parse import urlparse
 
 import httpx
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from starlette.background import BackgroundTask
 
 from . import config
@@ -50,6 +54,19 @@ VIDEO_FPS, MAX_FRAMES = config.VIDEO_FPS, config.MAX_FRAMES
 CONNECT_TIMEOUT = config.BACKEND_CONNECT_TIMEOUT
 WHISPER_TIMEOUT = config.WHISPER_TIMEOUT
 LLAMA_TIMEOUT = config.LLAMA_TIMEOUT
+_LLAMA_T = httpx.Timeout(LLAMA_TIMEOUT, connect=CONNECT_TIMEOUT)
+_WHISPER_T = httpx.Timeout(WHISPER_TIMEOUT, connect=CONNECT_TIMEOUT)
+_NO_WINDOW = subprocess.CREATE_NO_WINDOW if config.IS_WINDOWS else 0
+
+
+def _max_body_bytes() -> int:
+    """Largest request body accepted. Read per request so a config change
+    applies without a restart; config.py need not define the setting."""
+    raw = getattr(config, "MAX_UPLOAD_MB", None) or config.get("max_upload_mb", 512)
+    try:
+        return int(float(raw) * 1024 * 1024)
+    except (TypeError, ValueError):
+        return 512 * 1024 * 1024
 
 
 def _base_url(endpoint: str) -> str:
@@ -69,11 +86,93 @@ def ffmpeg_bin() -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
+# Shared HTTP client: one pool for every backend call instead of a client
+# (and fresh connections) per request. Timeouts are passed per call. It is
+# tied to the event loop that made it, so a new loop gets a new one.
+# ---------------------------------------------------------------------------
+
+_shared = {"loop": None, "client": None, "lock": None}
+
+
+def _http() -> httpx.AsyncClient:
+    loop = asyncio.get_running_loop()
+    client = _shared["client"]
+    if _shared["loop"] is not loop or client is None or client.is_closed:
+        _shared.update(loop=loop, lock=asyncio.Lock(), client=httpx.AsyncClient(
+            timeout=_LLAMA_T,
+            # Idle connections are dropped well before llama-server's (and
+            # uvicorn's) 5s keep-alive, so a reused one is never mid-close.
+            limits=httpx.Limits(max_connections=256, max_keepalive_connections=32,
+                                keepalive_expiry=2.0),
+            # A shared jar would carry one caller's Set-Cookie into every
+            # other caller's requests; refuse all cookies. (A bare jar: httpx
+            # would copy an httpx.Cookies into a fresh, accepting one.)
+            cookies=CookieJar(DefaultCookiePolicy(allowed_domains=[]))))
+    return _shared["client"]
+
+
+def _discovery_lock() -> asyncio.Lock:
+    _http()
+    return _shared["lock"]
+
+
+_HOP_HEADERS = {"connection", "keep-alive", "transfer-encoding", "upgrade",
+                "host", "content-length", "proxy-authenticate",
+                "proxy-authorization", "te", "trailer", "date", "server",
+                "expect"}
+# Also dropped when the proxy re-serialises the body itself: the type is
+# httpx's to set, and a client's accept-encoding could ask for a compression
+# httpx cannot decode.
+_REBODY_HEADERS = _HOP_HEADERS | {"content-type", "accept-encoding"}
+
+
+def _client_headers(request: Request, drop=_HOP_HEADERS) -> dict:
+    """The caller's headers minus hop-by-hop ones — Authorization included,
+    so an instance started with --api-key still accepts the request."""
+    return {k: v for k, v in request.headers.items() if k.lower() not in drop}
+
+
+def _transport_error(e: httpx.HTTPError, backend: str, where: str) -> HTTPException:
+    """502/504 for a backend that could not be talked to properly — distinct
+    from an error the backend answered with, which is relayed as-is."""
+    if isinstance(e, httpx.TimeoutException):
+        return HTTPException(504, f"{backend} backend timed out at {where}")
+    # The instance may have just stopped; look again on the next request
+    # rather than trust the cache for another few seconds.
+    _instances_cache["ts"] = float("-inf")
+    if isinstance(e, httpx.ConnectError):
+        return HTTPException(502, f"{backend} backend unreachable at {where}")
+    return HTTPException(502, f"{backend} backend at {where} failed: "
+                              f"{type(e).__name__}: {e}")
+
+
+def _upstream_error(status: int, body: bytes, backend: str) -> JSONResponse:
+    """Relay a backend's error response with its own status. Turning a 400
+    (context overflow, bad parameter) into 502 hides the reason and makes
+    OpenAI SDKs retry a request that can never succeed."""
+    try:
+        content = json.loads(body)
+    except (ValueError, UnicodeDecodeError):
+        text = body.decode(errors="replace").strip()[:2000]
+        content = {"error": {"message": text or f"{backend} backend returned {status}",
+                             "type": "backend_error", "code": status}}
+    return JSONResponse(status_code=status, content=content)
+
+
+# ---------------------------------------------------------------------------
 # Instance registry: discovered by probing, never from a state file, so a
 # stopped instance simply vanishes on the next pass.
 # ---------------------------------------------------------------------------
 
-_instances_cache = {"ts": 0.0, "list": []}
+_instances_cache = {"ts": float("-inf"), "list": []}
+_LOCAL_HOSTS = ("", "0.0.0.0", "::", "127.0.0.1", "localhost", "::1")
+
+
+def _probe_ports() -> list:
+    """The llama port range minus this proxy's own port: probing ourselves
+    would recurse /props -> discovery -> /props, a request storm."""
+    return [p for p in config.LLAMA_PORTS
+            if not (p == PORT and HOST in _LOCAL_HOSTS)]
 
 
 def _norm_model(s: str) -> str:
@@ -81,38 +180,44 @@ def _norm_model(s: str) -> str:
     return re.sub(r"[._]", "-", re.sub(r"(\.gguf|-gguf)$", "", s.lower()))
 
 
-def _route_match(requested: str, instances: list) -> Optional[dict]:
-    """Best instance for a requested name: exact normalised match, then
-    longest prefix overlap, then longest substring — so family names
-    (foo-it-qat vs foo-it-qat-heretic) cannot collide when the client sends
-    the exact id."""
+def _route_match(requested: str, instances: list) -> list:
+    """Instances a requested name could mean.
+
+    An exact normalised match wins outright. Failing that, instances whose
+    name extends the request at a '-' boundary (an HF repo id against a
+    quant-suffixed filename) are candidates, and the caller routes only when
+    there is exactly one: choosing between Bonsai-27B-PTQ1_0 and -PQ2_0 by
+    length would answer from a model nobody named. Substrings never match —
+    "8b" is not a model name.
+    """
     req = _norm_model(requested)
     if not req:
-        return None
-    scored = []
+        return []
+    prefixed = []
     for inst in instances:
         alias = _norm_model(inst.get("alias"))
         if not alias:
             continue
         if alias == req:
-            return inst
-        if alias.startswith(req) or req.startswith(alias):
-            scored.append((2, len(alias), inst))
-        elif alias in req or req in alias:
-            scored.append((1, len(alias), inst))
-    return max(scored, key=lambda t: t[:2])[2] if scored else None
+            return [inst]
+        if alias.startswith(req + "-"):
+            prefixed.append(inst)
+    return prefixed
+
+
+def _inst_label(inst: dict) -> str:
+    return inst.get("alias") or f":{inst.get('port')}"
 
 
 async def discover_instances(ttl: float = 10.0) -> list:
-    now = time.monotonic()
-    if now - _instances_cache["ts"] < ttl:
+    asked = time.monotonic()
+    if asked - _instances_cache["ts"] < ttl:
         return _instances_cache["list"]
 
     async def probe(port: int):
         base = f"http://127.0.0.1:{port}"
         try:
-            async with httpx.AsyncClient(timeout=2.0) as client:
-                resp = await client.get(f"{base}/props")
+            resp = await _http().get(f"{base}/props", timeout=2.0)
             if resp.status_code != 200:
                 return None
             props = resp.json()
@@ -123,10 +228,17 @@ async def discover_instances(ttl: float = 10.0) -> list:
         except Exception:
             return None
 
-    found = await asyncio.gather(*[probe(p) for p in config.LLAMA_PORTS])
-    instances = [f for f in found if f]
-    _instances_cache.update(ts=now, list=instances)
-    return instances
+    # One probe pass at a time: when the cache expires under load, waiters
+    # reuse the pass that finished while they queued instead of each
+    # sweeping the port range again.
+    async with _discovery_lock():
+        ts = _instances_cache["ts"]
+        if ts >= asked or time.monotonic() - ts < ttl:
+            return _instances_cache["list"]
+        found = await asyncio.gather(*[probe(p) for p in _probe_ports()])
+        instances = [f for f in found if f]
+        _instances_cache.update(ts=time.monotonic(), list=instances)
+        return instances
 
 
 async def pick_backend(model: Optional[str]) -> dict:
@@ -136,21 +248,33 @@ async def pick_backend(model: Optional[str]) -> dict:
     of quietly falling back: answering from a different model than the one
     named misattributes benchmarks and hands back output the caller believes
     came from elsewhere. An instance still loading fails /props, so it is
-    not a match either.
+    not a match either. A name matching several instances is refused the
+    same way. A miss is re-checked against a fresh probe before failing, so
+    an instance that finished loading a moment ago is not a 404.
     """
     instances = await discover_instances()
-    if model:
-        matched = _route_match(model, instances)
-        if matched:
-            return matched
-        if instances and config.STRICT_MODEL_ROUTING:
-            serving = ", ".join(i["alias"] or f":{i['port']}" for i in instances)
+    candidates = _route_match(model, instances) if model else []
+    if (model and not candidates) or not instances:
+        instances = await discover_instances(ttl=0)
+        candidates = _route_match(model, instances) if model else []
+    if len(candidates) == 1:
+        return candidates[0]
+    default = next((i for i in instances if i["base"] == LLAMA_BASE), None)
+    if candidates:
+        if config.STRICT_MODEL_ROUTING:
             raise HTTPException(
-                404, f"model '{model}' is not being served (loading, stopped, "
-                     f"or never launched). Currently serving: {serving or 'nothing'}")
-    for inst in instances:
-        if inst["base"] == LLAMA_BASE:
-            return inst
+                404, f"model '{model}' is ambiguous: it could mean any of "
+                     f"{', '.join(_inst_label(i) for i in candidates)}. "
+                     f"Send the exact id (see /v1/models).")
+        # Lenient mode still stays among the models the name could mean.
+        return default if default in candidates else candidates[0]
+    if model and instances and config.STRICT_MODEL_ROUTING:
+        serving = ", ".join(_inst_label(i) for i in instances)
+        raise HTTPException(
+            404, f"model '{model}' is not being served (loading, stopped, "
+                 f"or never launched). Currently serving: {serving or 'nothing'}")
+    if default:
+        return default
     if instances:
         return instances[0]
     return {"port": None, "base": LLAMA_BASE, "alias": None, "modalities": None}
@@ -158,13 +282,12 @@ async def pick_backend(model: Optional[str]) -> dict:
 
 async def probe_backend(endpoint: str) -> bool:
     base = _base_url(endpoint)
-    async with httpx.AsyncClient(timeout=CONNECT_TIMEOUT) as client:
-        for url in (f"{base}/health", base):
-            try:
-                await client.get(url)
-                return True
-            except httpx.HTTPError:
-                continue
+    for url in (f"{base}/health", base):
+        try:
+            await _http().get(url, timeout=CONNECT_TIMEOUT)
+            return True
+        except httpx.HTTPError:
+            continue
     return False
 
 
@@ -178,6 +301,11 @@ async def lifespan(app: FastAPI):
               f"own port {PORT}. Point it at a llama-server port "
               f"(default {config.LLAMA_PORTS[0]}).", file=sys.stderr)
         sys.exit(1)
+    if PORT in config.LLAMA_PORTS:
+        print(f"WARNING: proxy port {PORT} is inside the llama port range "
+              f"({config.LLAMA_PORT_RANGE}); discovery skips it, so no "
+              f"llama-server can be found there.", file=sys.stderr, flush=True)
+    _http()
     llama_ok, whisper_ok, tts_ok = await asyncio.gather(
         probe_backend(LLAMA_ENDPOINT), probe_backend(WHISPER_ENDPOINT),
         probe_backend(TTS_ENDPOINT))
@@ -196,63 +324,253 @@ async def lifespan(app: FastAPI):
   ffmpeg                : {ff or 'NOT FOUND — video input disabled'}
 =========================================================
 """, flush=True)
-    yield
+    try:
+        yield
+    finally:
+        if _shared["client"] is not None:
+            await _shared["client"].aclose()
 
 
 app = FastAPI(title="Multimodal Orchestrator", lifespan=lifespan)
+
+
+# Anthropic clients parse errors in their own shape, not FastAPI's
+# {"detail": ...}.
+_ANTHROPIC_ERROR_TYPES = {400: "invalid_request_error", 401: "authentication_error",
+                          403: "permission_error", 404: "not_found_error",
+                          413: "request_too_large", 429: "rate_limit_error",
+                          504: "timeout_error", 529: "overloaded_error"}
+
+
+def _anthropic_error(status: int, message: str) -> JSONResponse:
+    kind = (_ANTHROPIC_ERROR_TYPES.get(status)
+            or ("invalid_request_error" if status < 500 else "api_error"))
+    return JSONResponse(status_code=status, content={
+        "type": "error", "error": {"type": kind, "message": message}})
+
+
+class BodyLimit:
+    """Refuse oversized request bodies — by Content-Length before any of it
+    is read, and by counting for chunked uploads that declare none. Raised
+    from receive() as an HTTPException, which FastAPI's body parsing passes
+    through as-is."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        limit = _max_body_bytes()
+        msg = (f"request body exceeds the proxy's {limit / 2**20:g} MB limit "
+               f"(setting max_upload_mb)")
+        declared = dict(scope.get("headers") or []).get(b"content-length")
+        try:
+            too_big = declared is not None and int(declared) > limit
+        except ValueError:
+            too_big = False
+        if too_big:
+            resp = (_anthropic_error(413, msg)
+                    if scope.get("path", "").startswith("/v1/messages")
+                    else JSONResponse(status_code=413, content={"detail": msg}))
+            return await resp(scope, receive, send)
+        seen = 0
+
+        async def counted():
+            nonlocal seen
+            message = await receive()
+            if message.get("type") == "http.request":
+                seen += len(message.get("body") or b"")
+                if seen > limit:
+                    raise HTTPException(413, msg)
+            return message
+
+        await self.app(scope, counted, send)
+
+
+app.add_middleware(BodyLimit)
 
 
 # ---------------------------------------------------------------------------
 # Modality handlers
 # ---------------------------------------------------------------------------
 
+class _LRU:
+    """Bounded by entry count and by total size. Clients resend the whole
+    conversation every turn, so without it every earlier audio clip would be
+    re-transcribed, and every earlier video re-extracted, on every turn."""
+
+    def __init__(self, max_entries: int, max_bytes: int):
+        self.max_entries, self.max_bytes = max_entries, max_bytes
+        self._items: OrderedDict = OrderedDict()
+        self._bytes = 0
+
+    def get(self, key):
+        hit = self._items.get(key)
+        if hit is None:
+            return None
+        self._items.move_to_end(key)
+        return hit[0]
+
+    def put(self, key, value, size: int):
+        if size > self.max_bytes:
+            return
+        old = self._items.pop(key, None)
+        if old is not None:
+            self._bytes -= old[1]
+        self._items[key] = (value, size)
+        self._bytes += size
+        while len(self._items) > self.max_entries or self._bytes > self.max_bytes:
+            _, (_, s) = self._items.popitem(last=False)
+            self._bytes -= s
+
+
+# Keyed by sha256 of the raw media bytes.
+_transcript_cache = _LRU(256, 4 * 2**20)
+_frame_cache = _LRU(32, 256 * 2**20)      # (caption, image blocks) per video
+
+
+def _sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
 async def transcribe_audio(filename: str, data: bytes, content_type: str) -> str:
     try:
-        async with httpx.AsyncClient(
-                timeout=httpx.Timeout(WHISPER_TIMEOUT, connect=CONNECT_TIMEOUT)) as client:
-            resp = await client.post(
-                WHISPER_ENDPOINT, files={"file": (filename, data, content_type)},
-                data={"response_format": "json"})
-    except httpx.ConnectError:
-        raise HTTPException(502, f"Whisper backend unreachable at {WHISPER_ENDPOINT}")
+        resp = await _http().post(
+            WHISPER_ENDPOINT, files={"file": (filename, data, content_type)},
+            data={"response_format": "json"}, timeout=_WHISPER_T)
     except httpx.TimeoutException:
         raise HTTPException(504, f"Whisper backend timed out transcribing '{filename}'")
+    except httpx.HTTPError as e:
+        raise _transport_error(e, "Whisper", WHISPER_ENDPOINT)
     if resp.status_code != 200:
-        raise HTTPException(502, f"Whisper backend returned {resp.status_code} "
-                                 f"for '{filename}': {resp.text[:500]}")
-    return resp.json().get("text", "").strip()
+        # A 4xx means whisper rejected the audio itself — the caller's
+        # problem, and retrying won't help; anything else is the backend's.
+        status = resp.status_code if 400 <= resp.status_code < 500 else 502
+        raise HTTPException(status, f"Whisper backend returned {resp.status_code} "
+                                    f"for '{filename}': {resp.text[:500]}")
+    try:
+        return str(resp.json().get("text", "")).strip()
+    except (ValueError, AttributeError):
+        raise HTTPException(502, f"Whisper backend returned an unreadable "
+                                 f"response for '{filename}'")
 
 
-def _extract_frames_sync(video_path: Path, out_dir: Path) -> List[Path]:
+async def transcribe_cached(digest: str, filename: str, data: bytes,
+                            content_type: str) -> str:
+    text = _transcript_cache.get(digest)
+    if text is None:
+        text = await transcribe_audio(filename, data, content_type)
+        _transcript_cache.put(digest, text, len(text) + 64)
+    return text
+
+
+# Input guard for ffmpeg/ffprobe: local files only, and only real video
+# containers — never playlist or concat demuxers (HLS, ffconcat), which would
+# let an uploaded "video" make ffmpeg read other local files.
+_VIDEO_DEMUXERS = "mov,matroska,avi,mpeg,mpegts,ogg,flv,asf,gif,m4v,h264,hevc"
+_INPUT_GUARD = ["-protocol_whitelist", "file", "-format_whitelist", _VIDEO_DEMUXERS]
+
+
+def _ffprobe_bin(ff: str) -> Optional[str]:
+    path = ff if os.path.isfile(ff) else shutil.which(ff)
+    if path:
+        cand = os.path.join(os.path.dirname(path), f"ffprobe{config.EXE}")
+        if os.path.isfile(cand):
+            return cand
+    return shutil.which("ffprobe")
+
+
+def _video_duration(ff: str, video_path: Path) -> Optional[float]:
+    """Clip length in seconds, or None when ffprobe is missing or can't tell."""
+    probe = _ffprobe_bin(ff)
+    if not probe:
+        return None
+    try:
+        proc = subprocess.run(
+            [probe, "-v", "error", *_INPUT_GUARD, "-show_entries", "format=duration",
+             "-of", "default=nw=1:nk=1", str(video_path)],
+            capture_output=True, text=True, timeout=30, creationflags=_NO_WINDOW)
+        d = float(proc.stdout.strip().splitlines()[0])
+    except (OSError, subprocess.SubprocessError, ValueError, IndexError):
+        return None
+    return d if d > 0 and math.isfinite(d) else None
+
+
+def _extract_frames_sync(video_path: Path) -> tuple:
+    """(caption, image blocks) for a video on disk. Runs in a worker thread:
+    ffmpeg, the frame reads and the base64 encoding are all blocking.
+
+    The sampling rate is lowered for long clips so MAX_FRAMES spans the
+    whole video instead of only its first MAX_FRAMES/VIDEO_FPS seconds.
+    """
     ff = ffmpeg_bin()
     if ff is None:
         raise HTTPException(
             501, "video input needs ffmpeg, which is not installed (or set "
                  "NEURALDECK_FFMPEG to its path)")
-    cmd = [ff, "-hide_banner", "-loglevel", "error", "-i", str(video_path),
-           "-vf", f"fps={VIDEO_FPS}", "-frames:v", str(MAX_FRAMES), "-q:v", "2",
-           str(out_dir / "frame_%04d.jpg")]
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300,
-                          creationflags=(subprocess.CREATE_NO_WINDOW
-                                         if config.IS_WINDOWS else 0))
+    duration = _video_duration(ff, video_path)
+    fps = min(VIDEO_FPS, MAX_FRAMES / duration) if duration else VIDEO_FPS
+    out_dir = video_path.parent / "frames"
+    out_dir.mkdir(exist_ok=True)
+    cmd = [ff, "-hide_banner", "-loglevel", "error", *_INPUT_GUARD,
+           "-i", str(video_path), "-vf", f"fps={fps:.6g}",
+           "-frames:v", str(MAX_FRAMES), "-q:v", "2", str(out_dir / "frame_%04d.jpg")]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300,
+                              creationflags=_NO_WINDOW)
+    except subprocess.TimeoutExpired:
+        raise HTTPException(504, f"ffmpeg timed out extracting frames from "
+                                 f"'{video_path.name}'")
     if proc.returncode != 0:
         raise HTTPException(422, f"ffmpeg failed to extract frames from "
                                  f"'{video_path.name}': {proc.stderr.strip()[:500]}")
-    return sorted(out_dir.glob("frame_*.jpg"))
+    frames = [image_to_content_block(p.read_bytes(), "image/jpeg")
+              for p in sorted(out_dir.glob("frame_*.jpg"))]
+    if not frames:
+        raise HTTPException(422, "no frames could be extracted from the video")
+    n = len(frames)
+    if duration:
+        covered = min(duration, n / fps)
+        span = (f"covering the whole {duration:.0f}s clip"
+                if covered >= duration * 0.95
+                else f"covering the first {covered:.0f}s of {duration:.0f}s")
+    else:
+        span = (f"covering only the first {n / fps:.0f}s"
+                if n >= MAX_FRAMES else "covering the clip")
+    return f"{n} frames sampled at {fps:.3g} fps, {span}", frames
 
 
-async def extract_video_frames(upload: UploadFile, data: bytes,
-                               workdir: Path) -> List[bytes]:
-    suffix = Path(upload.filename or "video.mp4").suffix or ".mp4"
-    video_path = workdir / f"input{suffix}"
-    video_path.write_bytes(data)
-    frames_dir = workdir / "frames"
-    frames_dir.mkdir()
-    frame_paths = await asyncio.to_thread(_extract_frames_sync, video_path, frames_dir)
-    if not frame_paths:
-        raise HTTPException(422, f"No frames could be extracted from "
-                                 f"'{upload.filename}'")
-    return [p.read_bytes() for p in frame_paths]
+def _video_bytes_to_blocks_sync(raw: bytes, suffix: str) -> tuple:
+    tmpdir = tempfile.mkdtemp(prefix="video_part_")
+    try:
+        video_path = Path(tmpdir) / f"input{suffix}"
+        video_path.write_bytes(raw)
+        return _extract_frames_sync(video_path)
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def _save_upload_sync(upload: UploadFile, dest: Path) -> tuple:
+    """Copy an upload to disk in chunks, hashing on the way: (size, sha256)."""
+    h, n = hashlib.sha256(), 0
+    upload.file.seek(0)
+    with open(dest, "wb") as out:
+        while chunk := upload.file.read(1 << 20):
+            h.update(chunk)
+            out.write(chunk)
+            n += len(chunk)
+    return n, h.hexdigest()
+
+
+async def cached_video_frames(digest: str, extract, *args) -> tuple:
+    """(caption, image blocks), from the cache or by running `extract(*args)`
+    in a worker thread."""
+    hit = _frame_cache.get(digest)
+    if hit is None:
+        hit = await asyncio.to_thread(extract, *args)
+        _frame_cache.put(digest, hit, sum(len(b["image_url"]["url"]) for b in hit[1]))
+    return hit
 
 
 def image_to_content_block(data: bytes, mime: str) -> dict:
@@ -294,6 +612,7 @@ async def health():
 
 @app.post("/v1/multimodal")
 async def multimodal(
+    request: Request,
     text: Optional[str] = Form(None),
     images: List[UploadFile] = File(default=[]),
     videos: List[UploadFile] = File(default=[]),
@@ -308,7 +627,12 @@ async def multimodal(
     if not text and not images and not videos and not audio:
         raise HTTPException(400, "Provide at least one of: text, images, videos, audio")
 
-    tmpdir = tempfile.mkdtemp(prefix="multimodal_")
+    # Route first, so a bad model name fails in milliseconds rather than
+    # after transcription and frame extraction.
+    target = await pick_backend(model)
+    endpoint = f"{target['base']}/v1/chat/completions"
+
+    tmpdir = await asyncio.to_thread(tempfile.mkdtemp, prefix="multimodal_")
     try:
         content: List[dict] = []
         # Images and video frames go before the text: vision-capable chat
@@ -316,29 +640,31 @@ async def multimodal(
         for img in images:
             data = await img.read()
             if data:
-                content.append(image_to_content_block(data, guess_image_mime(img)))
+                content.append(await asyncio.to_thread(
+                    image_to_content_block, data, guess_image_mime(img)))
         for i, vid in enumerate(videos):
-            data = await vid.read()
-            if not data:
-                continue
             workdir = Path(tmpdir) / f"video_{i}"
             workdir.mkdir()
-            frames = await extract_video_frames(vid, data, workdir)
+            suffix = Path(vid.filename or "video.mp4").suffix or ".mp4"
+            video_path = workdir / f"input{suffix}"
+            size, digest = await asyncio.to_thread(_save_upload_sync, vid, video_path)
+            if not size:
+                continue
+            caption, frames = await cached_video_frames(
+                digest, _extract_frames_sync, video_path)
             label = vid.filename or f"video {i + 1}"
-            content.append({"type": "text",
-                            "text": f"[Video '{label}': {len(frames)} frames "
-                                    f"extracted at {VIDEO_FPS} fps]"})
-            for frame in frames:
-                content.append(image_to_content_block(frame, "image/jpeg"))
+            content.append({"type": "text", "text": f"[Video '{label}': {caption}]"})
+            content.extend(frames)
         if text:
             content.append({"type": "text", "text": text})
 
         audio_jobs = [(a, await a.read()) for a in audio]
         audio_jobs = [(a, d) for a, d in audio_jobs if d]
+        digests = await asyncio.to_thread(lambda: [_sha256(d) for _, d in audio_jobs])
         transcripts = await asyncio.gather(*[
-            transcribe_audio(a.filename or "audio", d,
-                             a.content_type or "application/octet-stream")
-            for a, d in audio_jobs])
+            transcribe_cached(h, a.filename or "audio", d,
+                              a.content_type or "application/octet-stream")
+            for (a, d), h in zip(audio_jobs, digests)])
         for (a, _), transcript in zip(audio_jobs, transcripts):
             label = f" ({a.filename})" if a.filename else ""
             content.append({"type": "text",
@@ -359,58 +685,75 @@ async def multimodal(
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
 
-        target = await pick_backend(model)
-        endpoint = f"{target['base']}/v1/chat/completions"
+        headers = _client_headers(request, _REBODY_HEADERS)
         if stream:
-            return StreamingResponse(stream_llama(payload, tmpdir, endpoint=endpoint),
-                                     media_type="text/event-stream")
-        return await forward_llama(payload, endpoint)
+            return await stream_llama(payload, endpoint, headers)
+        return await forward_llama(payload, endpoint, headers)
     finally:
-        # A streaming response cleans up the tempdir when the stream ends.
-        if not stream:
-            shutil.rmtree(tmpdir, ignore_errors=True)
+        # Frames and transcripts are in memory by now, so the uploads go
+        # whatever happens next — stream, plain answer or error.
+        await asyncio.to_thread(shutil.rmtree, tmpdir, True)
 
 
-async def forward_llama(payload: dict, endpoint: str = None) -> JSONResponse:
+async def forward_llama(payload: dict, endpoint: str = None,
+                        headers: Optional[dict] = None) -> JSONResponse:
     endpoint = endpoint or LLAMA_ENDPOINT
     try:
-        async with httpx.AsyncClient(
-                timeout=httpx.Timeout(LLAMA_TIMEOUT, connect=CONNECT_TIMEOUT)) as client:
-            resp = await client.post(endpoint, json=payload)
-    except httpx.ConnectError:
-        raise HTTPException(502, f"LLM backend unreachable at {endpoint}")
-    except httpx.TimeoutException:
-        raise HTTPException(504, "LLM backend timed out")
+        resp = await _http().post(endpoint, json=payload, headers=headers,
+                                  timeout=_LLAMA_T)
+    except httpx.HTTPError as e:
+        raise _transport_error(e, "LLM", endpoint)
     if resp.status_code != 200:
-        raise HTTPException(502, f"LLM backend returned {resp.status_code}: "
-                                 f"{resp.text[:500]}")
-    return JSONResponse(content=resp.json())
-
-
-async def stream_llama(payload: dict, tmpdir: Optional[str] = None,
-                       endpoint: str = None):
-    endpoint = endpoint or LLAMA_ENDPOINT
+        return _upstream_error(resp.status_code, resp.content, "LLM")
     try:
-        async with httpx.AsyncClient(
-                timeout=httpx.Timeout(LLAMA_TIMEOUT, connect=CONNECT_TIMEOUT)) as client:
-            try:
-                async with client.stream("POST", endpoint, json=payload) as resp:
-                    if resp.status_code != 200:
-                        body = await resp.aread()
-                        yield ("data: " + json.dumps({
-                            "error": f"LLM backend returned {resp.status_code}: "
-                                     f"{body.decode(errors='replace')[:500]}"}) + "\n\n")
-                        return
-                    async for chunk in resp.aiter_bytes():
-                        yield chunk
-            except httpx.ConnectError:
-                yield ("data: " + json.dumps(
-                    {"error": f"LLM backend unreachable at {endpoint}"}) + "\n\n")
-            except httpx.TimeoutException:
-                yield 'data: {"error": "LLM backend timed out"}\n\n'
-    finally:
-        if tmpdir is not None:
-            shutil.rmtree(tmpdir, ignore_errors=True)
+        return JSONResponse(content=resp.json())
+    except ValueError:
+        raise HTTPException(502, f"LLM backend at {endpoint} returned a non-JSON body")
+
+
+async def stream_llama(payload: dict, endpoint: str = None,
+                       headers: Optional[dict] = None) -> Response:
+    """Open the upstream stream before answering, so a backend error (bad
+    request, context overflow, model still loading) reaches the client with
+    its real status instead of inside an HTTP 200 event stream."""
+    endpoint = endpoint or LLAMA_ENDPOINT
+    client = _http()
+    req = client.build_request("POST", endpoint, json=payload, headers=headers,
+                               timeout=_LLAMA_T)
+    try:
+        resp = await client.send(req, stream=True)
+    except httpx.HTTPError as e:
+        raise _transport_error(e, "LLM", endpoint)
+    if resp.status_code != 200:
+        try:
+            body = await resp.aread()
+        except httpx.HTTPError as e:
+            raise _transport_error(e, "LLM", endpoint)
+        finally:
+            await resp.aclose()
+        return _upstream_error(resp.status_code, body, "LLM")
+
+    async def relay():
+        try:
+            async for chunk in resp.aiter_bytes():
+                yield chunk
+        except httpx.HTTPError as e:
+            # Headers are long gone, so the failure travels in-band, in the
+            # error shape OpenAI clients parse. The leading blank line ends
+            # any event the cut left half-written.
+            timeout = isinstance(e, httpx.TimeoutException)
+            yield "\n\ndata: " + json.dumps({"error": {
+                "message": f"LLM backend at {endpoint} failed mid-stream: "
+                           f"{type(e).__name__}: {e}",
+                "type": "timeout" if timeout else "backend_error",
+                "code": 504 if timeout else 502}}) + "\n\n"
+        finally:
+            await resp.aclose()
+
+    # The background close covers a client that disconnects before the
+    # body iterator ever starts.
+    return StreamingResponse(relay(), media_type="text/event-stream",
+                             background=BackgroundTask(resp.aclose))
 
 
 # ---------------------------------------------------------------------------
@@ -447,13 +790,15 @@ async def props():
     """
     target = await pick_backend(None)
     try:
-        async with httpx.AsyncClient(timeout=CONNECT_TIMEOUT) as client:
-            resp = await client.get(f"{target['base']}/props")
+        resp = await _http().get(f"{target['base']}/props", timeout=CONNECT_TIMEOUT)
+        body = resp.json() if resp.status_code == 200 else None
     except httpx.HTTPError:
         raise HTTPException(502, f"LLM backend unreachable at {target['base']}")
-    if resp.status_code != 200:
-        raise HTTPException(502, f"LLM backend /props returned {resp.status_code}")
-    body = resp.json()
+    except ValueError:
+        body = None
+    if not isinstance(body, dict):
+        raise HTTPException(502, f"LLM backend /props returned {resp.status_code}"
+                                 f"{'' if resp.status_code != 200 else ' (unreadable)'}")
     reported = body.get("modalities") or {}
     vision = bool(reported.get("vision"))
     body["modalities"] = {
@@ -474,20 +819,20 @@ async def models_aggregate():
     any served model — its choice then routes the chat."""
     instances = await discover_instances() or [{"base": LLAMA_BASE, "port": None}]
     seen, data = set(), []
-    async with httpx.AsyncClient(timeout=CONNECT_TIMEOUT) as client:
-        for inst in instances:
-            try:
-                resp = await client.get(f"{inst['base']}/v1/models")
-                if resp.status_code != 200:
-                    continue
-                for m in resp.json().get("data", []):
-                    if m.get("id") in seen:
-                        continue
-                    seen.add(m.get("id"))
-                    m["port"] = inst.get("port")
-                    data.append(m)
-            except httpx.HTTPError:
+    for inst in instances:
+        try:
+            resp = await _http().get(f"{inst['base']}/v1/models",
+                                     timeout=CONNECT_TIMEOUT)
+            if resp.status_code != 200:
                 continue
+            for m in resp.json().get("data", []):
+                if m.get("id") in seen:
+                    continue
+                seen.add(m.get("id"))
+                m["port"] = inst.get("port")
+                data.append(m)
+        except (httpx.HTTPError, ValueError, AttributeError):
+            continue
     return JSONResponse(content={"object": "list", "data": data})
 
 
@@ -510,7 +855,7 @@ async def rewrite_audio_parts(messages: list) -> int:
             ia = part.get("input_audio") or {}
             fmt = str(ia.get("format") or "wav").lower()
             try:
-                raw = base64.b64decode(ia.get("data") or "")
+                raw = await asyncio.to_thread(base64.b64decode, ia.get("data") or "")
             except Exception:
                 raise HTTPException(400, f"invalid base64 in input_audio part "
                                          f"(message {mi})")
@@ -519,13 +864,19 @@ async def rewrite_audio_parts(messages: list) -> int:
             jobs.append((mi, pi, raw, fmt))
     if not jobs:
         return 0
-    transcripts = await asyncio.gather(*[
-        transcribe_audio(f"audio_{i}.{fmt}", raw,
-                         AUDIO_FORMAT_MIME.get(fmt, "application/octet-stream"))
-        for i, (_, _, raw, fmt) in enumerate(jobs)])
-    for (mi, pi, _, _), text in zip(jobs, transcripts):
+    digests = await asyncio.to_thread(lambda: [_sha256(j[2]) for j in jobs])
+    # The same clip twice in one request is transcribed once.
+    unique = {}
+    for (_, _, raw, fmt), h in zip(jobs, digests):
+        unique.setdefault(h, (raw, fmt))
+    texts = await asyncio.gather(*[
+        transcribe_cached(h, f"audio_{i}.{fmt}", raw,
+                          AUDIO_FORMAT_MIME.get(fmt, "application/octet-stream"))
+        for i, (h, (raw, fmt)) in enumerate(unique.items())])
+    by_digest = dict(zip(unique, texts))
+    for (mi, pi, _, _), h in zip(jobs, digests):
         messages[mi]["content"][pi] = {"type": "text",
-                                       "text": f"[Audio transcript]: {text}"}
+                                       "text": f"[Audio transcript]: {by_digest[h]}"}
     return len(jobs)
 
 
@@ -577,30 +928,17 @@ async def rewrite_video_parts(messages: list, mod: Optional[dict] = None) -> int
                                     "input_video": {"data": url.partition(",")[2]}})
                 rewritten += 1
                 continue
-            raw, mime = _decode_data_uri(url)
+            raw, mime = await asyncio.to_thread(_decode_data_uri, url)
             if not raw:
                 raise HTTPException(400, "video_url must be a base64 data: URI "
                                          "(remote URLs are not fetched)")
-            tmpdir = tempfile.mkdtemp(prefix="video_part_")
-            try:
-                video_path = Path(tmpdir) / f"input{VIDEO_MIME_EXT.get(mime, '.mp4')}"
-                video_path.write_bytes(raw)
-                frames_dir = Path(tmpdir) / "frames"
-                frames_dir.mkdir()
-                frame_paths = await asyncio.to_thread(_extract_frames_sync,
-                                                      video_path, frames_dir)
-                if not frame_paths:
-                    raise HTTPException(422, "no frames could be extracted from "
-                                             "video_url part")
-                new_content.append({"type": "text",
-                                    "text": f"[Video: {len(frame_paths)} frames "
-                                            f"extracted at {VIDEO_FPS} fps]"})
-                for fp in frame_paths:
-                    new_content.append(
-                        image_to_content_block(fp.read_bytes(), "image/jpeg"))
-                rewritten += 1
-            finally:
-                shutil.rmtree(tmpdir, ignore_errors=True)
+            digest = await asyncio.to_thread(_sha256, raw)
+            caption, frames = await cached_video_frames(
+                digest, _video_bytes_to_blocks_sync, raw,
+                VIDEO_MIME_EXT.get(mime, ".mp4"))
+            new_content.append({"type": "text", "text": f"[Video: {caption}]"})
+            new_content.extend(frames)
+            rewritten += 1
         msg["content"] = new_content
     return rewritten
 
@@ -609,8 +947,12 @@ async def rewrite_video_parts(messages: list, mod: Optional[dict] = None) -> int
 async def chat_completions(request: Request):
     try:
         body = await request.json()
+    except HTTPException:
+        raise                                   # e.g. 413 from BodyLimit
     except Exception:
         raise HTTPException(400, "invalid JSON body")
+    if not isinstance(body, dict):
+        raise HTTPException(400, "request body must be a JSON object")
     requested = body.get("model")
     target = await pick_backend(requested if isinstance(requested, str) else None)
     endpoint = f"{target['base']}/v1/chat/completions"
@@ -628,44 +970,68 @@ async def chat_completions(request: Request):
         await rewrite_audio_parts(messages)
         await rewrite_video_parts(messages, target.get("modalities"))
 
+    headers = _client_headers(request, _REBODY_HEADERS)
     if body.get("stream"):
-        return StreamingResponse(stream_llama(body, endpoint=endpoint),
-                                 media_type="text/event-stream")
-    return await forward_llama(body, endpoint)
-
-
-_HOP_HEADERS = {"connection", "keep-alive", "transfer-encoding", "upgrade",
-                "host", "content-length", "proxy-authenticate",
-                "proxy-authorization", "te", "trailer", "date", "server"}
+        return await stream_llama(body, endpoint, headers)
+    return await forward_llama(body, endpoint, headers)
 
 
 async def _relay_to(base: str, request: Request, path: str, backend_name: str,
                     content: Optional[bytes] = None) -> StreamingResponse:
-    client = httpx.AsyncClient(
-        timeout=httpx.Timeout(LLAMA_TIMEOUT, connect=CONNECT_TIMEOUT))
+    client = _http()
     upstream = client.build_request(
         request.method, f"{base}{path}", params=request.query_params,
         content=content if content is not None else await request.body(),
-        headers={k: v for k, v in request.headers.items()
-                 if k.lower() not in _HOP_HEADERS})
+        headers=_client_headers(request), timeout=_LLAMA_T)
     try:
         resp = await client.send(upstream, stream=True)
-    except httpx.ConnectError:
-        await client.aclose()
-        raise HTTPException(502, f"{backend_name} backend unreachable at {base}")
-    except httpx.TimeoutException:
-        await client.aclose()
-        raise HTTPException(504, f"{backend_name} backend timed out")
+    except httpx.HTTPError as e:
+        raise _transport_error(e, backend_name, base)
 
-    async def cleanup():
-        await resp.aclose()
-        await client.aclose()
+    async def body():
+        try:
+            async for chunk in resp.aiter_raw():
+                yield chunk
+        except httpx.HTTPError as e:
+            # Status and headers are already sent; all that's left is to end
+            # the body early and say why in the log.
+            print(f"[relay] {backend_name} {path}: backend failed mid-response "
+                  f"({type(e).__name__}: {e})", flush=True)
+        finally:
+            await resp.aclose()
 
     return StreamingResponse(
-        resp.aiter_raw(), status_code=resp.status_code,
+        body(), status_code=resp.status_code,
         headers={k: v for k, v in resp.headers.items()
                  if k.lower() not in _HOP_HEADERS},
-        background=BackgroundTask(cleanup))
+        background=BackgroundTask(resp.aclose))
+
+
+def _join_content(a, b):
+    """Concatenate two message contents, each a string or a list of parts."""
+    if isinstance(a, str) and isinstance(b, str):
+        return "\n\n".join(x for x in (a, b) if x)
+
+    def parts(c):
+        if isinstance(c, list):
+            return list(c)
+        return [{"type": "text", "text": c}] if isinstance(c, str) and c else []
+    return parts(a) + parts(b)
+
+
+def _merge_same_role(msgs: list) -> list:
+    """Dropping a system turn can leave two user (or assistant) turns side by
+    side, which templates that enforce alternation reject. Join them."""
+    out = []
+    for m in msgs:
+        prev = out[-1] if out else None
+        if (isinstance(m, dict) and isinstance(prev, dict) and m.get("role")
+                and m.get("role") == prev.get("role")):
+            out[-1] = {**prev, "content": _join_content(prev.get("content"),
+                                                        m.get("content"))}
+        else:
+            out.append(m)
+    return out
 
 
 def _fold_system_messages(payload: dict) -> int:
@@ -689,7 +1055,7 @@ def _fold_system_messages(payload: dict) -> int:
             kept.append(m)
     if not folded:
         return 0
-    payload["messages"] = kept
+    payload["messages"] = _merge_same_role(kept)
     merged = "\n\n".join(x for x in folded if x)
     sys_param = payload.get("system")
     if isinstance(sys_param, str):
@@ -705,7 +1071,14 @@ async def _route_anthropic(request: Request, path: str) -> StreamingResponse:
     """Anthropic-format endpoints route by the body's model field, exactly
     like /v1/chat/completions. Without this they fall through to the
     catch-all and always hit the default instance — silently answering from
-    the wrong model."""
+    the wrong model. Errors come back in Anthropic's shape."""
+    try:
+        return await _route_anthropic_inner(request, path)
+    except HTTPException as e:
+        return _anthropic_error(e.status_code, str(e.detail))
+
+
+async def _route_anthropic_inner(request: Request, path: str) -> StreamingResponse:
     content = await request.body()
     model, shape = None, ""
     try:
@@ -769,18 +1142,30 @@ async def tts_upload_reference(request: Request):
 @app.get("/v1/audio/voices")
 async def tts_voices():
     """Predefined voices plus any cloned reference files the backend holds."""
-    async with httpx.AsyncClient(
-            timeout=httpx.Timeout(10, connect=CONNECT_TIMEOUT)) as client:
-        try:
-            resp = await client.get(f"{TTS_ENDPOINT}/v1/audio/voices")
-            voices = list(resp.json().get("voices") or [])
-        except httpx.HTTPError:
-            raise HTTPException(502, f"TTS backend unreachable at {TTS_ENDPOINT}")
-        try:
-            refs = (await client.get(f"{TTS_ENDPOINT}/get_reference_files")).json()
-        except (httpx.HTTPError, ValueError):
-            refs = []
-    seen = set(voices)
+    timeout = httpx.Timeout(10, connect=CONNECT_TIMEOUT)
+    try:
+        resp = await _http().get(f"{TTS_ENDPOINT}/v1/audio/voices", timeout=timeout)
+    except httpx.HTTPError:
+        raise HTTPException(502, f"TTS backend unreachable at {TTS_ENDPOINT}")
+    if resp.status_code != 200:
+        raise HTTPException(502, f"TTS backend /v1/audio/voices returned "
+                                 f"{resp.status_code}")
+    try:
+        data = resp.json()
+    except ValueError:
+        raise HTTPException(502, "TTS backend /v1/audio/voices returned non-JSON")
+    voices = data.get("voices") if isinstance(data, dict) else data
+    voices = list(voices) if isinstance(voices, list) else []
+    try:
+        r = await _http().get(f"{TTS_ENDPOINT}/get_reference_files", timeout=timeout)
+        refs = r.json() if r.status_code == 200 else []
+    except (httpx.HTTPError, ValueError):
+        refs = []
+    if not isinstance(refs, list):
+        refs = []
+    # Backends list voices as plain names or as objects; dedupe by name.
+    seen = {v if isinstance(v, str) else str(v.get("name") or v.get("id") or "")
+            for v in voices if isinstance(v, (str, dict))}
     cloned = [r for r in refs if isinstance(r, str) and r not in seen]
     return JSONResponse({"status": "ok", "voices": voices + cloned,
                          "cloned_voices": cloned,
@@ -795,9 +1180,33 @@ async def passthrough(request: Request, path: str):
     Registered last so it never shadows this proxy's own routes. It keeps
     llama's web UI, /metrics, /slots and friends working for clients that
     believe they are talking to llama-server directly.
+
+    A JSON body naming a model (/v1/embeddings, /v1/completions,
+    /v1/responses, /tokenize, /infill and the rest) routes by it, like chat
+    does; anything else goes to the default instance.
     """
-    target = await pick_backend(None)
-    return await _relay_to(target["base"], request, f"/{path}", "LLM")
+    content, model = None, None
+    if request.method in ("POST", "PUT", "PATCH"):
+        content = await request.body()
+        model = _body_model(content)
+    target = await pick_backend(model)
+    if model:
+        print(f"[route] /{path} requested={model!r} -> :{target.get('port')} "
+              f"({target.get('alias') or 'static default'})", flush=True)
+    return await _relay_to(target["base"], request, f"/{path}", "LLM",
+                           content=content)
+
+
+def _body_model(content: bytes) -> Optional[str]:
+    """The string `model` of a JSON-object body, else None."""
+    if content.lstrip()[:1] != b"{":
+        return None
+    try:
+        payload = json.loads(content)
+    except (ValueError, UnicodeDecodeError):
+        return None
+    model = payload.get("model") if isinstance(payload, dict) else None
+    return model if isinstance(model, str) and model else None
 
 
 def main():

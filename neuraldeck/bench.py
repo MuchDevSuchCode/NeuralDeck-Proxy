@@ -13,8 +13,10 @@ dashboard did not itself issue.
 """
 
 import json
+import math
 import os
 import re
+import threading
 import time
 from collections import deque
 from pathlib import Path
@@ -40,33 +42,90 @@ _pending: dict = {}   # (path, task) -> partial record
 # Runs the browser posted itself, so the collector does not record them
 # twice from the log a moment later.
 _client_posts: deque = deque(maxlen=30)
+# The sampler thread and API requests (also in threads) both write the file;
+# one lock serialises appends, rewrites and the client-post list.
+_lock = threading.RLock()
+# Records kept. The file is compacted back to this many once it holds twice
+# as many, so it cannot grow forever and a read never has to parse years.
+MAX_RECORDS = 5000
+_lines = {"n": None}   # records in the file, counted lazily
 
 
 def _new_id() -> str:
     return f"{int(time.time() * 1000)}-{os.urandom(3).hex()}"
 
 
-def read(limit: int = None) -> list:
+def _parse(lines) -> list:
     recs = []
-    try:
-        with open(config.BENCH_FILE) as f:
-            for line in f:
-                try:
-                    recs.append(json.loads(line))
-                except ValueError:
-                    pass
-    except FileNotFoundError:
-        pass
+    for line in lines:
+        try:
+            recs.append(json.loads(line))
+        except ValueError:
+            pass
+    return recs
+
+
+def read(limit: int = None) -> list:
+    """The newest `limit` records (all of them with no limit). With a limit
+    only a tail of the file is read — records are a few hundred bytes."""
+    with _lock:
+        try:
+            with open(config.BENCH_FILE, "rb") as f:
+                if limit:
+                    want = max(1, limit) * 2048
+                    f.seek(0, 2)
+                    size = f.tell()
+                    f.seek(max(0, size - want))
+                    data = f.read()
+                    if size > want:              # drop the partial first line
+                        data = data.split(b"\n", 1)[-1]
+                else:
+                    data = f.read()
+        except OSError:
+            return []
+    recs = _parse(data.decode("utf-8", errors="replace").splitlines())
     return recs[-limit:] if limit else recs
 
 
+def _rewrite(recs: list) -> None:
+    """Replace the file atomically: a crash mid-write leaves the old one."""
+    path = config.BENCH_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.writelines(json.dumps(r) + "\n" for r in recs)
+    os.replace(tmp, path)
+    _lines["n"] = len(recs)
+
+
 def append(rec: dict) -> None:
+    with _lock:
+        try:
+            config.BENCH_FILE.parent.mkdir(parents=True, exist_ok=True)
+            if _lines["n"] is None:
+                try:
+                    with open(config.BENCH_FILE, "rb") as f:
+                        _lines["n"] = sum(1 for _ in f)
+                except FileNotFoundError:
+                    _lines["n"] = 0
+            with open(config.BENCH_FILE, "a", encoding="utf-8") as f:
+                f.write(json.dumps(rec) + "\n")
+            _lines["n"] += 1
+            if _lines["n"] > 2 * MAX_RECORDS:
+                _rewrite(read()[-MAX_RECORDS:])
+        except OSError:
+            pass
+
+
+def _num(v):
+    """A finite number from a JSON value (numeric strings too), else None."""
+    if isinstance(v, bool):
+        return None
     try:
-        config.BENCH_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(config.BENCH_FILE, "a") as f:
-            f.write(json.dumps(rec) + "\n")
-    except OSError:
-        pass
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if math.isfinite(f) else None
 
 
 def add_client_run(body: dict, instances: list) -> dict:
@@ -80,28 +139,30 @@ def add_client_run(body: dict, instances: list) -> dict:
     rec["spec"] = inst.get("spec") if inst else None
     for k in ("prompt_n", "predicted_n", "draft_n", "draft_acc", "max_tokens",
               "ttft_ms"):
-        if isinstance(body.get(k), (int, float)):
-            rec[k] = int(body[k])
+        if (v := _num(body.get(k))) is not None:
+            rec[k] = int(v)
     for k in ("prompt_tps", "decode_tps", "wall_s", "temp"):
-        if isinstance(body.get(k), (int, float)):
-            rec[k] = round(float(body[k]), 2)
+        if (v := _num(body.get(k))) is not None:
+            rec[k] = round(v, 2)
     append(rec)
-    _client_posts.append((time.time(), model, int(body.get("predicted_n") or -1)))
+    with _lock:
+        _client_posts.append((time.time(), model, rec.get("predicted_n", -1)))
     return rec
 
 
 def delete(rec_id: str) -> bool:
-    recs = read()
-    kept = [r for r in recs if r.get("id") != rec_id]
-    if len(kept) == len(recs):
-        return False
-    with open(config.BENCH_FILE, "w") as f:
-        f.writelines(json.dumps(r) + "\n" for r in kept)
-    return True
+    with _lock:
+        recs = read()
+        kept = [r for r in recs if r.get("id") != rec_id]
+        if len(kept) == len(recs):
+            return False
+        _rewrite(kept)
+        return True
 
 
 def clear() -> None:
-    open(config.BENCH_FILE, "w").close()
+    with _lock:
+        _rewrite([])
 
 
 def collect_traffic(instances: list) -> None:
@@ -150,11 +211,11 @@ def collect_traffic(instances: list) -> None:
                          decode_tps=float(m.group(3)))
             elif (m := RE_PT_DRAFT.search(ln)):
                 p = _pending.get(key)
-                if p is not None:
-                    p.update(draft_acc=int(m.group(1)), draft_n=int(m.group(2)))
+                if p is None:
+                    continue       # draft line for a run already banked
+                p.update(draft_acc=int(m.group(1)), draft_n=int(m.group(2)))
             else:
                 continue
-            p = _pending[key]
             if "prompt_ms" in p and "eval_ms" in p:
                 # Linger a moment so the draft line lands, and so a Prompt
                 # Lab post can claim the run first.
@@ -180,8 +241,10 @@ def _flush_pending(now: float) -> None:
         pn = p.get("predicted_n", 0)
         if pn < 1:
             continue
+        with _lock:
+            posts = list(_client_posts)
         if any(m == p["model"] and abs(n - pn) <= 2 and now - t < 15
-               for t, m, n in _client_posts):
+               for t, m, n in posts):
             continue  # the browser already recorded this one
         rec = {"id": _new_id(), "ts": round(now, 1), "kind": "traffic",
                "model": p["model"], "backend": p.get("backend"),
