@@ -423,8 +423,11 @@ async def logs(service: str, lines: int = 120):
     if service == "launch":
         return JSONResponse({"lines": _launcher.status()["lines"][-lines:]})
     path = services.log_path(service)
+    if service not in services.log_names():
+        raise HTTPException(404, f"unknown log '{service}'")
     if not path or not os.path.exists(path):
-        raise HTTPException(404, f"no log for '{service}' yet")
+        # normal before the first launch; the dashboard polls this
+        return JSONResponse({"path": None, "lines": []})
     text = procs.tail_text(path, 256 * 1024)
     return JSONResponse({"path": str(path), "lines": text.splitlines()[-lines:]})
 
