@@ -307,11 +307,18 @@ async def state():
                          "history": {k: list(v) for k, v in history.items()}})
 
 
+# the running uvicorn server, so long-lived streams can see it stopping
+_server = None
+
+
 @app.get("/api/stream")
 async def stream():
     async def gen():
         last_ts = None
-        while True:
+        # End on shutdown rather than wait to be cancelled: uvicorn waits for
+        # open responses, and a dashboard tab's stream never finishes on its
+        # own — Ctrl+C would stall, then dump a traceback per open tab.
+        while not (_server and _server.should_exit):
             if latest_snapshot and latest_snapshot.get("ts") != last_ts:
                 last_ts = latest_snapshot.get("ts")
                 yield f"data: {json.dumps(latest_snapshot)}\n\n"
@@ -942,8 +949,16 @@ def main():
     _serving["port"] = config.DECK_PORT
     # Cap graceful shutdown: an open SSE stream (a dashboard tab left open)
     # must not hold the process half-dead through a restart.
-    uvicorn.run(app, host=config.DECK_HOST, port=config.DECK_PORT,
-                log_level="warning", timeout_graceful_shutdown=3)
+    global _server
+    _server = uvicorn.Server(uvicorn.Config(
+        app, host=config.DECK_HOST, port=config.DECK_PORT,
+        log_level="warning", timeout_graceful_shutdown=3))
+    try:
+        _server.run()
+    except KeyboardInterrupt:
+        # uvicorn re-raises the captured Ctrl+C once it has shut down
+        # cleanly; the shutdown already happened, so there is nothing to say
+        pass
 
 
 if __name__ == "__main__":
