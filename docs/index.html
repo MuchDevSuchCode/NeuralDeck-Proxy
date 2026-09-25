@@ -1,0 +1,1850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NeuralDeck-Proxy · documentation</title>
+<meta name="description" content="A local LLM control room for llama.cpp and vLLM, in one Python package that runs on Linux and Windows (macOS for everything but GPU telemetry).">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230d1420'/%3E%3Cpath d='M7 22V10l9 7 9-7v12' fill='none' stroke='%2300d4c4' stroke-width='3' stroke-linejoin='round'/%3E%3C/svg%3E">
+<script>
+  // apply a saved theme before first paint
+  try { const t = localStorage.getItem("nd-docs-theme");
+        if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+<style>
+  :root {
+    --bg: #ffffff; --bg-2: #f6f8fa; --panel: #ffffff; --ink: #1f2328; --ink-2: #3b4148;
+    --muted: #59636e; --line: #d8dee4; --accent: #0a7d76; --accent-ink: #ffffff;
+    --accent-soft: rgba(10,125,118,.10); --pink: #b3306f; --code-bg: #f3f5f7;
+    --note-bg: #fff8e6; --note-line: #d9a400; --shadow: 0 1px 3px rgba(31,35,40,.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0b1017; --bg-2: #0f1620; --panel: #111a26; --ink: #e8f1f8; --ink-2: #c3d2de;
+      --muted: #8ea2b4; --line: #223245; --accent: #2fd6c9; --accent-ink: #062521;
+      --accent-soft: rgba(47,214,201,.10); --pink: #ff5aa8; --code-bg: #0d151f;
+      --note-bg: #1f1a0c; --note-line: #c99a1a; --shadow: none;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0b1017; --bg-2: #0f1620; --panel: #111a26; --ink: #e8f1f8; --ink-2: #c3d2de;
+    --muted: #8ea2b4; --line: #223245; --accent: #2fd6c9; --accent-ink: #062521;
+    --accent-soft: rgba(47,214,201,.10); --pink: #ff5aa8; --code-bg: #0d151f;
+    --note-bg: #1f1a0c; --note-line: #c99a1a; --shadow: none;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-padding-top: 72px; -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--ink-2);
+         font: 16px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif; }
+  a { color: var(--accent); text-underline-offset: 2px; }
+  code, pre, kbd { font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace; }
+
+  /* top bar */
+  .topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 12px;
+            height: 56px; padding: 0 16px; background: color-mix(in srgb, var(--bg) 88%, transparent);
+            backdrop-filter: saturate(1.4) blur(8px); border-bottom: 1px solid var(--line); }
+  .brand { display: flex; align-items: center; gap: 10px; color: var(--ink); font-weight: 700;
+           text-decoration: none; letter-spacing: .5px; }
+  .brand svg { width: 26px; height: 26px; flex: none; }
+  .topbar .spacer { flex: 1; }
+  .iconbtn { display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+             height: 36px; min-width: 36px; padding: 0 10px; border: 1px solid var(--line);
+             border-radius: 8px; background: var(--panel); color: var(--ink-2); font: inherit;
+             font-size: 14px; cursor: pointer; text-decoration: none; }
+  .iconbtn:hover { border-color: var(--accent); color: var(--ink); }
+  .iconbtn svg { width: 18px; height: 18px; }
+  #menu-btn { display: none; }
+
+  /* hero */
+  .hero { border-bottom: 1px solid var(--line);
+          background: radial-gradient(1100px 380px at 12% -10%, var(--accent-soft), transparent 70%), var(--bg-2); }
+  .hero-inner { max-width: 1180px; margin: 0 auto; padding: 56px 16px 44px; }
+  .hero h1 { margin: 0 0 12px; color: var(--ink); font-size: clamp(32px, 6vw, 52px); line-height: 1.1;
+             letter-spacing: -.5px; }
+  .hero h1 span { color: var(--accent); }
+  .hero .lead { max-width: 760px; margin: 0 0 22px; font-size: clamp(17px, 2.2vw, 19px); color: var(--ink-2); }
+  .hero .cta { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 30px; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: 9px;
+         font-weight: 600; text-decoration: none; border: 1px solid var(--line); color: var(--ink);
+         background: var(--panel); }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .btn:hover { filter: brightness(1.06); }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+  .card { padding: 16px 18px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+          box-shadow: var(--shadow); }
+  .card h3 { margin: 0 0 6px; font-size: 16px; color: var(--ink); }
+  .card p { margin: 0; font-size: 14.5px; line-height: 1.55; color: var(--muted); }
+  .notice { margin-top: 18px; font-size: 14.5px; color: var(--muted); }
+
+  /* layout */
+  .layout { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: 250px minmax(0, 1fr);
+            gap: 40px; padding: 0 16px; }
+  .sidebar { position: sticky; top: 56px; align-self: start; max-height: calc(100vh - 56px); overflow-y: auto;
+             padding: 28px 4px 40px 0; }
+  .toc, .toc ul { list-style: none; margin: 0; padding: 0; }
+  .toc > li { margin: 1px 0; }
+  .toc a { display: block; padding: 5px 10px; border-radius: 6px; color: var(--muted); font-size: 14px;
+           line-height: 1.4; text-decoration: none; border-left: 2px solid transparent; }
+  .toc a:hover { color: var(--ink); background: var(--accent-soft); }
+  .toc a.active { color: var(--accent); border-left-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+  .toc ul { display: none; margin: 2px 0 6px 10px; }
+  .toc li.open > ul { display: block; }
+  .toc ul a { font-size: 13px; padding: 3px 10px; }
+
+  main { min-width: 0; padding: 28px 0 80px; }
+  main h2 { margin: 56px 0 14px; padding-top: 8px; color: var(--ink); font-size: clamp(24px, 3.4vw, 30px);
+            line-height: 1.25; border-top: 1px solid var(--line); padding-top: 28px; }
+  main h2:first-child { margin-top: 0; border-top: 0; padding-top: 0; }
+  main h3 { margin: 34px 0 10px; color: var(--ink); font-size: 20px; line-height: 1.3; }
+  main h4 { margin: 26px 0 8px; color: var(--ink); font-size: 17px; }
+  .hash { float: left; margin-left: -1.1em; padding-right: .3em; color: var(--muted); opacity: 0;
+          text-decoration: none; font-weight: 400; }
+  h2:hover .hash, h3:hover .hash, .hash:focus { opacity: 1; }
+  main p, main li { max-width: 78ch; }
+  main ul, main ol { padding-left: 1.4em; }
+  main li { margin: 4px 0; }
+  main strong { color: var(--ink); }
+  main hr { border: 0; border-top: 1px solid var(--line); margin: 32px 0; }
+  blockquote { margin: 18px 0; padding: 12px 16px; background: var(--note-bg); border-left: 4px solid var(--note-line);
+               border-radius: 0 8px 8px 0; color: var(--ink-2); }
+  blockquote p { margin: 0; }
+
+  :not(pre) > code { padding: .12em .38em; border-radius: 5px; background: var(--code-bg);
+                     border: 1px solid var(--line); font-size: .88em; color: var(--ink); word-break: break-word; }
+  pre { position: relative; margin: 16px 0; padding: 14px 16px; overflow-x: auto; background: var(--code-bg);
+        border: 1px solid var(--line); border-radius: 10px; font-size: 13.5px; line-height: 1.55; color: var(--ink); }
+  pre code { background: none; border: 0; padding: 0; white-space: pre; }
+  .copy { position: absolute; top: 8px; right: 8px; padding: 3px 9px; font: 12px/1.6 system-ui, sans-serif;
+          color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+          cursor: pointer; opacity: 0; transition: opacity .15s; }
+  pre:hover .copy, .copy:focus-visible { opacity: 1; }
+  @media (hover: none) { .copy { opacity: 1; } }
+
+  .table-wrap { margin: 16px 0; overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+  th { background: var(--bg-2); color: var(--ink); font-weight: 600; white-space: nowrap; }
+  tr:last-child td { border-bottom: 0; }
+  td code { white-space: nowrap; }
+  details { margin: 16px 0; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+  summary { cursor: pointer; color: var(--ink); font-weight: 600; }
+
+  footer { border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+  footer .inner { max-width: 1180px; margin: 0 auto; padding: 24px 16px; display: flex; flex-wrap: wrap; gap: 8px 24px; }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* the mobile menu's backdrop; outside the phone layout it must not exist,
+     or it takes a grid column and pushes the content under the sidebar */
+  .scrim { display: none; }
+
+  /* phones and narrow tablets: the sidebar becomes a slide-in menu */
+  @media (max-width: 900px) {
+    #menu-btn { display: inline-flex; }
+    .layout { display: block; }
+    .sidebar { position: fixed; z-index: 30; top: 56px; left: 0; bottom: 0; width: min(300px, 86vw);
+               max-height: none; padding: 16px 12px 40px; background: var(--bg); border-right: 1px solid var(--line);
+               transform: translateX(-102%); transition: transform .2s ease; }
+    body.nav-open .sidebar { transform: none; box-shadow: 0 0 40px rgba(0,0,0,.35); }
+    .scrim { position: fixed; inset: 56px 0 0 0; z-index: 25; background: rgba(0,0,0,.35); display: none; }
+    body.nav-open .scrim { display: block; }
+    .hash { display: none; }
+    .brand .full { display: none; }
+  }
+  /* phones: each table row becomes a card, each cell labelled by its column */
+  @media (max-width: 640px) {
+    .table-wrap { overflow: visible; border: 0; border-radius: 0; }
+    .table-wrap table, .table-wrap tbody, .table-wrap tr, .table-wrap td { display: block; width: 100%; }
+    .table-wrap thead { display: none; }
+    .table-wrap tr { margin: 0 0 10px; padding: 6px 0; background: var(--panel);
+                     border: 1px solid var(--line); border-radius: 10px; }
+    .table-wrap td { display: grid; grid-template-columns: minmax(5.5em, 32%) 1fr; gap: 10px;
+                     padding: 5px 12px; border: 0; }
+    .table-wrap td::before { content: attr(data-label); color: var(--muted); font-size: 12.5px;
+                             font-weight: 600; line-height: 1.9; }
+    .table-wrap td[data-label=""] { grid-template-columns: 1fr; }
+    .table-wrap td[data-label=""]::before { display: none; }
+    td code { white-space: normal; }
+  }
+  @media (max-width: 480px) {
+    .hero-inner { padding: 36px 16px 30px; }
+    .iconbtn .label { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { .sidebar { transition: none; } html { scroll-behavior: auto; } }
+  @media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+  @media print { .topbar, .sidebar, .copy, .hero .cta { display: none !important; } .layout { display: block; } }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <button class="iconbtn" id="menu-btn" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+  </button>
+  <a class="brand" href="#top">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#0d1420"/><path d="M7 22V10l9 7 9-7v12" fill="none" stroke="#00d4c4" stroke-width="3" stroke-linejoin="round"/></svg>
+    <span>NeuralDeck<span class="full">-Proxy</span></span>
+  </a>
+  <span class="spacer"></span>
+  <button class="iconbtn" id="theme-btn" aria-label="Toggle light or dark theme" title="Toggle theme">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+  </button>
+  <a class="iconbtn" href="https://github.com/MuchDevSuchCode/NeuralDeck-Proxy" aria-label="Source on GitHub">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.7.08-.7 1.17.08 1.78 1.2 1.78 1.2 1.03 1.77 2.71 1.26 3.37.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a10.9 10.9 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.43-2.7 5.4-5.27 5.69.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z"/></svg>
+    <span class="label">GitHub</span>
+  </a>
+</header>
+
+<section class="hero" id="top">
+  <div class="hero-inner">
+    <h1>Neural<span>Deck</span>-Proxy</h1>
+    <p class="lead">A local LLM control room for <a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a> and <a href="https://github.com/vllm-project/vllm">vLLM</a>, in one Python package that runs on <strong>Linux and Windows</strong> (macOS for everything but GPU telemetry).</p>
+    <div class="cta">
+      <a class="btn primary" href="#quick-start">Quick start</a>
+      <a class="btn" href="#install">Install</a>
+      <a class="btn" href="#troubleshooting">Troubleshooting</a>
+      <a class="btn" href="https://github.com/MuchDevSuchCode/NeuralDeck-Proxy">View on GitHub</a>
+    </div>
+    <div class="cards">
+<div class="card"><h3>Dashboard</h3><p>live CPU/GPU/VRAM/thermal telemetry, every running model server with the flags it was launched with, KV-cache occupancy, a roofline estimate, per-service start/stop, logs, and model management: launch, relaunch, delete, and download from Hugging Face.</p></div>
+<div class="card"><h3>Prompt Lab</h3><p>send a prompt to any loaded model and watch it stream, with time-to-first-token, prefill/decode throughput and draft acceptance measured per run.</p></div>
+<div class="card"><h3>Benchmarks</h3><p>every request through the stack is recorded, from the Prompt Lab, from a standard prompt, or from any other client on your network. Compare models, backends and speculation settings on medians.</p></div>
+<div class="card"><h3>Settings</h3><p>point NeuralDeck at your model folders and server builds from the page itself, with a file picker, validation, and an honest account of which changes apply at once and which need a restart.</p></div>
+<div class="card"><h3>Multimodal proxy</h3><p>one OpenAI- and Anthropic-compatible endpoint in front of every model you have running. It routes by model name, transcribes audio through whisper.cpp, turns video into frames for vision models, and relays speech synthesis.</p></div>
+    </div>
+    <p class="notice"><strong>No authentication, by design.</strong> Run it on a network you trust, or bind it to <code>127.0.0.1</code> (see <a href="#security">Security</a>).</p>
+  </div>
+</section>
+
+<div class="layout">
+  <nav class="sidebar" id="sidebar" aria-label="Documentation sections">
+<ul class="toc"><li><a href="#quick-start">Quick start</a></li><li><a href="#how-it-fits-together">How it fits together</a></li><li><a href="#requirements">Requirements</a></li><li><a href="#install">Install</a><ul><li><a href="#with-the-installer-recommended">With the installer (recommended)</a></li><li><a href="#manually-or-into-an-existing-environment">Manually, or into an existing environment</a></li><li><a href="#updating">Updating</a></li></ul></li><li><a href="#backends-llamacpp-and-vllm">Backends: llama.cpp and vLLM</a><ul><li><a href="#llamacpp-builds">llama.cpp builds</a></li><li><a href="#vllm">vLLM</a></li></ul></li><li><a href="#the-dashboard">The dashboard</a><ul><li><a href="#dashboard-panels">Dashboard panels</a></li><li><a href="#launching-a-model">Launching a model</a></li><li><a href="#servers-and-logs">Servers and logs</a></li></ul></li><li><a href="#getting-models">Getting models</a><ul><li><a href="#the-hugging-face-downloader">The Hugging Face downloader</a></li><li><a href="#adding-models-by-hand">Adding models by hand</a></li><li><a href="#mmproj-files-which-and-when">mmproj files: which and when</a></li></ul></li><li><a href="#choosing-a-quantisation">Choosing a quantisation</a></li><li><a href="#prompt-lab">Prompt Lab</a></li><li><a href="#benchmarks">Benchmarks</a></li><li><a href="#using-the-proxy">Using the proxy</a><ul><li><a href="#endpoints">Endpoints</a></li><li><a href="#how-model-is-matched">How model is matched</a></li><li><a href="#examples">Examples</a></li></ul></li><li><a href="#how-to-recipes">How-to recipes</a></li><li><a href="#settings-reference">Settings reference</a><ul><li><a href="#models">Models</a></li><li><a href="#backends">Backends</a></li><li><a href="#launch-defaults">Launch defaults</a></li><li><a href="#vllm-1">vLLM</a></li><li><a href="#sampling">Sampling</a></li><li><a href="#ports">Ports</a></li><li><a href="#speech--video">Speech &amp; video</a></li><li><a href="#proxy">Proxy</a></li><li><a href="#dashboard">Dashboard</a></li><li><a href="#optional-services">Optional services</a></li><li><a href="#validation-and-safety">Validation and safety</a></li></ul></li><li><a href="#configuring-without-the-page">Configuring without the page</a><ul><li><a href="#settings-not-on-the-page">Settings not on the page</a></li></ul></li><li><a href="#command-line">Command line</a></li><li><a href="#where-things-are-stored">Where things are stored</a></li><li><a href="#dashboard-api">Dashboard API</a></li><li><a href="#troubleshooting">Troubleshooting</a><ul><li><a href="#starting-and-installing">Starting and installing</a></li><li><a href="#launching-models">Launching models</a></li><li><a href="#clients-and-the-proxy">Clients and the proxy</a></li><li><a href="#models-and-downloads">Models and downloads</a></li><li><a href="#vllm-2">vLLM</a></li><li><a href="#telemetry">Telemetry</a></li></ul></li><li><a href="#security">Security</a></li><li><a href="#uninstall">Uninstall</a></li><li><a href="#notes-on-portability">Notes on portability</a></li><li><a href="#documentation-site">Documentation site</a></li><li><a href="#credit">Credit</a></li><li><a href="#licence">Licence</a></li></ul>
+  </nav>
+  <div class="scrim" id="scrim"></div>
+  <main id="content">
+<h2 id="quick-start"><a class="hash" href="#quick-start" aria-label="Link to this section">#</a>Quick start</h2>
+<pre><code class="language-bash">git clone https://github.com/MuchDevSuchCode/NeuralDeck-Proxy.git
+cd NeuralDeck-Proxy
+./install.sh                     # Windows: powershell -ExecutionPolicy Bypass -File .\install.ps1
+</code></pre>
+<p>The installer builds a virtual environment, installs NeuralDeck, prints
+what it found on your machine and opens the dashboard at
+<strong>http://localhost:8770</strong>. Then:</p>
+<ol>
+<li><strong>Settings → llama-server builds</strong>: add the path to your <code>llama-server</code>
+binary if it wasn't found automatically.</li>
+<li><strong>Settings → Model directories</strong>: add the folders that hold your models.</li>
+<li><strong>Dashboard → Models</strong>: press <strong>Launch</strong> next to a model.</li>
+<li>Point any OpenAI-compatible client at <strong><code>http://localhost:8080/v1</code></strong>,
+with <code>model</code> set to the name shown in the Models panel.</li>
+</ol>
+<p>Afterwards, start it again any time with <code>neuraldeck up --open</code>.</p>
+<h2 id="how-it-fits-together"><a class="hash" href="#how-it-fits-together" aria-label="Link to this section">#</a>How it fits together</h2>
+<pre><code>     your apps / Claude Code / the dashboard's Prompt Lab
+                          │
+                    :8080 │  multimodal proxy      ← the port clients use
+                          │  (routes by model name)
+        ┌─────────────────┼──────────────────┬─────────────────┐
+        │                 │                  │                 │
+  :8081 llama-server  :8082 llama-server  :8083 vllm serve  :8090 whisper-server
+        │                 │                  │
+        └──────── :8770 NeuralDeck dashboard ┘   ← watches, launches, benchmarks
+</code></pre>
+<ul>
+<li>The <strong>proxy</strong> owns the port your clients point at. It finds every model
+server in the llama port range (<code>8081-8089</code> by default) and routes each
+request by its <code>model</code> field.</li>
+<li><strong>Model servers</strong> (<code>llama-server</code> or <code>vllm serve</code>) are launched by the
+dashboard into that port range. They keep running if the dashboard
+restarts.</li>
+<li>The <strong>dashboard</strong> is a separate port that observes the whole stack,
+launches and stops models, and records benchmarks.</li>
+</ul>
+<h2 id="requirements"><a class="hash" href="#requirements" aria-label="Link to this section">#</a>Requirements</h2>
+<ul>
+<li><strong>Python 3.10+</strong>.</li>
+<li><strong>A model server</strong>, at least one of:
+<ul>
+<li>a built <code>llama-server</code> from <a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a>,
+or a fork of it. Any recent build works: the launcher reads each
+binary's <code>--help</code> and only passes flags that build supports;</li>
+<li>a <a href="https://github.com/vllm-project/vllm">vLLM</a> install, in its own
+environment, to serve Hugging Face safetensors models (see
+<a href="#vllm">vLLM</a>).</li>
+</ul>
+</li>
+<li><strong>Optional extras:</strong>
+<ul>
+<li><code>whisper-server</code> from <a href="https://github.com/ggml-org/whisper.cpp">whisper.cpp</a>
+for speech input;</li>
+<li><code>ffmpeg</code> for video input;</li>
+<li><code>huggingface_hub</code> for the in-dashboard model downloader (installed by
+the installer);</li>
+<li>an OpenAI-compatible TTS server for speech output;</li>
+<li>ComfyUI, if you want to start and stop it from the dashboard.</li>
+</ul>
+</li>
+<li><strong>GPU telemetry</strong> comes from <code>nvidia-smi</code> (NVIDIA), <code>amd-smi</code> /
+<code>rocm-smi</code> / amdgpu sysfs (AMD), or Windows CIM. Without any of them the
+dashboard still works; the GPU panels just hide what nobody can report.</li>
+</ul>
+<h2 id="install"><a class="hash" href="#install" aria-label="Link to this section">#</a>Install</h2>
+<h3 id="with-the-installer-recommended"><a class="hash" href="#with-the-installer-recommended" aria-label="Link to this section">#</a>With the installer (recommended)</h3>
+<p><strong>Linux / macOS</strong></p>
+<pre><code class="language-bash">git clone https://github.com/MuchDevSuchCode/NeuralDeck-Proxy.git
+cd NeuralDeck-Proxy
+./install.sh
+</code></pre>
+<p><strong>Windows</strong> (PowerShell, in the cloned folder)</p>
+<pre><code class="language-powershell">powershell -ExecutionPolicy Bypass -File .\install.ps1
+</code></pre>
+<p>The installer:</p>
+<ol>
+<li>finds a suitable Python 3.10+;</li>
+<li>builds a virtual environment (default: <code>./venv</code>) and installs
+NeuralDeck into it, with the Hugging Face extras;</li>
+<li>adds a launcher: <code>~/.local/bin/neuraldeck</code> on Linux/macOS, a Start Menu
+shortcut on Windows;</li>
+<li>runs <code>neuraldeck doctor</code> to show what it found;</li>
+<li>starts NeuralDeck and opens the dashboard.</li>
+</ol>
+<p>Re-running it is safe. A virtual environment left half-built by an
+interrupted run is detected and rebuilt.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Installer flag</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td data-label="Installer flag"><span class="cell"><code>--no-launch</code> / <code>-NoLaunch</code></span></td>
+<td data-label="Effect"><span class="cell">install only, don't start it</span></td>
+</tr>
+<tr>
+<td data-label="Installer flag"><span class="cell"><code>--no-link</code> / <code>-NoShortcut</code></span></td>
+<td data-label="Effect"><span class="cell">skip the <code>~/.local/bin</code> launcher / Start Menu shortcut</span></td>
+</tr>
+<tr>
+<td data-label="Installer flag"><span class="cell"><code>--dir &lt;path&gt;</code> / <code>-Dir &lt;path&gt;</code></span></td>
+<td data-label="Effect"><span class="cell">put the virtual environment somewhere else (relative paths are resolved)</span></td>
+</tr>
+</tbody>
+</table></div>
+<p>Nothing is installed system-wide: everything lives in the virtual
+environment, plus a config file, logs and benchmark history in your user
+data directory.</p>
+<h3 id="manually-or-into-an-existing-environment"><a class="hash" href="#manually-or-into-an-existing-environment" aria-label="Link to this section">#</a>Manually, or into an existing environment</h3>
+<pre><code class="language-bash">pip install -e &quot;.[hub]&quot;     # or: pip install -r requirements.txt
+neuraldeck doctor           # what this machine looks like to NeuralDeck
+neuraldeck up --open        # start the proxy and the dashboard
+</code></pre>
+<p>From a checkout, without installing anything, the wrapper scripts build a
+virtual environment on first run:</p>
+<pre><code class="language-bash">./scripts/neuraldeck.sh            # Linux / macOS
+.\scripts\neuraldeck.ps1           # Windows PowerShell
+</code></pre>
+<h3 id="updating"><a class="hash" href="#updating" aria-label="Link to this section">#</a>Updating</h3>
+<pre><code class="language-bash">cd NeuralDeck-Proxy
+git pull
+</code></pre>
+<p>Then restart: press <strong>Ctrl+C</strong> in the terminal running NeuralDeck and start
+it again, and restart the proxy from the <strong>Servers</strong> panel (<strong>Stop</strong>, then
+<strong>Start</strong>). The proxy runs as its own process and survives dashboard
+restarts, so it keeps the old code until you restart it. Model servers
+keep running throughout.</p>
+<h2 id="backends-llamacpp-and-vllm"><a class="hash" href="#backends-llamacpp-and-vllm" aria-label="Link to this section">#</a>Backends: llama.cpp and vLLM</h2>
+<p>A <strong>backend</strong> is a labelled path to a model server executable, set in
+<strong>Settings → llama-server builds</strong>. The launch form picks one per launch,
+so you can keep several and switch between them.</p>
+<h3 id="llamacpp-builds"><a class="hash" href="#llamacpp-builds" aria-label="Link to this section">#</a>llama.cpp builds</h3>
+<p>Add a label and the path to a <code>llama-server</code> binary. Examples of why you
+might keep more than one:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Label (example)</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td data-label="Label (example)"><span class="cell"><code>llama.cpp</code></span></td>
+<td data-label="Why"><span class="cell">upstream, for most GGUF models</span></td>
+</tr>
+<tr>
+<td data-label="Label (example)"><span class="cell">a fork with speculative-decoding extras</span></td>
+<td data-label="Why"><span class="cell">MTP heads (e.g. Gemma 4 assistant heads, Qwen NextN) and extra KV-cache types that upstream lacks</span></td>
+</tr>
+<tr>
+<td data-label="Label (example)"><span class="cell">a fork for a special quant format</span></td>
+<td data-label="Why"><span class="cell">some formats (for example ternary <code>PTQ1_0</code>/<code>PQ2_0</code> models) only load on the fork that introduced them</span></td>
+</tr>
+</tbody>
+</table></div>
+<p>The launcher reads each binary's <code>--help</code> once and only passes flags that
+build accepts, so upstream and forks both work without configuration. The
+A/B workflow is simple: launch the same model on two backends and compare
+them on the Benchmarks tab.</p>
+<p>If NeuralDeck can't find a <code>llama-server</code> at all, it looks on <code>PATH</code>, then
+in <code>~/llama.cpp/build/bin/</code> (and the usual Windows build folders). Add the
+path in Settings if yours lives elsewhere.</p>
+<h3 id="vllm"><a class="hash" href="#vllm" aria-label="Link to this section">#</a>vLLM</h3>
+<p>vLLM serves Hugging Face <strong>safetensors</strong> models (including AWQ, GPTQ, FP8,
+compressed-tensors, and EXL3 via a plugin). NeuralDeck treats any backend
+whose executable is named <code>vllm</code> as a vLLM backend.</p>
+<p><strong>1. Install vLLM in its own environment.</strong> vLLM pins its own PyTorch and
+CUDA build, so keep it out of NeuralDeck's environment. With conda
+(using conda-forge avoids Anaconda's channel terms prompt):</p>
+<pre><code class="language-bash">conda create -y -p ~/vllm-env --override-channels -c conda-forge python=3.12 pip
+~/vllm-env/bin/python -m pip install -U vllm huggingface_hub
+~/vllm-env/bin/python -c &quot;import vllm, torch; print(vllm.__version__, torch.version.cuda, torch.cuda.is_available())&quot;
+</code></pre>
+<p>A plain <code>python3 -m venv ~/vllm-env</code> works just as well if your system
+Python is a version vLLM supports.</p>
+<p><strong>2. Register it.</strong> In <strong>Settings → llama-server builds</strong>, add a label
+(e.g. <code>vLLM</code>) with the path <code>~/vllm-env/bin/vllm</code>. <code>neuraldeck doctor</code>
+runs <code>vllm --version</code> to confirm it works.</p>
+<p><strong>3. Launch a safetensors model.</strong> Folders holding <code>config.json</code> and
+<code>*.safetensors</code> appear in the Models panel with a <strong>safetensors</strong> badge.
+Press <strong>Launch</strong> and the form switches to your vLLM backend automatically.
+The first start takes a few minutes (vLLM compiles kernels and captures
+CUDA graphs); later starts are faster.</p>
+<p>What NeuralDeck does for a vLLM launch:</p>
+<ul>
+<li><strong>Flags come from vLLM's own help</strong> (<code>vllm serve --help=all</code>, read once
+and cached): <code>--served-model-name</code>, <code>--max-model-len</code> (your context),
+<code>--max-num-seqs</code> (your slots), <code>--gpu-memory-utilization</code>,
+<code>--enable-prefix-caching</code>.</li>
+<li><strong>Model-specific options are detected:</strong> reasoning and tool-call parsers
+for Qwen-family models (<code>qwen3_xml</code> when the chat template writes
+<code>&lt;function=…&gt;</code> calls, otherwise <code>hermes</code>), the model's own MTP layers as
+<code>--speculative-config</code> when speculation is <code>auto</code>, and
+<code>enable_thinking: false</code> as the default template argument when thinking
+is off. If a launch fails with speculation on, it's retried without it.</li>
+<li><strong>VRAM is sized to what's free</strong>, so vLLM can run beside llama-servers.
+<code>--gpu-memory-utilization</code> is set to the free share of the card less a
+512 MiB margin, capped by <code>vllm_gpu_frac_max</code>. A model that plainly
+can't fit is refused before anything starts, with a message saying how
+much it needs and how much is free.</li>
+<li><strong>The environment is prepared:</strong> the vLLM environment's <code>bin</code> goes first
+on <code>PATH</code>, <code>CUDA_HOME</code> points at the CUDA toolkit pip installed into it
+(flashinfer compiles kernels with it), and
+<code>VLLM_USE_FLASHINFER_SAMPLER=0</code> is set unless you set it yourself.</li>
+<li><strong>Readiness</strong> is <code>/health</code> plus the served name in <code>/v1/models</code>, with up
+to 20 minutes allowed for the first start.</li>
+</ul>
+<p>Things that differ from llama.cpp:</p>
+<ul>
+<li><strong>Context is per request.</strong> vLLM's <code>--max-model-len</code> applies to each
+request; it isn't split across slots the way llama.cpp splits <code>ctx</code>.</li>
+<li><strong>vLLM reserves memory up front.</strong> It claims its whole
+<code>--gpu-memory-utilization</code> share at start-up for its KV cache, so the
+memory pressure panel reads <em>tight</em> while it runs. That's expected, and
+it doesn't grow further.</li>
+<li><strong>Background traffic isn't benchmarked.</strong> vLLM logs no per-request
+timings, so its runs are recorded from the Prompt Lab and the standard
+bench only.</li>
+</ul>
+<h4 id="exl3-models-on-vllm"><a class="hash" href="#exl3-models-on-vllm" aria-label="Link to this section">#</a>EXL3 models on vLLM</h4>
+<p>EXL3 (ExLlamaV3) checkpoints, such as <code>orcarouter/OrcaSAQ-2-27B</code>, need
+<code>quant_method: exl3</code> support, which stock vLLM doesn't have. The model's
+publisher supplies a vLLM plugin; it also needs the <code>exllamav3</code> CUDA
+extension, which isn't on PyPI and must match your PyTorch and CUDA
+versions exactly:</p>
+<pre><code class="language-bash">PY=~/vllm-env/bin/python
+$PY -c &quot;import torch; print(torch.__version__, torch.version.cuda)&quot;   # e.g. 2.13.0 13.0
+# pick the matching wheel from https://github.com/turboderp-org/exllamav3/releases
+#   (cu128.* for CUDA 12.x, cu132.* for CUDA 13.x; torchX.Y.0; cp312 for Python 3.12)
+$PY -m pip install --no-deps ./exllamav3-&lt;version&gt;+cu132.torch2.13.0-cp312-cp312-linux_x86_64.whl
+$PY -m pip install marisa_trie
+# flashinfer's JIT needs nvcc at PyTorch's CUDA minor version, not the newest
+$PY -m pip install &quot;nvidia-cuda-nvcc==13.0.*&quot;
+# then the model's plugin, per its README (pin a commit you've reviewed)
+</code></pre>
+<p>Plugins from model publishers are third-party code that runs inside the
+server process. Read one before installing it, and pin the commit you read
+rather than tracking a branch.</p>
+<h2 id="the-dashboard"><a class="hash" href="#the-dashboard" aria-label="Link to this section">#</a>The dashboard</h2>
+<p>The dashboard is at <code>http://localhost:8770</code>. It has four views: Dashboard,
+Prompt Lab, Benchmarks and Settings.</p>
+<h3 id="dashboard-panels"><a class="hash" href="#dashboard-panels" aria-label="Link to this section">#</a>Dashboard panels</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Panel</th>
+<th>Shows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td data-label="Panel"><span class="cell"><strong>CPU</strong></span></td>
+<td data-label="Shows"><span class="cell">model, frequency, temperature, core/thread count, load</span></td>
+</tr>
+<tr>
+<td data-label="Panel"><span class="cell"><strong>Per-core utilisation</strong></span></td>
+<td data-label="Shows"><span class="cell">load per logical core</span></td>
+</tr>
+<tr>
+<td data-label="Panel"><span class="cell"><strong>GPU / Accelerator</strong></span></td>
+<td data-label="Shows"><span class="cell">device, temperature, clocks, power, fan, utilisation, VRAM (plus the shared GTT pool on AMD APUs)</span></td>
+</tr>
+<tr>
+<td data-label="Panel"><span class="cell"><strong>Memory pressure</strong></span></td>
+<td data-label="Shows"><span class="cell">a verdict (ok / watch / tight) from RAM, VRAM and swap, with advice</span></td>
+</tr>
+<tr>
+<td data-label="Panel"><span class="cell"><strong>Roofline / Bottleneck</strong></span></td>
+<td data-label="Shows"><span class="cell">an estimated decode ceiling from memory bandwidth ÷ weight bytes, and how close the live decode speed gets to it</span></td>
+</tr>
+<tr>
+<td data-label="Panel"><span class="cell"><strong>Storage</strong></span></td>
+<td data-label="Shows"><span class="cell">usage of each model folder's disk, and disk read/write</span></td>
+</tr>
+<tr>
+<td data-label="Panel"><span class="cell"><strong>Network / Processes</strong></span></td>
+<td data-label="Shows"><span class="cell">network rates, thread count, busiest processes</span></td>
+</tr>
+<tr>
+<td data-label="Panel"><span class="cell"><strong>History</strong></span></td>
+<td data-label="Shows"><span class="cell">charts of CPU/GPU %, prefill/decode throughput, VRAM, GPU temperature and KV-cache fill per instance</span></td>
+</tr>
+<tr>
+<td data-label="Panel"><span class="cell"><strong>Models</strong></span></td>
+<td data-label="Shows"><span class="cell">every discovered model, with launch controls (below)</span></td>
+</tr>
+<tr>
+<td data-label="Panel"><span class="cell"><strong>Servers</strong></span></td>
+<td data-label="Shows"><span class="cell">every running model server and service, with Stop/Start</span></td>
+</tr>
+<tr>
+<td data-label="Panel"><span class="cell"><strong>Multimodal stack</strong></span></td>
+<td data-label="Shows"><span class="cell">whisper model and transcriptions, proxy requests and errors</span></td>
+</tr>
+<tr>
+<td data-label="Panel"><span class="cell"><strong>Inference</strong></span></td>
+<td data-label="Shows"><span class="cell">live stats for a running instance: health, requests, prefill/decode t/s, context use</span></td>
+</tr>
+<tr>
+<td data-label="Panel"><span class="cell"><strong>Logs</strong></span></td>
+<td data-label="Shows"><span class="cell">tabs for the newest model log, the proxy, whisper and the launch log</span></td>
+</tr>
+</tbody>
+</table></div>
+<p>Panels can be <strong>dragged to reorder</strong> by their heading (a ⠿ grip appears on
+hover or keyboard focus; ↑/↓ move a focused panel). <strong>Reset layout</strong> in
+the header restores the default arrangement.</p>
+<p><strong>Themes:</strong> the header's theme picker offers <strong>NeuralDeck</strong> (the default
+cyberpunk look), <strong>Dark</strong> and <strong>Light</strong>. The choice is remembered per
+browser.</p>
+<h3 id="launching-a-model"><a class="hash" href="#launching-a-model" aria-label="Link to this section">#</a>Launching a model</h3>
+<p>The Models panel lists every model found in your model directories. Icons
+show what each can do:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Icon / badge</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td data-label="Icon / badge"><span class="cell">👁</span></td>
+<td data-label="Meaning"><span class="cell">vision (an mmproj projector is paired)</span></td>
+</tr>
+<tr>
+<td data-label="Icon / badge"><span class="cell">🎬</span></td>
+<td data-label="Meaning"><span class="cell">video, as frames through the proxy</span></td>
+</tr>
+<tr>
+<td data-label="Icon / badge"><span class="cell">⚡</span></td>
+<td data-label="Meaning"><span class="cell">an MTP/NextN head for speculative decoding</span></td>
+</tr>
+<tr>
+<td data-label="Icon / badge"><span class="cell">💭</span></td>
+<td data-label="Meaning"><span class="cell">a chat template that supports thinking</span></td>
+</tr>
+<tr>
+<td data-label="Icon / badge"><span class="cell">🧬</span></td>
+<td data-label="Meaning"><span class="cell">an embedding model</span></td>
+</tr>
+<tr>
+<td data-label="Icon / badge"><span class="cell"><strong>safetensors</strong></span></td>
+<td data-label="Meaning"><span class="cell">a Hugging Face format model that needs a vLLM backend</span></td>
+</tr>
+</tbody>
+</table></div>
+<p>The launch controls above the list apply to the next launch:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Control</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td data-label="Control"><span class="cell"><strong>backend</strong></span></td>
+<td data-label="Meaning"><span class="cell">which server build to use (vLLM backends are labelled)</span></td>
+</tr>
+<tr>
+<td data-label="Control"><span class="cell"><strong>slots</strong></span></td>
+<td data-label="Meaning"><span class="cell">parallel requests. llama.cpp splits the context across them; vLLM uses it as <code>--max-num-seqs</code></span></td>
+</tr>
+<tr>
+<td data-label="Control"><span class="cell"><strong>ctx</strong></span></td>
+<td data-label="Meaning"><span class="cell">context size in tokens. The note beside it shows the per-request budget</span></td>
+</tr>
+<tr>
+<td data-label="Control"><span class="cell"><strong>spec</strong></span></td>
+<td data-label="Meaning"><span class="cell"><code>auto</code> uses the model's MTP head when it has one; <code>ngram</code> drafts from the context and needs no draft model; <code>off</code> disables speculation (useful for A/B timing)</span></td>
+</tr>
+<tr>
+<td data-label="Control"><span class="cell"><strong>thinking</strong></span></td>
+<td data-label="Meaning"><span class="cell">reasoning budget for models that support it: <code>off</code> (0), <code>low</code> (1024 tokens), <code>medium</code> (4096), <code>high</code> (unlimited)</span></td>
+</tr>
+<tr>
+<td data-label="Control"><span class="cell"><strong>replace running instances</strong></span></td>
+<td data-label="Meaning"><span class="cell">stop what's running first, instead of launching alongside it</span></td>
+</tr>
+</tbody>
+</table></div>
+<p>Buttons on each model row:</p>
+<ul>
+<li><strong>Launch</strong> starts the model on the next free port in the llama port
+range. If the model's format doesn't suit the selected backend, the form
+switches to a compatible backend and says so.</li>
+<li><strong>Relaunch</strong> (on a model that's already serving) stops that instance and
+starts it again on the same port with the current settings.</li>
+<li><strong>✕</strong> deletes the model's files. For a GGUF model that's only its own
+files (its shards, mmproj and draft head); for a safetensors model it's
+the whole folder, since the folder is the model. It never touches
+anything outside your model directories, a symlinked folder loses only
+the link, and it's hidden while the model is serving.</li>
+</ul>
+<p>Before launching alongside other models, NeuralDeck checks free VRAM and
+refuses with an explanation if the model won't fit.</p>
+<h3 id="servers-and-logs"><a class="hash" href="#servers-and-logs" aria-label="Link to this section">#</a>Servers and logs</h3>
+<p>The <strong>Servers</strong> panel lists every running model server with its port,
+backend, context, slots, KV cache, speed and pid, plus the proxy,
+whisper-server and any optional services. <strong>Stop</strong> and <strong>Start</strong> act on
+them directly. The <strong>Logs</strong> panel follows the newest model log without
+jumping to the bottom while you scroll up to read, or while you select
+text.</p>
+<h2 id="getting-models"><a class="hash" href="#getting-models" aria-label="Link to this section">#</a>Getting models</h2>
+<h3 id="the-hugging-face-downloader"><a class="hash" href="#the-hugging-face-downloader" aria-label="Link to this section">#</a>The Hugging Face downloader</h3>
+<p>Press <strong>⬇ Get models</strong> in the Models panel.</p>
+<ul>
+<li><strong>Search</strong> by name, or leave the box empty to browse. Sort by trending,
+downloads or likes.</li>
+<li><strong>Hover over a result</strong> (or tab to it) to see a short description from
+its model card. For quantised repos, whose cards are mostly packaging
+notes, the base model's description is shown. Open a repo and the same
+description appears above its file list.</li>
+<li><strong>GGUF / vLLM toggle.</strong> GGUF mode (the default) lists GGUF repos for
+llama.cpp. vLLM mode lists safetensors repos and downloads the whole
+repo; it's available once a vLLM backend is configured.</li>
+<li>Downloads <strong>queue</strong>, show progress next to the ⬇ Get models button even
+with the dialog closed, can be cancelled, and refresh the model list when
+they finish.</li>
+</ul>
+<p><strong>In GGUF mode, what to tick:</strong></p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>File</th>
+<th>Do you need it?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td data-label="File"><span class="cell"><strong>one quant</strong> (e.g. <code>…-Q4_K_M.gguf</code>)</span></td>
+<td data-label="Do you need it?"><span class="cell"><strong>Yes.</strong> This is the model. See <a href="#choosing-a-quantisation">Choosing a quantisation</a></span></td>
+</tr>
+<tr>
+<td data-label="File"><span class="cell">an <strong>mmproj</strong> (<code>mmproj-F16.gguf</code>)</span></td>
+<td data-label="Do you need it?"><span class="cell">Only for image input. It's the vision projector</span></td>
+</tr>
+<tr>
+<td data-label="File"><span class="cell">an <strong>MTP head</strong> (<code>mtp-…gguf</code>, <code>…-assistant…</code>)</span></td>
+<td data-label="Do you need it?"><span class="cell">Optional, for faster decoding with speculation on a backend that supports it</span></td>
+</tr>
+<tr>
+<td data-label="File"><span class="cell"><code>BF16/…</code>, <code>F16</code></span></td>
+<td data-label="Do you need it?"><span class="cell">Usually not. These are the full-precision originals</span></td>
+</tr>
+</tbody>
+</table></div>
+<p>The file list labels each helper file's role and marks the recommended
+mmproj (F16 first) and MTP head (Q8_0 first) with ★. <strong>When you tick your
+first quant, the recommended mmproj and MTP head are ticked too</strong>, with a
+note saying so. Untick either to skip it. Split models (<code>-00001-of-00003</code>)
+tick and untick all their parts together.</p>
+<p>Everything you tick lands in one folder named after the main weights, so
+discovery pairs the model with its mmproj and head automatically. Files
+from repo subfolders are moved up into that folder.</p>
+<h3 id="adding-models-by-hand"><a class="hash" href="#adding-models-by-hand" aria-label="Link to this section">#</a>Adding models by hand</h3>
+<p>A model is a folder under a model directory:</p>
+<pre><code>~/models/
+├── Qwen3-8B-Q4_K_M/                      ← GGUF model: folder name = model name
+│   ├── Qwen3-8B-Q4_K_M.gguf
+│   └── mmproj-F16.gguf                   ← optional: vision
+├── gemma-4-26B-A4B-it-UD-Q4_K_XL/
+│   ├── gemma-4-26B-A4B-it-UD-Q4_K_XL.gguf
+│   ├── mmproj-F16.gguf
+│   └── mtp-gemma-4-26B-A4B-it.gguf       ← optional: MTP draft head
+├── Big-Model-Q4_K_M/
+│   ├── Big-Model-Q4_K_M-00001-of-00002.gguf   ← split models: all parts together
+│   └── Big-Model-Q4_K_M-00002-of-00002.gguf
+└── OrcaSAQ-2-27B/                        ← safetensors model (vLLM)
+    ├── config.json
+    ├── model-00001-of-00004.safetensors …
+    └── tokenizer.json …
+</code></pre>
+<p>A lone <code>.gguf</code> directly in a model directory is listed too, named after
+the file.</p>
+<p>NeuralDeck reads each GGUF's <strong>header</strong>, not its filename, to decide
+whether it carries an MTP/NextN head and whether its chat template does
+reasoning, because filenames lie about both. A file is treated as a draft
+head if its name marks it as one (<code>mtp</code>, <code>nextn</code>, <code>assistant</code>, <code>draft</code> as
+a separate word) or its header says it's an assistant model.</p>
+<p>For a safetensors folder, the quantisation (<code>exl3 3.21bpw</code>, <code>gptq 4bit</code>,
+<code>awq</code>, <code>fp8</code> …), architecture, vision support, MTP layers and reasoning
+template come from <code>config.json</code>, <code>quantization_config.json</code> and the chat
+template.</p>
+<h3 id="mmproj-files-which-and-when"><a class="hash" href="#mmproj-files-which-and-when" aria-label="Link to this section">#</a>mmproj files: which and when</h3>
+<ul>
+<li>The <strong>F16</strong> mmproj is the right default. BF16 is the same size and fine
+on recent GPUs; F32 is twice the size for no visible gain.</li>
+<li>An mmproj is tied to its <strong>base model</strong>. It works with every quant of
+that model and usually with fine-tunes of the same base. It doesn't work
+with other sizes of the same family, or other families: llama.cpp
+refuses it with an embedding-size mismatch.</li>
+<li>To reuse one across several quants without copies, symlink it into each
+model's folder. NeuralDeck follows the link, and deleting the model
+removes only the link.</li>
+</ul>
+<pre><code class="language-bash">ln -s ~/models/gemma-4-26B-A4B-it-UD-Q4_K_XL/mmproj-F16.gguf ~/models/gemma-4-26B-A4B-it-UD-Q5_K_XL/
+</code></pre>
+<h2 id="choosing-a-quantisation"><a class="hash" href="#choosing-a-quantisation" aria-label="Link to this section">#</a>Choosing a quantisation</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Format</th>
+<th>What it is</th>
+<th>Bits/weight</th>
+<th>When to pick it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td data-label="Format"><span class="cell"><strong>Q4_K_M / Q5_K_M / Q6_K</strong> (K-quants)</span></td>
+<td data-label="What it is"><span class="cell">blocks of small integers with per-block scales; S/M/L/XL bump the sensitive tensors to more bits</span></td>
+<td data-label="Bits/weight"><span class="cell">~4.8 / 5.7 / 6.6</span></td>
+<td data-label="When to pick it"><span class="cell">the safe default on any hardware</span></td>
+</tr>
+<tr>
+<td data-label="Format"><span class="cell"><strong>IQ4_XS / IQ3_XXS / IQ2_M</strong> (I-quants)</span></td>
+<td data-label="What it is"><span class="cell">blocks coded against a lookup table; more quality per bit</span></td>
+<td data-label="Bits/weight"><span class="cell">~4.25 / 3.1 / 2.7</span></td>
+<td data-label="When to pick it"><span class="cell">when memory is tight. Fast on GPU, slower on CPU</span></td>
+</tr>
+<tr>
+<td data-label="Format"><span class="cell"><strong>UD-…</strong> (Unsloth Dynamic)</span></td>
+<td data-label="What it is"><span class="cell">per-layer precision chosen by calibration</span></td>
+<td data-label="Bits/weight"><span class="cell">varies</span></td>
+<td data-label="When to pick it"><span class="cell">consistently good; a strong first choice when offered</span></td>
+</tr>
+<tr>
+<td data-label="Format"><span class="cell"><strong>imatrix / i1</strong></span></td>
+<td data-label="What it is"><span class="cell">calibration data guided which weights keep precision</span></td>
+<td data-label="Bits/weight"><span class="cell">–</span></td>
+<td data-label="When to pick it"><span class="cell">prefer it at 4 bits and below</span></td>
+</tr>
+<tr>
+<td data-label="Format"><span class="cell"><strong>MXFP4</strong></span></td>
+<td data-label="What it is"><span class="cell">4-bit floats with a shared power-of-two scale per 32 values</span></td>
+<td data-label="Bits/weight"><span class="cell">4.25</span></td>
+<td data-label="When to pick it"><span class="cell">for models <em>released</em> in MXFP4 (e.g. gpt-oss), or on GPUs with FP4 hardware (NVIDIA Blackwell and newer). Elsewhere, K- or I-quants are usually better at the same size</span></td>
+</tr>
+<tr>
+<td data-label="Format"><span class="cell"><strong>Q8_0</strong></span></td>
+<td data-label="What it is"><span class="cell">plain 8-bit</span></td>
+<td data-label="Bits/weight"><span class="cell">8.5</span></td>
+<td data-label="When to pick it"><span class="cell">near-lossless, if it fits</span></td>
+</tr>
+<tr>
+<td data-label="Format"><span class="cell"><strong>BF16 / F16</strong></span></td>
+<td data-label="What it is"><span class="cell">the original weights</span></td>
+<td data-label="Bits/weight"><span class="cell">16</span></td>
+<td data-label="When to pick it"><span class="cell">reference quality; rarely practical</span></td>
+</tr>
+</tbody>
+</table></div>
+<p>A rule of thumb: pick the largest quant that leaves room for the context
+you want. Weights plus KV cache must fit in VRAM; the KV cache grows with
+context length and slots.</p>
+<h2 id="prompt-lab"><a class="hash" href="#prompt-lab" aria-label="Link to this section">#</a>Prompt Lab</h2>
+<p>Pick a running model (or <em>auto</em> for the default instance), set the
+temperature and max tokens, optionally a system prompt, and press <strong>Send</strong>
+(or Ctrl+Enter). The reply streams in, with any thinking shown in its own
+pane and code blocks carrying copy buttons. The panel beside it shows:</p>
+<ul>
+<li><strong>TTFT</strong>: time to first token;</li>
+<li><strong>prefill</strong> and <strong>decode</strong> throughput in tokens per second;</li>
+<li><strong>draft acceptance</strong>, when speculation is active;</li>
+<li>the prompt and completion token counts.</li>
+</ul>
+<p>llama.cpp reports exact timings with each response. For backends that
+don't (vLLM), the numbers are measured in the page from the stream, and
+marked as such. Every Prompt Lab run is added to the benchmarks.</p>
+<h2 id="benchmarks"><a class="hash" href="#benchmarks" aria-label="Link to this section">#</a>Benchmarks</h2>
+<ul>
+<li><strong>Run standard bench</strong> sends a fixed ~250-word prompt at temperature 0
+with 320 max tokens to the chosen model, so runs are comparable. With
+one model running, it's selected automatically.</li>
+<li>Runs come from three sources: the Prompt Lab, the standard bench, and a
+collector that reads each llama-server's log, so requests from <strong>any
+client</strong> are measured too.</li>
+<li>The chart shows <strong>medians per model × backend × speculation setting</strong>,
+with decode and prefill each on their own scale. Filter by backend and
+model, or show standard runs only.</li>
+<li>The runs table lists every record, newest first. <strong>✕</strong> deletes a run,
+with a few seconds to undo.</li>
+</ul>
+<p>History is kept in <code>bench.jsonl</code> in the data directory, capped at the
+newest 5,000 runs.</p>
+<h2 id="using-the-proxy"><a class="hash" href="#using-the-proxy" aria-label="Link to this section">#</a>Using the proxy</h2>
+<p>Point any OpenAI-compatible client at <strong><code>http://localhost:8080/v1</code></strong> (or
+the machine's address from elsewhere on your network). There's no API key;
+clients that insist on one can send any value.</p>
+<h3 id="endpoints"><a class="hash" href="#endpoints" aria-label="Link to this section">#</a>Endpoints</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td data-label="Endpoint"><span class="cell"><code>POST /v1/chat/completions</code></span></td>
+<td data-label="Behaviour"><span class="cell">routed by <code>model</code>. <code>input_audio</code> parts are transcribed; <code>video_url</code> parts become frames for vision models</span></td>
+</tr>
+<tr>
+<td data-label="Endpoint"><span class="cell"><code>POST /v1/messages</code></span></td>
+<td data-label="Behaviour"><span class="cell">the Anthropic Messages API, routed the same way (llama-server and vLLM both speak it)</span></td>
+</tr>
+<tr>
+<td data-label="Endpoint"><span class="cell"><code>POST /v1/messages/count_tokens</code></span></td>
+<td data-label="Behaviour"><span class="cell">Anthropic token counting</span></td>
+</tr>
+<tr>
+<td data-label="Endpoint"><span class="cell"><code>POST /v1/completions</code>, <code>/v1/embeddings</code>, <code>/v1/responses</code>, <code>/v1/rerank</code> …</span></td>
+<td data-label="Behaviour"><span class="cell">routed by <code>model</code> when the body names one</span></td>
+</tr>
+<tr>
+<td data-label="Endpoint"><span class="cell"><code>POST /v1/multimodal</code></span></td>
+<td data-label="Behaviour"><span class="cell">one multipart form with <code>text</code>, <code>images</code>, <code>videos</code>, <code>audio</code>, <code>system</code>, <code>model</code> and <code>stream</code> fields</span></td>
+</tr>
+<tr>
+<td data-label="Endpoint"><span class="cell"><code>POST /v1/audio/speech</code>, <code>GET /v1/audio/voices</code></span></td>
+<td data-label="Behaviour"><span class="cell">relayed to the TTS backend</span></td>
+</tr>
+<tr>
+<td data-label="Endpoint"><span class="cell"><code>GET /v1/models</code></span></td>
+<td data-label="Behaviour"><span class="cell">every model being served, across all instances</span></td>
+</tr>
+<tr>
+<td data-label="Endpoint"><span class="cell"><code>GET /props</code>, <code>GET /health</code></span></td>
+<td data-label="Behaviour"><span class="cell">the default instance's properties; the proxy's health</span></td>
+</tr>
+<tr>
+<td data-label="Endpoint"><span class="cell">anything else</span></td>
+<td data-label="Behaviour"><span class="cell">relayed to the default llama-server untouched</span></td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="how-model-is-matched"><a class="hash" href="#how-model-is-matched" aria-label="Link to this section">#</a>How <code>model</code> is matched</h3>
+<p>Names are compared ignoring case, with <code>.</code> and <code>_</code> treated like <code>-</code>, and a
+trailing <code>.gguf</code> dropped.</p>
+<ol>
+<li><strong>An exact match wins.</strong></li>
+<li>Otherwise, a model whose name <strong>extends the request at a <code>-</code></strong> matches,
+but only if <strong>exactly one</strong> does. <code>gemma-4-26B</code> would find
+<code>gemma-4-26B-A4B-it-UD-Q4_K_XL</code> if it's the only one, but
+<code>Ternary-Bonsai-2-27B</code> with both <code>…-PTQ1_0</code> and <code>…-PQ2_0</code> running is
+ambiguous and returns a 404 that lists both.</li>
+<li>Partial words never match: <code>Orca</code> doesn't find <code>OrcaSAQ-2-27B</code>.</li>
+<li>With <strong>strict model routing</strong> on (the default), a name nothing is
+serving is a 404 that lists what <em>is</em> serving. With it off, such
+requests go to the default instance, which misattributes benchmarks.</li>
+</ol>
+<p>Upstream errors keep their real status code (a prompt that's too long is a
+400, not a 502), so SDKs don't retry requests that can't succeed. Errors
+on <code>/v1/messages</code> use the Anthropic error format.</p>
+<h3 id="examples"><a class="hash" href="#examples" aria-label="Link to this section">#</a>Examples</h3>
+<p><strong>curl</strong></p>
+<pre><code class="language-bash">curl http://localhost:8080/v1/chat/completions \
+  -H 'content-type: application/json' \
+  -d '{&quot;model&quot;: &quot;Qwen3-8B-Q4_K_M&quot;,
+       &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Hello!&quot;}]}'
+</code></pre>
+<p><strong>OpenAI Python SDK</strong></p>
+<pre><code class="language-python">from openai import OpenAI
+
+client = OpenAI(base_url=&quot;http://localhost:8080/v1&quot;, api_key=&quot;none&quot;)
+reply = client.chat.completions.create(
+    model=&quot;Qwen3-8B-Q4_K_M&quot;,
+    messages=[{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Hello!&quot;}],
+)
+print(reply.choices[0].message.content)
+</code></pre>
+<p><strong>Claude Code</strong> (or any Anthropic client)</p>
+<pre><code class="language-bash">export ANTHROPIC_BASE_URL=http://localhost:8080
+export ANTHROPIC_AUTH_TOKEN=none
+export ANTHROPIC_MODEL=OrcaSAQ-2-27B                  # a served model name
+export ANTHROPIC_DEFAULT_HAIKU_MODEL=OrcaSAQ-2-27B    # background tasks too
+claude
+</code></pre>
+<p>Claude Code also sends background requests under a small-model name.
+Point those at a served model as well, or strict routing answers them with
+a 404.</p>
+<p><strong>Images, audio and video</strong> go in chat messages as usual: <code>image_url</code>
+parts for images, <code>input_audio</code> parts for speech (transcribed by
+whisper-server and replaced with the text), and <code>video_url</code> parts for
+video (sampled into frames for vision models; needs <code>ffmpeg</code>). Long videos
+are sampled evenly across the whole clip, up to <code>max_frames</code> frames.</p>
+<h2 id="how-to-recipes"><a class="hash" href="#how-to-recipes" aria-label="Link to this section">#</a>How-to recipes</h2>
+<p><strong>Keep everything on this machine.</strong> Set <strong>Dashboard bind address</strong>,
+<strong>Proxy bind address</strong> and <strong>llama bind address</strong> to <code>127.0.0.1</code> in
+Settings. The proxy restarts itself; the dashboard offers a restart button.</p>
+<p><strong>A/B a fork against upstream.</strong> Add both builds under llama-server
+builds, launch the model on one, run the standard bench a few times,
+<strong>Relaunch</strong> it on the other (pick the backend first), and bench again.
+The Benchmarks chart puts the two side by side.</p>
+<p><strong>Run two models at once.</strong> Launch one, then another. Each gets its own
+port and the proxy routes by name. NeuralDeck refuses a launch that won't
+fit in free VRAM. Tick <strong>replace running instances</strong> to swap instead.</p>
+<p><strong>Speed up decoding with MTP.</strong> Download a model with its MTP head (the
+downloader ticks it for you), launch it on a backend that supports
+<code>draft-mtp</code> with spec <strong>auto</strong>, and compare against spec <strong>off</strong> on the
+Benchmarks tab. The Prompt Lab shows draft acceptance.</p>
+<p><strong>Use speculation without a draft model.</strong> Set spec to <strong>ngram</strong>. It
+drafts from text already in the context, which helps most on code and
+repetitive output.</p>
+<p><strong>Change ports.</strong> Change <strong>Proxy port</strong> (the proxy restarts on the new
+port) or <strong>Dashboard port</strong> (use the restart button; the page follows you
+to the new port). Ports must not collide with each other or fall inside
+the llama port range.</p>
+<p><strong>Add speech input.</strong> Build whisper.cpp, set <strong>whisper-server binary</strong> and
+<strong>Whisper model</strong> in Settings, and start whisper-server from the Servers
+panel. <code>input_audio</code> parts in chat requests are then transcribed.</p>
+<p><strong>Reset the panel layout.</strong> Press <strong>Reset layout</strong> in the header.</p>
+<h2 id="settings-reference"><a class="hash" href="#settings-reference" aria-label="Link to this section">#</a>Settings reference</h2>
+<p>Every setting is on the <strong>Settings</strong> tab. Each can also be set in
+<code>config.json</code> (same key) or with an environment variable
+<code>NEURALDECK_&lt;KEY&gt;</code> in upper case (e.g. <code>NEURALDECK_DECK_PORT</code>). Precedence
+is environment, then <code>config.json</code>, then the default.</p>
+<p>The <strong>Applies</strong> column says when a change takes effect:</p>
+<ul>
+<li><strong>now</strong>: the dashboard re-reads settings on save (launch settings apply
+to the next launch, service commands to the next start);</li>
+<li><strong>proxy</strong>: read by the proxy; saving restarts the proxy for you;</li>
+<li><strong>restart</strong>: captured when the dashboard started; the page offers a
+restart button.</li>
+</ul>
+<h3 id="models"><a class="hash" href="#models" aria-label="Link to this section">#</a>Models</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Applies</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td data-label="Key"><span class="cell"><code>model_dirs</code></span></td>
+<td data-label="Default"><span class="cell"><code>~/models</code> (and <code>/mnt/models</code> on Linux)</span></td>
+<td data-label="Applies"><span class="cell">now</span></td>
+<td data-label="Meaning"><span class="cell">Folders scanned for models. A folder that isn't mounted right now is kept and flagged</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>download_dir</code></span></td>
+<td data-label="Default"><span class="cell">the first model directory</span></td>
+<td data-label="Applies"><span class="cell">now</span></td>
+<td data-label="Meaning"><span class="cell">Where the Hugging Face downloader puts new models</span></td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="backends"><a class="hash" href="#backends" aria-label="Link to this section">#</a>Backends</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Applies</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td data-label="Key"><span class="cell"><code>backends</code></span></td>
+<td data-label="Default"><span class="cell">the first <code>llama-server</code> found</span></td>
+<td data-label="Applies"><span class="cell">now</span></td>
+<td data-label="Meaning"><span class="cell">Label → path to a <code>llama-server</code> binary or a <code>vllm</code> executable</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>default_backend</code></span></td>
+<td data-label="Default"><span class="cell">the first backend</span></td>
+<td data-label="Applies"><span class="cell">now</span></td>
+<td data-label="Meaning"><span class="cell">Which backend the launch form starts on</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>llama_port_range</code></span></td>
+<td data-label="Default"><span class="cell"><code>8081-8089</code></span></td>
+<td data-label="Applies"><span class="cell">proxy</span></td>
+<td data-label="Meaning"><span class="cell">Ports models are launched into and the proxy discovers (at most 64). Running instances keep their ports</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>llama_host</code></span></td>
+<td data-label="Default"><span class="cell"><code>0.0.0.0</code></span></td>
+<td data-label="Applies"><span class="cell">now</span></td>
+<td data-label="Meaning"><span class="cell">What launched servers bind to. <code>127.0.0.1</code> keeps them off the network</span></td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="launch-defaults"><a class="hash" href="#launch-defaults" aria-label="Link to this section">#</a>Launch defaults</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Applies</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td data-label="Key"><span class="cell"><code>ctx</code></span></td>
+<td data-label="Default"><span class="cell"><code>32768</code></span></td>
+<td data-label="Applies"><span class="cell">now</span></td>
+<td data-label="Meaning"><span class="cell">Context size (1,024–1,048,576). llama.cpp splits it across slots</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>slots</code></span></td>
+<td data-label="Default"><span class="cell"><code>1</code></span></td>
+<td data-label="Applies"><span class="cell">now</span></td>
+<td data-label="Meaning"><span class="cell">Parallel requests (1–64)</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>spec</code></span></td>
+<td data-label="Default"><span class="cell"><code>auto</code></span></td>
+<td data-label="Applies"><span class="cell">now</span></td>
+<td data-label="Meaning"><span class="cell"><code>auto</code> (MTP head when present), <code>ngram</code>, or <code>off</code></span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>thinking</code></span></td>
+<td data-label="Default"><span class="cell"><code>off</code></span></td>
+<td data-label="Applies"><span class="cell">now</span></td>
+<td data-label="Meaning"><span class="cell"><code>off</code>, <code>low</code>, <code>medium</code>, <code>high</code></span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>kv_cache_type</code></span></td>
+<td data-label="Default"><span class="cell"><code>q8_0</code></span></td>
+<td data-label="Applies"><span class="cell">now</span></td>
+<td data-label="Meaning"><span class="cell">llama.cpp <code>-ctk</code>/<code>-ctv</code>, e.g. <code>f16</code>, <code>q8_0</code>, <code>q4_0</code> (forks may add more)</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>flash_attn</code></span></td>
+<td data-label="Default"><span class="cell"><code>on</code></span></td>
+<td data-label="Applies"><span class="cell">now</span></td>
+<td data-label="Meaning"><span class="cell"><code>on</code>, <code>off</code>, <code>auto</code>; passed as <code>-fa</code> on builds that take a value</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>n_gpu_layers</code></span></td>
+<td data-label="Default"><span class="cell"><code>999</code></span></td>
+<td data-label="Applies"><span class="cell">now</span></td>
+<td data-label="Meaning"><span class="cell"><code>-ngl</code>. 999 offloads everything that fits</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>threads</code></span></td>
+<td data-label="Default"><span class="cell"><code>0</code></span></td>
+<td data-label="Applies"><span class="cell">now</span></td>
+<td data-label="Meaning"><span class="cell">CPU threads; 0 uses the physical core count</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>extra_llama_args</code></span></td>
+<td data-label="Default"><span class="cell">none</span></td>
+<td data-label="Applies"><span class="cell">now</span></td>
+<td data-label="Meaning"><span class="cell">Appended to every llama-server launch, one argument per entry</span></td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="vllm-1"><a class="hash" href="#vllm-1" aria-label="Link to this section">#</a>vLLM</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Applies</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td data-label="Key"><span class="cell"><code>vllm_kv_cache_dtype</code></span></td>
+<td data-label="Default"><span class="cell"><code>auto</code></span></td>
+<td data-label="Applies"><span class="cell">now</span></td>
+<td data-label="Meaning"><span class="cell"><code>--kv-cache-dtype</code>: <code>auto</code>, <code>fp8</code>, <code>fp8_e4m3</code>, <code>fp8_e5m2</code>. fp8 halves KV memory at a small quality cost</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>vllm_gpu_frac_max</code></span></td>
+<td data-label="Default"><span class="cell"><code>0.92</code></span></td>
+<td data-label="Applies"><span class="cell">now</span></td>
+<td data-label="Meaning"><span class="cell">Ceiling for <code>--gpu-memory-utilization</code> (0.5–0.98). Each launch is sized to the VRAM actually free, never above this</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>vllm_extra_args</code></span></td>
+<td data-label="Default"><span class="cell">none</span></td>
+<td data-label="Applies"><span class="cell">now</span></td>
+<td data-label="Meaning"><span class="cell">Appended to every <code>vllm serve</code>, one argument per entry</span></td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="sampling"><a class="hash" href="#sampling" aria-label="Link to this section">#</a>Sampling</h3>
+<p>Launch-time defaults; a request can always override them.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Applies</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td data-label="Key"><span class="cell"><code>temp</code></span></td>
+<td data-label="Default"><span class="cell"><code>0.7</code></span></td>
+<td data-label="Applies"><span class="cell">now</span></td>
+<td data-label="Meaning"><span class="cell">Temperature (0–5)</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>top_p</code></span></td>
+<td data-label="Default"><span class="cell"><code>0.95</code></span></td>
+<td data-label="Applies"><span class="cell">now</span></td>
+<td data-label="Meaning"><span class="cell">Top-p (0–1)</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>min_p</code></span></td>
+<td data-label="Default"><span class="cell"><code>0.05</code></span></td>
+<td data-label="Applies"><span class="cell">now</span></td>
+<td data-label="Meaning"><span class="cell">Min-p (0–1)</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>repeat_penalty</code></span></td>
+<td data-label="Default"><span class="cell"><code>1.05</code></span></td>
+<td data-label="Applies"><span class="cell">now</span></td>
+<td data-label="Meaning"><span class="cell">Repeat penalty (0–5)</span></td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="ports"><a class="hash" href="#ports" aria-label="Link to this section">#</a>Ports</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Applies</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td data-label="Key"><span class="cell"><code>deck_port</code></span></td>
+<td data-label="Default"><span class="cell"><code>8770</code></span></td>
+<td data-label="Applies"><span class="cell">restart</span></td>
+<td data-label="Meaning"><span class="cell">The dashboard's port</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>deck_host</code></span></td>
+<td data-label="Default"><span class="cell"><code>0.0.0.0</code></span></td>
+<td data-label="Applies"><span class="cell">restart</span></td>
+<td data-label="Meaning"><span class="cell">The dashboard's bind address. <code>127.0.0.1</code> keeps it on this machine</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>proxy_port</code></span></td>
+<td data-label="Default"><span class="cell"><code>8080</code></span></td>
+<td data-label="Applies"><span class="cell">proxy</span></td>
+<td data-label="Meaning"><span class="cell">The port clients point at</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>proxy_host</code></span></td>
+<td data-label="Default"><span class="cell"><code>0.0.0.0</code></span></td>
+<td data-label="Applies"><span class="cell">proxy</span></td>
+<td data-label="Meaning"><span class="cell">The proxy's bind address</span></td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="speech--video"><a class="hash" href="#speech--video" aria-label="Link to this section">#</a>Speech &amp; video</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Applies</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td data-label="Key"><span class="cell"><code>whisper_bin</code></span></td>
+<td data-label="Default"><span class="cell"><code>whisper-server</code> on <code>PATH</code>, else <code>~/whisper.cpp/build/bin/whisper-server</code></span></td>
+<td data-label="Applies"><span class="cell">now</span></td>
+<td data-label="Meaning"><span class="cell">whisper.cpp's server, for speech input</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>whisper_model</code></span></td>
+<td data-label="Default"><span class="cell"><code>~/whisper.cpp/models/ggml-large-v3-turbo.bin</code></span></td>
+<td data-label="Applies"><span class="cell">now</span></td>
+<td data-label="Meaning"><span class="cell">A <code>ggml-*.bin</code> model</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>whisper_port</code></span></td>
+<td data-label="Default"><span class="cell"><code>8090</code></span></td>
+<td data-label="Applies"><span class="cell">proxy</span></td>
+<td data-label="Meaning"><span class="cell">Where whisper-server listens</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>ffmpeg</code></span></td>
+<td data-label="Default"><span class="cell">from <code>PATH</code></span></td>
+<td data-label="Applies"><span class="cell">proxy</span></td>
+<td data-label="Meaning"><span class="cell">Needed only for video input</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>video_fps</code></span></td>
+<td data-label="Default"><span class="cell"><code>1.0</code></span></td>
+<td data-label="Applies"><span class="cell">proxy</span></td>
+<td data-label="Meaning"><span class="cell">Frames per second sampled from video (0.1–30), lowered for long clips so frames cover the whole video</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>max_frames</code></span></td>
+<td data-label="Default"><span class="cell"><code>30</code></span></td>
+<td data-label="Applies"><span class="cell">proxy</span></td>
+<td data-label="Meaning"><span class="cell">Frames per video (1–500)</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>tts_endpoint</code></span></td>
+<td data-label="Default"><span class="cell"><code>http://127.0.0.1:&lt;tts_port&gt;</code></span></td>
+<td data-label="Applies"><span class="cell">proxy</span></td>
+<td data-label="Meaning"><span class="cell">An OpenAI-compatible <code>/v1/audio/speech</code> server</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>tts_default_voice</code></span></td>
+<td data-label="Default"><span class="cell">none</span></td>
+<td data-label="Applies"><span class="cell">proxy</span></td>
+<td data-label="Meaning"><span class="cell">Voice used when a client doesn't name one</span></td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="proxy"><a class="hash" href="#proxy" aria-label="Link to this section">#</a>Proxy</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Applies</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td data-label="Key"><span class="cell"><code>strict_model_routing</code></span></td>
+<td data-label="Default"><span class="cell"><code>true</code></span></td>
+<td data-label="Applies"><span class="cell">proxy</span></td>
+<td data-label="Meaning"><span class="cell">A request naming a model nothing serves is an error (on), or goes to the default instance (off)</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>llama_timeout</code></span></td>
+<td data-label="Default"><span class="cell"><code>600</code></span></td>
+<td data-label="Applies"><span class="cell">proxy</span></td>
+<td data-label="Meaning"><span class="cell">Seconds to wait on a model server (1–7200)</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>whisper_timeout</code></span></td>
+<td data-label="Default"><span class="cell"><code>300</code></span></td>
+<td data-label="Applies"><span class="cell">proxy</span></td>
+<td data-label="Meaning"><span class="cell">Seconds to wait on whisper-server (1–7200)</span></td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="dashboard"><a class="hash" href="#dashboard" aria-label="Link to this section">#</a>Dashboard</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Applies</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td data-label="Key"><span class="cell"><code>peak_bw_gbs</code></span></td>
+<td data-label="Default"><span class="cell"><code>89.6</code></span></td>
+<td data-label="Applies"><span class="cell">now</span></td>
+<td data-label="Meaning"><span class="cell">Memory bandwidth in GB/s for the roofline panel. <strong>Set it for your hardware</strong> (e.g. about 1008 for an RTX 3090 Ti, 936 for an RTX 3090, 256 for a Strix Halo APU)</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>vram_total_gb</code></span></td>
+<td data-label="Default"><span class="cell"><code>0</code></span></td>
+<td data-label="Applies"><span class="cell">now</span></td>
+<td data-label="Meaning"><span class="cell">VRAM total, only used when no driver reports one. 0 leaves it unknown</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>history_len</code></span></td>
+<td data-label="Default"><span class="cell"><code>600</code></span></td>
+<td data-label="Applies"><span class="cell">restart</span></td>
+<td data-label="Meaning"><span class="cell">Points kept in the charts (60–86,400)</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>sample_interval</code></span></td>
+<td data-label="Default"><span class="cell"><code>1.0</code></span></td>
+<td data-label="Applies"><span class="cell">now</span></td>
+<td data-label="Meaning"><span class="cell">Seconds between telemetry samples (0.2–60)</span></td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="optional-services"><a class="hash" href="#optional-services" aria-label="Link to this section">#</a>Optional services</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Applies</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td data-label="Key"><span class="cell"><code>tts_cmd</code></span></td>
+<td data-label="Default"><span class="cell">none</span></td>
+<td data-label="Applies"><span class="cell">now</span></td>
+<td data-label="Meaning"><span class="cell">Command that starts a TTS server, one argument per entry. Empty hides the service</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>tts_port</code></span></td>
+<td data-label="Default"><span class="cell"><code>8004</code></span></td>
+<td data-label="Applies"><span class="cell">proxy</span></td>
+<td data-label="Meaning"><span class="cell">Where the dashboard looks for the TTS server</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>comfy_cmd</code></span></td>
+<td data-label="Default"><span class="cell">none</span></td>
+<td data-label="Applies"><span class="cell">now</span></td>
+<td data-label="Meaning"><span class="cell">Command that starts ComfyUI. Empty hides the service</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>comfy_port</code></span></td>
+<td data-label="Default"><span class="cell"><code>8188</code></span></td>
+<td data-label="Applies"><span class="cell">now</span></td>
+<td data-label="Meaning"><span class="cell">ComfyUI's port</span></td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="validation-and-safety"><a class="hash" href="#validation-and-safety" aria-label="Link to this section">#</a>Validation and safety</h3>
+<ul>
+<li>Values that would stop NeuralDeck from starting are <strong>refused before the
+file is written</strong>: host names with a scheme or port, ports out of range
+or colliding with each other or the llama port range, a range of more
+than 64 ports, non-finite or fractional numbers.</li>
+<li>A <code>config.json</code> that isn't valid JSON (a hand edit gone wrong) is
+<strong>never silently replaced</strong>: the page shows the error and refuses to save
+until the file is fixed or removed. <code>neuraldeck doctor</code> reports it too.</li>
+<li>A setting fixed by an environment variable shows an <strong>env</strong> badge and is
+read-only on the page.</li>
+<li><strong>Clearing a field means &quot;use the default&quot;</strong>, not &quot;set it to empty&quot;. The
+<em>use default</em> button next to a stored value does the same.</li>
+<li>Unsaved edits survive switching views; the page warns before you leave
+with unsaved changes.</li>
+</ul>
+<h2 id="configuring-without-the-page"><a class="hash" href="#configuring-without-the-page" aria-label="Link to this section">#</a>Configuring without the page</h2>
+<p><code>config.json</code> lives in the data directory (see
+<a href="#where-things-are-stored">Where things are stored</a>) and uses the same keys
+with JSON types:</p>
+<pre><code class="language-json">{
+  &quot;backends&quot;: {
+    &quot;llama.cpp&quot;: &quot;/home/me/llama.cpp/build/bin/llama-server&quot;,
+    &quot;fork&quot;:      &quot;/home/me/my-fork/build/bin/llama-server&quot;,
+    &quot;vLLM&quot;:      &quot;/home/me/vllm-env/bin/vllm&quot;
+  },
+  &quot;default_backend&quot;: &quot;llama.cpp&quot;,
+  &quot;model_dirs&quot;: [&quot;/home/me/models&quot;, &quot;/mnt/big/models&quot;],
+  &quot;peak_bw_gbs&quot;: 1008,
+  &quot;ctx&quot;: 65536
+}
+</code></pre>
+<p>The same with environment variables:</p>
+<pre><code class="language-bash">export NEURALDECK_BACKENDS=&quot;llama.cpp=/home/me/llama.cpp/build/bin/llama-server&quot;
+export NEURALDECK_MODEL_DIRS=&quot;/home/me/models:/mnt/big/models&quot;   # ';' on Windows
+export NEURALDECK_PEAK_BW_GBS=1008
+export NEURALDECK_TTS_CMD=&quot;python -m my_tts --port 8004&quot;        # split like a shell would
+</code></pre>
+<ul>
+<li>Path lists (<code>model_dirs</code>) are joined with the OS path separator (<code>:</code> on
+Linux/macOS, <code>;</code> on Windows).</li>
+<li>Commands (<code>tts_cmd</code>, <code>comfy_cmd</code>, <code>extra_llama_args</code>, <code>vllm_extra_args</code>)
+are split like a shell command line.</li>
+<li><code>~</code> is expanded in paths. An empty variable counts as unset.</li>
+</ul>
+<h3 id="settings-not-on-the-page"><a class="hash" href="#settings-not-on-the-page" aria-label="Link to this section">#</a>Settings not on the page</h3>
+<p>These are rarely needed and can only be set in <code>config.json</code> or the
+environment:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td data-label="Key"><span class="cell"><code>home</code> (env <code>NEURALDECK_HOME</code> only)</span></td>
+<td data-label="Default"><span class="cell">platform data directory</span></td>
+<td data-label="Meaning"><span class="cell">Moves the data directory itself, including <code>config.json</code></span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>log_dir</code></span></td>
+<td data-label="Default"><span class="cell"><code>&lt;data dir&gt;/logs</code></span></td>
+<td data-label="Meaning"><span class="cell">Where model and service logs go</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>bench_file</code></span></td>
+<td data-label="Default"><span class="cell"><code>&lt;data dir&gt;/bench.jsonl</code></span></td>
+<td data-label="Meaning"><span class="cell">Benchmark history</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>proxy_log</code>, <code>whisper_log</code>, <code>tts_log</code>, <code>comfy_log</code></span></td>
+<td data-label="Default"><span class="cell">in <code>log_dir</code></span></td>
+<td data-label="Meaning"><span class="cell">Individual service logs</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>llama_bin</code></span></td>
+<td data-label="Default"><span class="cell">auto-detected</span></td>
+<td data-label="Meaning"><span class="cell">The <code>llama-server</code> used when <code>backends</code> isn't set</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>max_upload_mb</code></span></td>
+<td data-label="Default"><span class="cell"><code>512</code></span></td>
+<td data-label="Meaning"><span class="cell">The proxy's request size limit, in MB (larger requests get a 413)</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>tts_default_model</code></span></td>
+<td data-label="Default"><span class="cell"><code>tts-1</code></span></td>
+<td data-label="Meaning"><span class="cell">Model name sent to the TTS backend when a client doesn't give one</span></td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="command-line"><a class="hash" href="#command-line" aria-label="Link to this section">#</a>Command line</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Command</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td data-label="Command"><span class="cell"><code>neuraldeck</code></span></td>
+<td data-label="What it does"><span class="cell">same as <code>neuraldeck up</code></span></td>
+</tr>
+<tr>
+<td data-label="Command"><span class="cell"><code>neuraldeck up</code></span></td>
+<td data-label="What it does"><span class="cell">starts the proxy (in the background, if it isn't running) and the dashboard (in the foreground)</span></td>
+</tr>
+<tr>
+<td data-label="Command"><span class="cell"><code>neuraldeck up --open</code></span></td>
+<td data-label="What it does"><span class="cell">the same, and opens the dashboard in a browser once it answers</span></td>
+</tr>
+<tr>
+<td data-label="Command"><span class="cell"><code>neuraldeck up --no-proxy</code></span></td>
+<td data-label="What it does"><span class="cell">dashboard only; leaves the proxy alone</span></td>
+</tr>
+<tr>
+<td data-label="Command"><span class="cell"><code>neuraldeck up --stop-proxy</code></span></td>
+<td data-label="What it does"><span class="cell">also stops the proxy when the dashboard exits</span></td>
+</tr>
+<tr>
+<td data-label="Command"><span class="cell"><code>neuraldeck deck [--open]</code></span></td>
+<td data-label="What it does"><span class="cell">dashboard only</span></td>
+</tr>
+<tr>
+<td data-label="Command"><span class="cell"><code>neuraldeck proxy</code></span></td>
+<td data-label="What it does"><span class="cell">the proxy only, in the foreground</span></td>
+</tr>
+<tr>
+<td data-label="Command"><span class="cell"><code>neuraldeck doctor</code></span></td>
+<td data-label="What it does"><span class="cell">resolved config, detected hardware, backends (with their kind and version), models, and what's running</span></td>
+</tr>
+</tbody>
+</table></div>
+<p>Run <code>neuraldeck doctor</code> first on a new machine: it tells you what was
+found and what's missing before anything tries to start.</p>
+<p><strong>Stopping:</strong> press <strong>Ctrl+C</strong> in the terminal running the dashboard. The
+proxy keeps running in the background unless you started with
+<code>--stop-proxy</code>; stop it from the Servers panel. Model servers keep running
+until you stop them.</p>
+<h2 id="where-things-are-stored"><a class="hash" href="#where-things-are-stored" aria-label="Link to this section">#</a>Where things are stored</h2>
+<p>The <strong>data directory</strong> is <code>~/.local/share/neuraldeck</code> on Linux/macOS
+(<code>$XDG_DATA_HOME/neuraldeck</code> if set) and <code>%LOCALAPPDATA%\NeuralDeck</code> on
+Windows, or wherever <code>NEURALDECK_HOME</code> points. The Settings tab and
+<code>neuraldeck doctor</code> print the exact paths.</p>
+<pre><code>neuraldeck/
+├── config.json            ← your settings
+├── bench.jsonl            ← benchmark history (newest 5,000 runs)
+├── last-model.txt         ← the last model launched
+├── logs/
+│   ├── &lt;model&gt;.log        ← one per model; the previous run is kept as &lt;model&gt;.log.1
+│   ├── proxy.log
+│   └── whisper.log
+└── run/
+    ├── proxy.pid          ← pid files for the services NeuralDeck started
+    └── vllm-help-*.txt    ← cached `vllm serve --help=all` output
+</code></pre>
+<h2 id="dashboard-api"><a class="hash" href="#dashboard-api" aria-label="Link to this section">#</a>Dashboard API</h2>
+<p>The dashboard is driven by a JSON API on its own port, which you can
+script against too. There's no authentication.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Method and path</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td data-label="Method and path"><span class="cell"><code>GET /api/config</code></span></td>
+<td data-label="Purpose"><span class="cell">ports, backends (and their kinds), defaults and links for the page</span></td>
+</tr>
+<tr>
+<td data-label="Method and path"><span class="cell"><code>GET /api/state</code></span></td>
+<td data-label="Purpose"><span class="cell">the latest telemetry snapshot plus chart history</span></td>
+</tr>
+<tr>
+<td data-label="Method and path"><span class="cell"><code>GET /api/stream</code></span></td>
+<td data-label="Purpose"><span class="cell">server-sent events: one snapshot per sample interval</span></td>
+</tr>
+<tr>
+<td data-label="Method and path"><span class="cell"><code>GET /api/models</code></span></td>
+<td data-label="Purpose"><span class="cell">discovered models</span></td>
+</tr>
+<tr>
+<td data-label="Method and path"><span class="cell"><code>POST /api/models/delete</code></span></td>
+<td data-label="Purpose"><span class="cell">delete a model's files: <code>{&quot;name&quot;: …}</code></span></td>
+</tr>
+<tr>
+<td data-label="Method and path"><span class="cell"><code>POST /api/llama/launch</code></span></td>
+<td data-label="Purpose"><span class="cell">launch: <code>{&quot;model&quot;, &quot;backend&quot;, &quot;ctx&quot;, &quot;slots&quot;, &quot;spec&quot;, &quot;thinking&quot;, &quot;replace&quot;, &quot;relaunch&quot;}</code></span></td>
+</tr>
+<tr>
+<td data-label="Method and path"><span class="cell"><code>GET /api/launch/status</code></span></td>
+<td data-label="Purpose"><span class="cell">progress and log of the current launch</span></td>
+</tr>
+<tr>
+<td data-label="Method and path"><span class="cell"><code>POST /api/llama/{port}/stop</code></span></td>
+<td data-label="Purpose"><span class="cell">stop the instance on a port</span></td>
+</tr>
+<tr>
+<td data-label="Method and path"><span class="cell"><code>POST /api/service/{name}/start</code>, <code>…/stop</code></span></td>
+<td data-label="Purpose"><span class="cell">start or stop <code>proxy</code>, <code>whisper</code>, <code>tts</code>, <code>comfy</code></span></td>
+</tr>
+<tr>
+<td data-label="Method and path"><span class="cell"><code>GET /api/logs/{service}?lines=N</code></span></td>
+<td data-label="Purpose"><span class="cell">the tail of a log (1–2000 lines)</span></td>
+</tr>
+<tr>
+<td data-label="Method and path"><span class="cell"><code>GET /api/settings</code>, <code>POST /api/settings</code></span></td>
+<td data-label="Purpose"><span class="cell">read or save settings</span></td>
+</tr>
+<tr>
+<td data-label="Method and path"><span class="cell"><code>GET /api/browse?path=&amp;mode=dir|file&amp;ext=</code></span></td>
+<td data-label="Purpose"><span class="cell">directory listing for the file picker</span></td>
+</tr>
+<tr>
+<td data-label="Method and path"><span class="cell"><code>POST /api/restart</code></span></td>
+<td data-label="Purpose"><span class="cell">restart the dashboard</span></td>
+</tr>
+<tr>
+<td data-label="Method and path"><span class="cell"><code>POST /api/chat</code></span></td>
+<td data-label="Purpose"><span class="cell">same-origin relay to the proxy (used by the Prompt Lab)</span></td>
+</tr>
+<tr>
+<td data-label="Method and path"><span class="cell"><code>GET /api/bench</code>, <code>POST /api/bench</code>, <code>POST /api/bench/delete</code>, <code>POST /api/bench/clear</code></span></td>
+<td data-label="Purpose"><span class="cell">benchmark history</span></td>
+</tr>
+<tr>
+<td data-label="Method and path"><span class="cell"><code>GET /api/hf/search</code>, <code>/api/hf/files</code>, <code>/api/hf/card</code></span></td>
+<td data-label="Purpose"><span class="cell">Hugging Face search, file lists and model-card descriptions (<code>format=gguf|hf</code>)</span></td>
+</tr>
+<tr>
+<td data-label="Method and path"><span class="cell"><code>POST /api/hf/download</code>, <code>GET /api/hf/status</code>, <code>POST /api/hf/cancel</code></span></td>
+<td data-label="Purpose"><span class="cell">the download queue</span></td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="troubleshooting"><a class="hash" href="#troubleshooting" aria-label="Link to this section">#</a>Troubleshooting</h2>
+<p>Start with <code>neuraldeck doctor</code>. It shows the resolved settings, what was
+detected, and any problem with <code>config.json</code>.</p>
+<h3 id="starting-and-installing"><a class="hash" href="#starting-and-installing" aria-label="Link to this section">#</a>Starting and installing</h3>
+<p><strong><code>could not start llama-server: [Errno 2] No such file or directory: 'llama-server'</code></strong>
+NeuralDeck didn't find a <code>llama-server</code> binary. Add its full path under
+<strong>Settings → llama-server builds</strong>. The related warning <em>could not read
+<code>llama-server --help</code></em> has the same cause.</p>
+<p><strong>Settings I changed don't take effect.</strong>
+Check the setting's <strong>Applies</strong> column in the
+<a href="#settings-reference">reference</a>. Settings the proxy reads restart the
+proxy automatically; dashboard ports and history length need the restart
+button. A setting fixed by an environment variable (shown with an <strong>env</strong>
+badge) can't be changed from the page.</p>
+<p><strong>The Settings page shows a config error and won't save.</strong>
+<code>config.json</code> isn't valid JSON, usually after a hand edit. Fix the file (or
+remove it to start from defaults) and reload. NeuralDeck never overwrites
+a file it can't read, so your other settings aren't lost.</p>
+<p><strong>After updating, a feature is missing or the proxy misbehaves.</strong>
+The proxy runs as its own process and keeps the old code until restarted.
+Restart the dashboard <em>and</em> click <strong>Stop</strong>, then <strong>Start</strong>, on the proxy
+in the Servers panel.</p>
+<p><strong>The Windows Start Menu shortcut opens nothing.</strong>
+The shortcut runs without a console, so output goes to <code>deck.log</code> in the
+logs folder. Check it for the error.</p>
+<p><strong>Ctrl+C prints tracebacks or takes several seconds.</strong>
+That was fixed; update to the latest version. A clean shutdown now takes
+well under a second, even with dashboard tabs open.</p>
+<h3 id="launching-models"><a class="hash" href="#launching-models" aria-label="Link to this section">#</a>Launching models</h3>
+<p><strong>A launch is refused for lack of VRAM.</strong>
+Other models are using the memory. Stop one, tick <strong>replace running
+instances</strong>, or pick a smaller quant or context. The message says how much
+the model needs and how much is free.</p>
+<p><strong>A model with an MTP head launches without speculation.</strong>
+The backend doesn't support that head. Gemma 4 assistant heads and some
+NextN heads need a fork with <code>draft-mtp</code> support; the launch log says
+<em>retrying without speculative decoding</em> when a head failed to load. The
+model still runs normally.</p>
+<p><strong><code>unknown model architecture</code> or <code>unknown quantization type</code> in the launch log.</strong>
+The build is too old for that model, or the format needs a specific fork
+(for example ternary <code>PTQ1_0</code>/<code>PQ2_0</code> models need the fork that
+introduced them). Add a suitable build as another backend.</p>
+<p><strong><code>mismatch between text model n_embd and mmproj n_embd</code></strong> (or similar).
+The mmproj belongs to a different model. Use the mmproj from the same
+repo as the model; see <a href="#mmproj-files-which-and-when">mmproj files</a>.</p>
+<p><strong>The launch times out.</strong>
+Large models on slow disks can take minutes to load. The launcher waits up
+to 10 minutes for llama-server and 20 for vLLM, then stops the process it
+started (it never leaves a half-started server behind). Check the model's
+log in the Logs panel for the real error.</p>
+<h3 id="clients-and-the-proxy"><a class="hash" href="#clients-and-the-proxy" aria-label="Link to this section">#</a>Clients and the proxy</h3>
+<p><strong><code>model 'X' is not being served</code>.</strong>
+The name doesn't match a running model. <code>GET /v1/models</code> lists the exact
+names. See <a href="#how-model-is-matched">How <code>model</code> is matched</a>.</p>
+<p><strong><code>model 'X' is ambiguous</code>.</strong>
+More than one running model starts with that name. Send the exact name the
+error lists.</p>
+<p><strong>Claude Code shows an error on some requests.</strong>
+Claude Code sends background requests under a separate small-model name.
+Set <code>ANTHROPIC_DEFAULT_HAIKU_MODEL</code> (as well as <code>ANTHROPIC_MODEL</code>) to a
+served model; see <a href="#examples">Examples</a>.</p>
+<p><strong>A newly launched model isn't found for a few seconds.</strong>
+The proxy caches discovery briefly but re-checks on a miss, so this should
+resolve itself on the next request. If it persists, the proxy may be an
+old version: restart it from the Servers panel.</p>
+<p><strong>Video requests fail.</strong>
+<code>ffmpeg</code> isn't installed or configured. Install it or set its path under
+<strong>Settings → Speech &amp; video</strong>. Everything else keeps working without it.</p>
+<p><strong>A request is rejected with 413.</strong>
+It's larger than <code>max_upload_mb</code> (512 MB by default). Raise it in
+<code>config.json</code> if you really mean to send that much.</p>
+<h3 id="models-and-downloads"><a class="hash" href="#models-and-downloads" aria-label="Link to this section">#</a>Models and downloads</h3>
+<p><strong>A repo I can see on Hugging Face doesn't appear in the downloader.</strong>
+The downloader shows GGUF repos in GGUF mode and safetensors repos in vLLM
+mode. A repo in another format (EXL3, AWQ, GPTQ, MLX …) only appears in the
+mode that can serve it. EXL3 and similar pre-quantised formats can't be
+converted to GGUF; look for a GGUF quant of the same base model instead,
+or serve it with vLLM.</p>
+<p><strong>Hugging Face downloads are slow or rate-limited.</strong>
+Set an <code>HF_TOKEN</code> environment variable (a free read token from your
+Hugging Face account) before starting NeuralDeck.</p>
+<p><strong>A downloaded model doesn't show its vision or MTP icon.</strong>
+Its mmproj or head isn't in the same folder, or wasn't downloaded. Download
+it into the model's folder (or symlink an existing one). The icons come
+from the files' headers, so a head that doesn't declare MTP layers isn't
+shown as one.</p>
+<p><strong>Deleting a GGUF model left files behind.</strong>
+Delete removes only the files belonging to that model. Anything else in its
+folder (notes, other quants) is left alone, and the folder is removed only
+once it's empty. (A safetensors model's whole folder is removed.)</p>
+<h3 id="vllm-2"><a class="hash" href="#vllm-2" aria-label="Link to this section">#</a>vLLM</h3>
+<p><strong><code>CondaToSNonInteractiveError</code> when creating the environment.</strong>
+Conda wants Anaconda's channel terms accepted. Either accept them
+yourself (<code>conda tos accept …</code>, as the message says) or create the
+environment from conda-forge instead: <code>conda create -p ~/vllm-env --override-channels -c conda-forge python=3.12 pip</code>.</p>
+<p><strong>The first launch takes several minutes.</strong>
+Expected: vLLM compiles kernels and captures CUDA graphs on first start.
+Later starts reuse the cache.</p>
+<p><strong>flashinfer fails to compile kernels, or complains about PTX versions.</strong>
+The <code>nvcc</code> in the vLLM environment is newer than PyTorch's CUDA. Pin it:
+<code>~/vllm-env/bin/python -m pip install &quot;nvidia-cuda-nvcc==&lt;torch CUDA&gt;.*&quot;</code>
+(e.g. <code>13.0.*</code> for PyTorch built with CUDA 13.0).</p>
+<p><strong>An EXL3 model fails with <code>quant_method exl3</code> not supported, or a missing <code>exllamav3_ext</code>.</strong>
+The EXL3 plugin or the <code>exllamav3</code> extension isn't installed, or the wheel
+doesn't match PyTorch and CUDA. See <a href="#exl3-models-on-vllm">EXL3 models on vLLM</a>.</p>
+<p><strong>Memory pressure shows <em>tight</em> while vLLM runs.</strong>
+Expected. vLLM reserves its memory share up front for the KV cache. It
+won't grow further, but there's no room for another model beside it.</p>
+<p><strong>vLLM KV cache shows a percentage but no token count.</strong>
+Hybrid models (with Mamba-style layers) allocate in large blocks, so a
+token count would be misleading; the percentage is vLLM's own figure.</p>
+<p><strong>A vLLM model doesn't appear in the Prompt Lab or Benchmarks.</strong>
+Those lists show running models only; launch it first. If requests to it
+then fail with <em>not being served</em>, restart the proxy: an older proxy
+can't discover vLLM servers.</p>
+<h3 id="telemetry"><a class="hash" href="#telemetry" aria-label="Link to this section">#</a>Telemetry</h3>
+<p><strong>The Roofline panel shows over 100%.</strong>
+<code>peak_bw_gbs</code> is set below your hardware's real memory bandwidth (the
+default suits a desktop DDR5 system, not a GPU). Set it in <strong>Settings →
+Dashboard</strong>; the panel links there when it detects this.</p>
+<p><strong>GPU readings are blank.</strong>
+No supported tool answered: install <code>nvidia-smi</code> (NVIDIA driver) or
+<code>amd-smi</code>/<code>rocm-smi</code> (AMD). A tool that fails occasionally is retried with
+back-off; one that fails on its very first call is treated as absent until
+the dashboard restarts.</p>
+<p><strong>The CPU temperature looks wrong.</strong>
+NeuralDeck prefers the CPU package sensor (<code>coretemp</code>, <code>k10temp</code>,
+<code>zenpower</code>) over generic ACPI zones, which often report a constant.
+If your board exposes only an ACPI zone, that's what's shown.</p>
+<p><strong>KV cache shows — for a llama.cpp model.</strong>
+The model hasn't served a request yet, or its log doesn't contain the
+lines the dashboard reads. It fills in after the first request.</p>
+<h2 id="security"><a class="hash" href="#security" aria-label="Link to this section">#</a>Security</h2>
+<p>There's no authentication anywhere: the dashboard can launch processes and
+delete model files, and the proxy serves your models to anyone who can
+reach it. By default all three bind to <code>0.0.0.0</code> so other machines on your
+network can use them.</p>
+<ul>
+<li>On an untrusted network, set <code>deck_host</code>, <code>proxy_host</code> and <code>llama_host</code>
+to <code>127.0.0.1</code>.</li>
+<li>Don't expose these ports to the internet. If you need remote access, put
+them behind a VPN or an authenticating reverse proxy.</li>
+<li>Model-publisher plugins (such as vLLM quantisation plugins) run inside
+the server process. Review them before installing, and pin the version
+you reviewed.</li>
+</ul>
+<h2 id="uninstall"><a class="hash" href="#uninstall" aria-label="Link to this section">#</a>Uninstall</h2>
+<p>Stop NeuralDeck, then delete:</p>
+<ul>
+<li>the checkout folder, which holds the default <code>venv</code>;</li>
+<li>the virtual environment you chose with <code>--dir</code> / <code>-Dir</code>, if you did;</li>
+<li><code>~/.local/bin/neuraldeck</code>, the launcher <code>install.sh</code> writes (Linux/macOS);</li>
+<li>the Start Menu shortcut <code>NeuralDeck.lnk</code> in
+<code>%APPDATA%\Microsoft\Windows\Start Menu\Programs</code> (Windows);</li>
+<li>the data directory (<code>~/.local/share/neuraldeck</code> on Linux,
+<code>%LOCALAPPDATA%\NeuralDeck</code> on Windows, or wherever <code>NEURALDECK_HOME</code>
+points), which holds <code>config.json</code>, the logs and the benchmark history;</li>
+<li>a vLLM environment such as <code>~/vllm-env</code>, if you made one for NeuralDeck.</li>
+</ul>
+<p>Your model files are never touched by uninstalling.</p>
+<h2 id="notes-on-portability"><a class="hash" href="#notes-on-portability" aria-label="Link to this section">#</a>Notes on portability</h2>
+<ul>
+<li>Process control goes through pids, never through pattern matching: no
+<code>pkill</code>, no <code>lsof</code>, and nothing that could match the dashboard itself.</li>
+<li>GPU telemetry is merged from whatever answers. Fields nothing can report
+are left unknown, and the panels that need them hide themselves rather
+than showing a permanent dash.</li>
+<li>The launcher reads each server's <code>--help</code> and only passes flags that
+build accepts, so upstream builds, forks and vLLM all work.</li>
+</ul>
+<h2 id="documentation-site"><a class="hash" href="#documentation-site" aria-label="Link to this section">#</a>Documentation site</h2>
+<p><code>docs/</code> holds a web version of this README for GitHub Pages
+(<strong>Settings → Pages → Deploy from a branch → <code>main</code> / <code>/docs</code></strong>). It's
+generated, so edit the README and rebuild rather than editing the HTML:</p>
+<pre><code class="language-bash">python3 docs/build.py        # needs markdown-it-py: pip install markdown-it-py
+</code></pre>
+<h2 id="credit"><a class="hash" href="#credit" aria-label="Link to this section">#</a>Credit</h2>
+<p>The dashboard, prompt lab and benchmark UI come from the NeuralDeck deck
+built for a Strix Halo box; this package is that work made standalone and
+cross-platform.</p>
+<h2 id="licence"><a class="hash" href="#licence" aria-label="Link to this section">#</a>Licence</h2>
+<p>MIT. See <a href="https://github.com/MuchDevSuchCode/NeuralDeck-Proxy/blob/main/LICENSE">LICENSE</a>.</p>
+
+  </main>
+</div>
+
+<footer>
+  <div class="inner">
+    <span>NeuralDeck-Proxy · MIT licence</span>
+    <a href="https://github.com/MuchDevSuchCode/NeuralDeck-Proxy">Source on GitHub</a>
+    <a href="https://github.com/MuchDevSuchCode/NeuralDeck-Proxy/issues">Issues</a>
+    <span>Generated from README.md by docs/build.py</span>
+  </div>
+</footer>
+
+<script>
+(() => {
+  const root = document.documentElement;
+  // theme toggle: flips between light and dark, remembered per browser
+  document.getElementById("theme-btn").addEventListener("click", () => {
+    const dark = root.dataset.theme ? root.dataset.theme === "dark"
+      : matchMedia("(prefers-color-scheme: dark)").matches;
+    root.dataset.theme = dark ? "light" : "dark";
+    try { localStorage.setItem("nd-docs-theme", root.dataset.theme); } catch (e) {}
+  });
+
+  // mobile navigation
+  const body = document.body, btn = document.getElementById("menu-btn");
+  const setNav = open => { body.classList.toggle("nav-open", open); btn.setAttribute("aria-expanded", open); };
+  btn.addEventListener("click", () => setNav(!body.classList.contains("nav-open")));
+  document.getElementById("scrim").addEventListener("click", () => setNav(false));
+  document.addEventListener("keydown", e => { if (e.key === "Escape") setNav(false); });
+  document.querySelectorAll(".sidebar a").forEach(a => a.addEventListener("click", () => setNav(false)));
+
+  // copy buttons on code blocks
+  document.querySelectorAll("main pre").forEach(pre => {
+    const b = document.createElement("button");
+    b.className = "copy"; b.type = "button"; b.textContent = "copy";
+    b.setAttribute("aria-label", "Copy code");
+    b.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(pre.querySelector("code")?.innerText ?? pre.innerText); b.textContent = "copied"; }
+      catch (e) { b.textContent = "copy failed"; }
+      setTimeout(() => b.textContent = "copy", 1500);
+    });
+    pre.appendChild(b);
+  });
+
+  // highlight the section in view and open its sub-list
+  const links = new Map([...document.querySelectorAll(".sidebar a")].map(a => [a.hash.slice(1), a]));
+  const heads = [...document.querySelectorAll("main h2[id], main h3[id]")];
+  let ticking = false;
+  const spy = () => {
+    ticking = false;
+    let cur = heads[0];
+    for (const h of heads) { if (h.getBoundingClientRect().top < 110) cur = h; else break; }
+    if (!cur) return;
+    document.querySelectorAll(".sidebar a.active").forEach(a => a.classList.remove("active"));
+    document.querySelectorAll(".toc li.open").forEach(li => li.classList.remove("open"));
+    const a = links.get(cur.id);
+    if (!a) return;
+    a.classList.add("active");
+    let li = a.closest("li");
+    while (li) { li.classList.add("open"); li = li.parentElement.closest("li"); }
+    const top = a.closest(".toc > li");
+    top && top.classList.add("open");
+  };
+  addEventListener("scroll", () => { if (!ticking) { ticking = true; requestAnimationFrame(spy); } }, { passive: true });
+  spy();
+})();
+</script>
+</body>
+</html>
