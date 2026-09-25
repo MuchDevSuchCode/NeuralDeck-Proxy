@@ -790,10 +790,128 @@ async def hf_files(repo: str):
         raise HTTPException(502, f"HF file listing failed: {e}")
 
 
+# repo -> (fetched_at, card summary); cards change rarely and hovering a list
+# would otherwise refetch the same README every time the pointer passes by
+_card_cache: dict = {}
+_CARD_TTL = 3600
+_CARD_MAX = 256
+
+
+# openers that describe the card, the repo or the quantisation rather than
+# the model — a tooltip made of these tells the reader nothing
+_CARD_FILLER = re.compile(
+    r"^(summary description|see (our|the|here)|check out|join |using llama|"
+    r"this (repo|repository) (contains|hosts|provides)|original model|"
+    r"quantized by|made with|thanks to|support |\W*lm studio community|"
+    r"for more (details|information)|please (refer|see|check|visit))", re.I)
+_CARD_SECTIONS = re.compile(
+    r"description|overview|introduction|summary|about|model details",
+    re.I)
+
+
+def _card_prose(para: str) -> Optional[str]:
+    lines = [ln.strip() for ln in para.splitlines() if ln.strip()]
+    lines = [ln for ln in lines
+             if not ln.startswith(("#", "|", ">", "---", "***", "- ", "* "))]
+    prose = re.sub(r"[*_`]+", "", " ".join(lines))
+    prose = re.sub(r"\s+", " ", prose).strip()
+    if len(prose) < 40 or not re.search(r"[a-z]{3,} [a-z]{2,}", prose):
+        return None
+    # a row of links ("Try it · Guides · Blog") survives the markdown strip
+    if _CARD_FILLER.match(prose) or len(re.findall(r"\s[·|•]\s", prose)) >= 2:
+        return None
+    return prose
+
+
+def _card_summary(text: str, limit: int = 420) -> Optional[str]:
+    """A paragraph of prose from a model card's markdown — no headings,
+    badges, images, tables, code or HTML, which is most of a typical card.
+    A Description/Overview-style section wins over whatever comes first."""
+    text = re.sub(r"```.*?```", "", text or "", flags=re.S)
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", text)          # images
+    text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)      # links -> label
+    sections, heading, body = [], "", []
+    for ln in text.splitlines():
+        if re.match(r"\s*#{1,6}\s", ln):
+            sections.append((heading, "\n".join(body)))
+            heading, body = ln.strip("# \t"), []
+        else:
+            body.append(ln)
+    sections.append((heading, "\n".join(body)))
+    ordered = ([sec for sec in sections if _CARD_SECTIONS.search(sec[0])]
+               + sections)
+    for _, sec in ordered:
+        for para in re.split(r"\n\s*\n", sec):
+            prose = _card_prose(para)
+            if not prose:
+                continue
+            # "…with the following key features:" leads into a list the
+            # tooltip doesn't show; end on the last full sentence instead
+            if prose.endswith(":"):
+                cut = prose.rfind(". ")
+                if cut < 40:            # nothing but the lead-in: try the next
+                    continue
+                prose = prose[:cut + 1]
+            if len(prose) > limit:
+                prose = prose[:limit - 1].rsplit(" ", 1)[0] + "…"
+            return prose
+    return None
+
+
+def _card_weak(summary: Optional[str]) -> bool:
+    """True when a card's own summary is about packaging, not the model."""
+    s = (summary or "").lower()
+    return len(s) < 80 or bool(re.search(r"quanti[sz]|gguf|imatrix|llama\.cpp", s))
+
+
+def _card(repo: str) -> dict:
+    hit = _card_cache.get(repo)
+    if hit and time.time() - hit[0] < _CARD_TTL:
+        return hit[1]
+    from huggingface_hub import ModelCard
+    try:
+        card = ModelCard.load(repo)
+        data = card.data.to_dict() if card.data else {}
+        out = {"repo": repo, "summary": _card_summary(card.text),
+               "license": data.get("license"),
+               "pipeline": data.get("pipeline_tag")}
+        base = data.get("base_model")
+        base = base[0] if isinstance(base, list) and base else base
+        out["base_model"] = base if isinstance(base, str) and base != repo else None
+    except Exception as e:                  # no README, gated, offline
+        out = {"repo": repo, "summary": None, "base_model": None,
+               "license": None, "pipeline": None,
+               "error": type(e).__name__}
+    if len(_card_cache) >= _CARD_MAX:
+        _card_cache.pop(next(iter(_card_cache)))
+    _card_cache[repo] = (time.time(), out)
+    return out
+
+
+@app.get("/api/hf/card")
+async def hf_card(repo: str):
+    """A short description from the repo's model card, for hover tooltips.
+    GGUF repos are mostly "quantizations of X", so when a card is that
+    boilerplate (or has nothing) the base model's summary comes along too."""
+    _require_hf()
+    out = dict(await asyncio.to_thread(_card, repo))
+    out["summary_weak"] = _card_weak(out.get("summary"))
+    if out.get("base_model") and out["summary_weak"]:
+        base = await asyncio.to_thread(_card, out["base_model"])
+        out["base_summary"] = base.get("summary")
+    return JSONResponse(out)
+
+
 def _download_folder_name(files: list) -> str:
     """Folder = the main gguf's name minus any shard suffix, so an mmproj
     lands beside its model and discovery pairs them."""
-    main = next((f for f in files if "mmproj" not in f.lower()), files[0])
+    # skip the projector and any MTP/draft head: "MTP/mtp-gemma-…" sorts
+    # before the weights and would otherwise name the folder (and the model)
+    main = next((f for f in files
+                 if not models.HELPER_RE.search(os.path.basename(f))
+                 and not models.DRAFT_RE.search(os.path.basename(f))), files[0])
     base = re.sub(r"-\d{5}-of-\d{5}", "", os.path.basename(main))
     return re.sub(r"\.gguf$", "", base, flags=re.I)
 

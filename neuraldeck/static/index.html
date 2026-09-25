@@ -330,6 +330,18 @@
                 clip-path:none; text-transform:none; letter-spacing:0; text-align:left;
                 font-size:12.5px; color:var(--ink-2); }
   #fp-list .d.file .n { color:var(--ink); } #fp-list .d.sel { background:color-mix(in srgb, var(--cyan) 16%, transparent); }
+  /* model-card tooltip in the downloader: fixed (it lives in the dialog's
+     top layer, beside the scrolling panel that would clip it) and wrapping */
+  .tooltip.hf-tip { position:fixed; white-space:normal; line-height:1.45; z-index:10;
+                    padding:8px 11px; max-width:calc(100vw - 20px); }
+  .hf-tip b { display:block; color:var(--cyan); margin-bottom:4px; overflow-wrap:anywhere; }
+  .hf-tip p { margin:0 0 5px; }
+  .hf-tip .sub { color:var(--muted); font-size:11px; }
+  .hf-name { display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 8px; min-width:0; }
+  .hf-role { color:var(--muted); font-size:11px; white-space:nowrap; }
+  .hf-rec { color:var(--yellow); font-size:11px; white-space:nowrap; }
+  #hf-repo-desc { color:var(--ink-2); font-size:12px; line-height:1.5; margin:0 0 8px; }
+  #hf-repo-desc .sub { color:var(--muted); }
   #fp-list .d:focus-visible, .mrow.hfrow:focus-visible { outline:2px solid var(--cyan); outline-offset:-2px; }
   .hfrow .top { flex-wrap:wrap; }
   #launch-status { margin-top:6px; font-size:12px; color:var(--ink-2); display:flex; gap:8px; align-items:center; }
@@ -718,6 +730,8 @@
 
 <!-- ═══════════ HF downloader modal ═══════════ -->
 <dialog id="hf-dialog" class="modal" aria-labelledby="hf-title" onclick="if(event.target===this)closeHF()">
+  <!-- outside .panel: the panel's clip-path would cut the tip off -->
+  <div class="tooltip hf-tip" id="hf-tip" role="tooltip"></div>
   <div class="panel">
     <h2><span id="hf-title">Hugging Face — model downloader</span>
       <span class="meta"><button onclick="closeHF()" aria-label="Close">✕ close</button></span></h2>
@@ -739,6 +753,7 @@
         <button onclick="hfBack()">‹ back</button>
         <span class="name" id="hf-repo-name" style="color:var(--cyan); font-weight:700; overflow-wrap:anywhere; min-width:0"></span>
       </div>
+      <p id="hf-repo-desc"></p>
       <div id="hf-filelist"></div>
       <div style="margin-top:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
         <button class="primary" id="hf-dl" onclick="hfDownload()" disabled>⬇ Queue download</button>
@@ -1583,9 +1598,64 @@ function openHF(){ const dl=$("hf-dialog"); if(!dl.open)dl.showModal(); $("hf-q"
   hfPollStatus(1500); if(!hfLoaded){hfSetSort(hfSort);} }
 // closing only slows the poll: a download that finishes with the modal
 // closed still refreshes the model list and the header indicator
-function closeHF(){ const dl=$("hf-dialog"); if(dl.open)dl.close(); }
+function closeHF(){ hfTipHide(); const dl=$("hf-dialog"); if(dl.open)dl.close(); }
+/* model-card descriptions: search results carry none, so each repo's card is
+   fetched the first time it's hovered and kept for the session */
+const hfCards=new Map();          // repo -> card, or the in-flight promise
+let hfTipTimer=null, hfTipFor=null;
+function hfCard(repo){
+  const hit=hfCards.get(repo);
+  if(hit) return Promise.resolve(hit);
+  const p=api("/api/hf/card?repo="+encodeURIComponent(repo),"GET",undefined,{quiet:true})
+    .catch(e=>({repo,error:e.message}))
+    .then(c=>{ hfCards.set(repo,c); return c; });
+  hfCards.set(repo,p);            // concurrent hovers share one request
+  return p;
+}
+// the card's own text unless it's only packaging notes ("imatrix quants of X"),
+// in which case the base model's description leads
+function hfCardText(c){
+  if(!c) return null;
+  if(c.summary&&!c.summary_weak) return {main:c.summary};
+  if(c.base_summary) return {main:c.base_summary, base:c.base_model, note:c.summary};
+  return c.summary?{main:c.summary}:null;
+}
+function hfCardHTML(repo,c){
+  let h=`<b>${escH(repo)}</b>`;
+  if(!c||c instanceof Promise) return h+'<div class="sub">loading model card…</div>';
+  const t=hfCardText(c);
+  if(t){
+    if(t.note) h+=`<p class="sub">${escH(t.note)}</p>`;
+    h+=`<p>${t.base?`<span class="sub">base model ${escH(t.base)}: </span>`:""}${escH(t.main)}</p>`;
+  } else h+=`<p class="sub">${c.error?"model card unavailable":"no description in this model card"}</p>`;
+  const foot=[c.license&&"license: "+c.license, c.pipeline].filter(Boolean).map(escH).join(" · ");
+  return foot?h+`<div class="sub">${foot}</div>`:h;
+}
+function hfTipPlace(row){
+  const tip=$("hf-tip"), r=row.getBoundingClientRect();
+  const w=Math.min(440,innerWidth-20); tip.style.width=w+"px";
+  const x=Math.min(Math.max(10,r.left+20),innerWidth-w-10);
+  let y=r.bottom+4;
+  if(y+tip.offsetHeight>innerHeight-10) y=Math.max(10,r.top-tip.offsetHeight-4);
+  tip.style.left=x+"px"; tip.style.top=y+"px";
+}
+function hfTipShow(row,repo){
+  clearTimeout(hfTipTimer);
+  // a short delay so sweeping the pointer down the list doesn't fetch every card
+  hfTipTimer=setTimeout(async()=>{
+    hfTipFor=repo; const tip=$("hf-tip");
+    tip.innerHTML=hfCardHTML(repo,hfCards.get(repo));
+    tip.style.display="block"; hfTipPlace(row);
+    const c=await hfCard(repo);
+    if(hfTipFor!==repo) return;       // the pointer has moved on
+    tip.innerHTML=hfCardHTML(repo,c); hfTipPlace(row);
+  },350);
+}
+function hfTipHide(){ clearTimeout(hfTipTimer); hfTipFor=null; $("hf-tip").style.display="none"; }
 $("hf-dialog").addEventListener("close",()=>hfPollStatus(5000));
-function hfBack(){ hfFilesSeq++; $("hf-files").style.display="none"; $("hf-results").style.display="block"; }
+// a scrolled list leaves the tip pointing at the wrong row
+$("hf-dialog").addEventListener("scroll",hfTipHide,true);
+function hfBack(){ hfTipHide(); hfFilesSeq++; $("hf-files").style.display="none"; $("hf-results").style.display="block"; }
 function hfSetSort(s){ hfSort=s;
   for(const x of ["trending","downloads","likes"]){
     $("hfs-"+x).classList.toggle("active",x===s); $("hfs-"+x).setAttribute("aria-pressed",x===s);}
@@ -1612,8 +1682,11 @@ async function hfSearch(){
     row.innerHTML=`<div class="top"><span class="name">${escH(r.id)}</span>
         <span class="micons">${hfIcons(r.caps)}</span></div>
       <div class="meta" style="margin-left:0">${meta}</div>`;
-    row.onclick=()=>hfShowFiles(r.id);
-    row.onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){e.preventDefault();hfShowFiles(r.id);} };
+    row.onclick=()=>{ hfTipHide(); hfShowFiles(r.id); };
+    row.onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){e.preventDefault();hfTipHide();hfShowFiles(r.id);} };
+    row.onmouseenter=row.onfocus=()=>hfTipShow(row,r.id);
+    row.onmouseleave=row.onblur=hfTipHide;
+    row.setAttribute("aria-describedby","hf-tip");
     $("hf-results").appendChild(row);
   }
 }
@@ -1621,6 +1694,14 @@ async function hfShowFiles(repo){
   const seq=++hfFilesSeq;
   hfRepo=repo; hfFilesData=[];
   $("hf-repo-name").innerHTML=escH(repo)+' <span class="micons" id="hf-repo-icons"></span>';
+  $("hf-repo-desc").innerHTML='<span class="sub">loading model card…</span>';
+  hfCard(repo).then(c=>{
+    if(repo!==hfRepo) return;
+    const t=hfCardText(c);
+    $("hf-repo-desc").innerHTML=t
+      ?(t.base?`<span class="sub">base model ${escH(t.base)}: </span>`:"")+escH(t.main)
+      :`<span class="sub">${c.error?"model card unavailable":"no description in this model card"}</span>`;
+  });
   $("hf-results").style.display="none"; $("hf-files").style.display="block";
   $("hf-filelist").innerHTML='<div class="advisory">listing files…</div>'; hfSel();
   let d;
@@ -1632,15 +1713,74 @@ async function hfShowFiles(repo){
   hfFilesData=d.files;
   $("hf-repo-icons").innerHTML=hfIcons(d.caps);
   $("hf-filelist").innerHTML=d.files.length?"":'<div class="advisory">no .gguf files in this repo</div>';
+  const rec=hfRecommend(d.files);
+  hfAuto={done:false, touched:new Set(), rec, added:[]};
   d.files.forEach((f,i)=>{
+    const role=hfRole(f), shard=f.name.match(HF_SHARD);
+    const tags=[];
+    if(role==="mmproj") tags.push('<span class="hf-role">vision projector — for image input</span>');
+    if(role==="head") tags.push('<span class="hf-role">MTP draft head — faster decoding, atomic backend</span>');
+    if(shard) tags.push(`<span class="hf-role">part ${+shard[1]} of ${+shard[2]}</span>`);
+    if(i===rec.mmproj||i===rec.head) tags.push('<span class="hf-rec">★ recommended</span>');
     const row=document.createElement("label");
     row.style.cssText="display:flex;gap:8px;align-items:center;padding:4px 2px;border-bottom:1px solid var(--grid);cursor:pointer";
-    row.innerHTML=`<input type="checkbox" data-i="${i}" style="accent-color:var(--cyan)" onchange="hfSel()">
-      <span style="color:var(--ink-2);overflow-wrap:anywhere;min-width:0">${escH(f.name)}</span>
+    row.innerHTML=`<input type="checkbox" data-i="${i}" style="accent-color:var(--cyan)">
+      <span class="hf-name"><span style="color:var(--ink-2);overflow-wrap:anywhere;min-width:0">${escH(f.name)}</span>${tags.join("")}</span>
       <span class="spacer" style="flex:1"></span>
       <span style="color:var(--green);white-space:nowrap">${gib(f.size)}</span>`;
+    row.querySelector("input").addEventListener("change",e=>hfToggle(i,e.target.checked));
     $("hf-filelist").appendChild(row);
   });
+  hfSel();
+}
+/* what each file in a repo is for — mirrors models.py's HELPER_RE / DRAFT_RE,
+   so what's recommended here is what discovery will pair after download */
+const HF_MMPROJ=/mmproj/i, HF_HEAD=/(assistant|(?:^|[-_.])mtp(?:[-_.]|$)|nextn|draft)/i;
+const HF_SHARD=/-(\d{5})-of-(\d{5})\.gguf$/i;
+let hfAuto={done:false, touched:new Set(), rec:{}, added:[]};
+const hfBase=n=>n.split("/").pop();
+function hfRole(f){ const b=hfBase(f.name);
+  return HF_MMPROJ.test(b)?"mmproj":HF_HEAD.test(b)?"head":"weights"; }
+// Best of each helper kind by precision: a projector at F16 (the format every
+// backend handles, and no visible loss against F32); a head at Q8_0 (half
+// the size of F16 for no measurable change in acceptance). Ties go to files
+// at the repo root, then the smaller one.
+function hfRecommend(files){
+  const cmp=(x,y)=>{ for(let k=0;k<x.length;k++) if(x[k]!==y[k]) return x[k]-y[k]; return 0; };
+  const pick=(role,order)=>{
+    let best=null, bestKey=null;
+    files.forEach((f,i)=>{
+      if(hfRole(f)!==role) return;
+      const b=hfBase(f.name).toUpperCase().replace(/\.GGUF$/,"");
+      let rank=order.findIndex(t=>new RegExp(`(^|[-_.])${t}($|[-_.])`).test(b));
+      if(rank<0) rank=order.length;
+      const key=[rank, f.name.includes("/")?1:0, f.size||0];
+      if(!bestKey||cmp(key,bestKey)<0){ best=i; bestKey=key; }
+    });
+    return best;
+  };
+  return {mmproj:pick("mmproj",["F16","BF16","Q8_0","F32"]),
+          head:pick("head",["Q8_0","F16","BF16","F32"])};
+}
+function hfBox(i){ return document.querySelector(`#hf-filelist input[data-i="${i}"]`); }
+function hfToggle(i,on){
+  const f=hfFilesData[i]; if(!f) return;
+  if(hfRole(f)!=="weights"){ hfAuto.touched.add(i); hfSel(); return; }
+  // a split model is useless without every part: its shards move together
+  const m=f.name.match(HF_SHARD);
+  if(m){ const stem=f.name.replace(HF_SHARD,"");
+    hfFilesData.forEach((g,j)=>{ if(j!==i&&g.name.replace(HF_SHARD,"")===stem&&HF_SHARD.test(g.name)){
+      const b=hfBox(j); if(b) b.checked=on; }}); }
+  // the first quant picked brings the recommended helpers along, once; any
+  // the user has already ticked or unticked themselves are left alone
+  if(on&&!hfAuto.done){
+    hfAuto.done=true;
+    for(const k of ["mmproj","head"]){
+      const j=hfAuto.rec[k];
+      if(j==null||hfAuto.touched.has(j)) continue;
+      const b=hfBox(j); if(b&&!b.checked){ b.checked=true; hfAuto.added.push(j); }
+    }
+  }
   hfSel();
 }
 function hfSelected(){
@@ -1649,7 +1789,12 @@ function hfSelected(){
 function hfSel(){
   const sel=hfSelected(), tot=sel.reduce((a,f)=>a+f.size,0);
   $("hf-dl").disabled=!sel.length;
-  $("hf-selinfo").textContent=sel.length?`${sel.length} file(s) · ${gib(tot)}`:"select the quant(s) to download — include the mmproj for vision";
+  // say what was ticked on the user's behalf, while it's still ticked
+  const auto=hfAuto.added.filter(j=>hfBox(j)?.checked&&!hfAuto.touched.has(j))
+    .map(j=>hfRole(hfFilesData[j])==="mmproj"?"the vision projector":"the MTP head");
+  $("hf-selinfo").textContent=sel.length
+    ?`${sel.length} file(s) · ${gib(tot)}`+(auto.length?` — added ${auto.join(" and ")}; untick to skip`:"")
+    :"pick one quant · the recommended mmproj (image input) and MTP head (faster decoding) come with it";
 }
 async function hfDownload(){
   const sel=hfSelected(); if(!sel.length)return;
@@ -1895,7 +2040,10 @@ function plUpdateModels(instances){
   const sel=$("pl-model"), cur=sel.value;
   sel.innerHTML='<option value="">'+(names.length?"model: auto (default instance)":"model: none running")+'</option>'+
     names.map(n=>opt(n,cur)).join("");
-  const bsel=$("bn-model"), bcur=bsel.value;
+  // keep the user's pick while it's still running; with only one model
+  // there's nothing to choose, so select it rather than make them
+  const bsel=$("bn-model");
+  const bcur=names.includes(bsel.value)?bsel.value:(names.length===1?names[0]:"");
   bsel.innerHTML='<option value="">'+(names.length?"bench which model?":"no model running")+'</option>'+
     names.map(n=>opt(n,bcur)).join("");
   bnValid();

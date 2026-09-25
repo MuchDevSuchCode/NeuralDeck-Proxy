@@ -19,7 +19,17 @@ SKIP_DIRS = {"venv", ".cache", "lost+found", "RyzenAdj", ".git", "__pycache__"}
 SHARD_RE = re.compile(r"-\d{5}-of-\d{5}", re.IGNORECASE)
 # Files that live beside a model without being one.
 HELPER_RE = re.compile(r"mmproj", re.IGNORECASE)
-DRAFT_RE = re.compile(r"(assistant|[-_]mtp|nextn|draft)", re.IGNORECASE)
+# "mtp" as its own word, leading or not: unsloth ships Gemma 4's head as
+# mtp-gemma-4-….gguf, which a "-mtp" pattern treated as a second model
+DRAFT_RE = re.compile(r"(assistant|(?:^|[-_.])mtp(?:[-_.]|$)|nextn|draft)",
+                      re.IGNORECASE)
+
+
+def _is_head(p: Path) -> bool:
+    """A draft/MTP head by name, or by a header that says it's an assistant
+    model (gemma4-assistant) whatever the file happens to be called."""
+    return bool(DRAFT_RE.search(p.name)) or \
+        "assistant" in (gguf.info(str(p)).get("arch") or "")
 
 
 def _size(path: str) -> int:
@@ -74,12 +84,12 @@ def _pick(folder: Path):
         return None, None, None
     mmproj = next((p for p in files if HELPER_RE.search(p.name)), None)
     plain = [p for p in files if not HELPER_RE.search(p.name)
-             and not DRAFT_RE.search(p.name)]
+             and not _is_head(p)]
     main = plain[0] if plain else None
     draft = None
     if main is None:
         combined = [p for p in files if not HELPER_RE.search(p.name)
-                    and DRAFT_RE.search(p.name)]
+                    and _is_head(p)]
         if not combined:
             return None, None, None
         main = combined[0]
@@ -87,7 +97,7 @@ def _pick(folder: Path):
     else:
         draft = next((p for p in files if p is not main
                       and not HELPER_RE.search(p.name)
-                      and DRAFT_RE.search(p.name)), None)
+                      and _is_head(p)), None)
         if draft is None and gguf.has_mtp(str(main)):
             draft = main                  # head declared in the weights' header
     # Only advertise a head the file actually declares. Keying on the name
