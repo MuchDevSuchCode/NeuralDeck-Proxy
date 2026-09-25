@@ -153,7 +153,9 @@ def collect_snapshot() -> dict:
             "mem": round(p["memory_percent"] or 0, 1)} for p in top]
 
     llama = None
-    log = procs.newest_llama_log()
+    # the headline numbers are parsed from llama.cpp timing lines; a vLLM
+    # log has none (its instances report rates from /metrics instead)
+    log = procs.newest_llama_log(skip_vllm=True)
     if log:
         try:
             llama = llama_log.quick_stats(log)
@@ -261,6 +263,8 @@ async def ui_config():
     """What the page needs in order to stop hard-coding this machine."""
     return JSONResponse({
         "backends": list(config.BACKENDS.keys()),
+        # label -> "llama.cpp" | "vllm": which models each backend can serve
+        "backend_kinds": config.backend_kinds(),
         "default_backend": config.DEFAULT_BACKEND,
         "llama_ports": config.LLAMA_PORTS,
         "kv_chart_ports": config.KV_CHART_PORTS,
@@ -438,12 +442,17 @@ async def list_models():
         last = config.LAST_MODEL_FILE.read_text(encoding="utf-8").strip()
     except Exception:
         pass
-    return JSONResponse({
-        "models": [{k: v for k, v in m.items()
-                    if k not in ("path", "mmproj_path", "draft_path", "files",
-                                 "root")}
-                   for m in found],
-        "last": last})
+    return JSONResponse({"models": [_public(m) for m in found], "last": last})
+
+
+def _public(m: dict) -> dict:
+    """What the page sees of a model. An HF folder keeps its path and file
+    list (the page shows what a delete of the whole folder removes); a GGUF
+    entry keeps to its long-standing shape."""
+    hide = (("mmproj_path", "draft_path", "root", "tool_xml")
+            if m.get("format") == "hf"
+            else ("path", "mmproj_path", "draft_path", "files", "root"))
+    return {k: v for k, v in m.items() if k not in hide}
 
 
 @app.post("/api/models/delete")
@@ -492,6 +501,8 @@ def _delete_model_files(model: dict) -> tuple:
     if root not in {os.path.normpath(r) for r in config.MODEL_DIRS} \
             or not os.path.isdir(root_real):
         raise PermissionError(f"{root} is not a configured model folder")
+    if model.get("format") == "hf":
+        return _delete_hf_folder(model, root, root_real)
     folder = os.path.normpath(os.path.dirname(model["path"]))
     loose = folder == root
     if not loose and os.path.dirname(folder) != root:
@@ -531,6 +542,25 @@ def _delete_model_files(model: dict) -> tuple:
         except OSError:
             pass
     return removed, folder_removed
+
+
+def _delete_hf_folder(model: dict, root: str, root_real: str) -> tuple:
+    """An HF model is its whole folder. Same guards as a GGUF delete: the
+    folder sits directly in a configured root, a symlinked folder loses the
+    link and never its target, and the folder must resolve inside the root.
+    rmtree removes links inside it without following them."""
+    folder = os.path.normpath(model["path"])
+    if os.path.dirname(folder) != root or folder == root:
+        raise PermissionError(f"refusing: {folder} is not directly inside {root}")
+    if os.path.islink(folder):
+        os.unlink(folder)
+        return [folder], True
+    if not _inside(os.path.realpath(folder), root_real) \
+            or os.path.realpath(folder) == root_real:
+        raise PermissionError(f"refusing: {folder} resolves outside {root}")
+    removed = [f for f in model.get("files") or [] if os.path.lexists(f)]
+    shutil.rmtree(folder)
+    return removed, True
 
 
 # ---------------------------------------------------------------------------
@@ -589,6 +619,8 @@ async def llama_launch(body: dict):
         raise HTTPException(400, "slots and ctx must be numbers")
     if thinking not in ("off", "low", "medium", "high"):
         raise HTTPException(400, "thinking must be off|low|medium|high")
+    if spec == "mtp":                      # the model's own MTP head = auto
+        spec = "auto"
     if spec not in ("auto", "off", "ngram"):
         raise HTTPException(400, "spec must be auto, ngram or off")
     if not 1024 <= ctx <= 1048576:
@@ -610,6 +642,8 @@ async def llama_launch(body: dict):
         raise HTTPException(409, str(e))
     except RuntimeError as e:
         raise HTTPException(409, str(e))
+    except ValueError as e:                 # model format vs backend kind
+        raise HTTPException(400, str(e))
 
 
 def _remember_model(model: str) -> None:
@@ -707,7 +741,8 @@ download_queue: deque = deque()
 download_recent: deque = deque(maxlen=12)
 download_state = {"proc": None, "buffer": deque(maxlen=200), "repo": None,
                   "target": None, "total_bytes": 0, "started": None,
-                  "id": None, "files": 0, "cancelled": False}
+                  "id": None, "files": 0, "cancelled": False,
+                  "snapshot": False}
 _dl_task = None
 
 
@@ -741,20 +776,35 @@ def _hf_caps(tags, pipeline, repo_id, file_names=None, chat_template=None):
 
 
 @app.get("/api/hf/search")
-async def hf_search(q: str = "", limit: int = 25, sort: str = "trending"):
+async def hf_search(q: str = "", limit: int = 25, sort: str = "trending",
+                    format: str = "gguf"):
+    """GGUF repos (for llama.cpp), or with format=hf safetensors repos that
+    are not GGUF (for vLLM). Same response shape either way."""
     _require_hf()
+    if format not in ("gguf", "hf"):
+        raise HTTPException(400, "format must be gguf or hf")
     sort_key = {"trending": "trending_score", "downloads": "downloads",
                 "likes": "likes"}.get(sort, "trending_score")
 
     def _search(key):
         from huggingface_hub import HfApi
-        kwargs = dict(filter="gguf", sort=key, limit=limit)
+        hf = format == "hf"
+        # the hub cannot filter a tag out, so fetch extra and drop GGUF
+        # repos (which often carry a safetensors tag too) here
+        kwargs = dict(filter="safetensors" if hf else "gguf", sort=key,
+                      limit=limit * 2 if hf else limit)
         if q:
             kwargs["search"] = q
-        return [{"id": m.id, "downloads": m.downloads, "likes": m.likes,
-                 "updated": str(m.last_modified or "")[:10],
-                 "caps": _hf_caps(m.tags, m.pipeline_tag, m.id)}
-                for m in HfApi().list_models(**kwargs)]
+        out = []
+        for m in HfApi().list_models(**kwargs):
+            if hf and "gguf" in {str(t).lower() for t in (m.tags or [])}:
+                continue
+            out.append({"id": m.id, "downloads": m.downloads, "likes": m.likes,
+                        "updated": str(m.last_modified or "")[:10],
+                        "caps": _hf_caps(m.tags, m.pipeline_tag, m.id)})
+            if len(out) >= limit:
+                break
+        return out
 
     try:
         try:
@@ -767,9 +817,87 @@ async def hf_search(q: str = "", limit: int = 25, sort: str = "trending"):
         raise HTTPException(502, f"HF search failed: {e}")
 
 
+# A snapshot download skips these: other formats of the same weights (the
+# original checkpoint, GGUF, ONNX, TF/Flax), and .bin checkpoints when
+# safetensors are there to load instead.
+SNAPSHOT_IGNORE = ("original/*", "*.pth", "*.pt", "*.gguf", "onnx/*", "*.onnx",
+                   "*.h5", "*.msgpack")
+
+
+def _snapshot_files(files: list) -> list:
+    """The repo files a snapshot download fetches, from [{name, size}]."""
+    import fnmatch
+    has_st = any(f["name"].lower().endswith(".safetensors") for f in files)
+    ignore = SNAPSHOT_IGNORE + (("*.bin",) if has_st else ())
+    return [f for f in files
+            if not any(fnmatch.fnmatch(f["name"], pat) for pat in ignore)]
+
+
+def _hf_raw_json(repo: str, name: str, head: int = None) -> dict:
+    """A small JSON file from a repo, straight from the hub (a Range
+    request with `head`, for exl3's large quantization_config.json).
+    {} on any failure — this only decorates a listing."""
+    try:
+        from huggingface_hub import get_token, hf_hub_url
+        headers = {}
+        token = get_token()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        if head:
+            headers["Range"] = f"bytes=0-{head - 1}"
+        r = httpx.get(hf_hub_url(repo, name), headers=headers, timeout=6.0,
+                      follow_redirects=True)
+        if r.status_code not in (200, 206):
+            return {}
+        return models.parse_json(r.content, lenient=r.status_code == 206)
+    except Exception:
+        return {}
+
+
+def _hf_repo_meta(repo: str, info, names: set) -> tuple:
+    """(caps, quant) for a safetensors repo, from its config.json (and the
+    quantization_config.json beside it when config.json does not say)."""
+    cfg = getattr(info, "config", None) or {}
+    if "config.json" in names:
+        cfg = _hf_raw_json(repo, "config.json") or cfg
+    qcfg = None
+    if not isinstance(cfg.get("quantization_config"), dict) \
+            and "quantization_config.json" in names:
+        qcfg = _hf_raw_json(repo, "quantization_config.json", head=16384)
+    caps = _hf_caps(info.tags, info.pipeline_tag, repo)
+    caps["vision"] = caps["vision"] or bool(cfg.get("vision_config")) \
+        or "preprocessor_config.json" in names
+    caps["mtp"] = caps["mtp"] or models.hf_mtp(cfg)
+    tok = cfg.get("tokenizer_config") if isinstance(cfg, dict) else None
+    tpl = tok.get("chat_template") if isinstance(tok, dict) else None
+    if isinstance(tpl, str) and models.template_thinking(tpl):
+        caps["thinking"] = True
+    return caps, models.hf_quant(cfg, qcfg)
+
+
 @app.get("/api/hf/files")
-async def hf_files(repo: str):
+async def hf_files(repo: str, format: str = "gguf"):
     _require_hf()
+    if format not in ("gguf", "hf"):
+        raise HTTPException(400, "format must be gguf or hf")
+
+    def _hf_files():
+        from huggingface_hub import HfApi
+        info = HfApi().model_info(repo, files_metadata=True)
+        files = [{"name": s.rfilename, "size": s.size or 0}
+                 for s in info.siblings]
+        caps, quant = _hf_repo_meta(repo, info, {f["name"] for f in files})
+        return {"repo": repo, "files": files,
+                "total_bytes": sum(f["size"] for f in files),
+                # what a snapshot download actually fetches
+                "download_bytes": sum(f["size"] for f in _snapshot_files(files)),
+                "caps": caps, "quant": quant}
+
+    if format == "hf":
+        try:
+            return JSONResponse(await asyncio.to_thread(_hf_files))
+        except Exception as e:
+            raise HTTPException(502, f"HF file listing failed: {e}")
 
     def _files():
         from huggingface_hub import HfApi
@@ -918,9 +1046,36 @@ def _download_folder_name(files: list) -> str:
 
 def _download_job(job: dict) -> int:
     """Fetch one job's files with huggingface_hub, which works the same on
-    every platform (the `hf` CLI is not always on PATH on Windows)."""
+    every platform (the `hf` CLI is not always on PATH on Windows).
+
+    A snapshot job is a whole safetensors repo. It is fetched file by file,
+    as snapshot_download would with the same exclusions, so cancel still
+    stops after the current file, and the repo's own layout is kept (an HF
+    folder is loaded as a whole, config.json at its top).
+    """
     from huggingface_hub import hf_hub_download
     os.makedirs(job["target"], exist_ok=True)
+    if job.get("snapshot"):
+        from huggingface_hub import HfApi
+        info = HfApi().model_info(job["repo"], files_metadata=True)
+        wanted = _snapshot_files([{"name": s.rfilename, "size": s.size or 0}
+                                  for s in info.siblings])
+        job["files"] = [f["name"] for f in wanted]
+        job["total_bytes"] = sum(f["size"] for f in wanted)
+        download_state.update(total_bytes=job["total_bytes"],
+                              files=len(job["files"]))
+        download_state["buffer"].append(
+            f"snapshot: {len(wanted)} file(s), "
+            f"{job['total_bytes'] / 1024**3:.1f} GiB")
+        for name in job["files"]:
+            if download_state["cancelled"]:
+                download_state["buffer"].append("[cancelled]")
+                return 1
+            download_state["buffer"].append(f"downloading {name}")
+            hf_hub_download(repo_id=job["repo"], filename=name,
+                            local_dir=job["target"])
+            download_state["buffer"].append(f"done {name}")
+        return 0
     placed = set()
     for name in job["files"]:
         if download_state["cancelled"]:
@@ -973,10 +1128,12 @@ async def _dl_run_queue():
         job = download_queue.popleft()
         download_state.update(id=job["id"], repo=job["repo"], target=job["target"],
                               total_bytes=job["total_bytes"], files=len(job["files"]),
-                              started=time.time(), cancelled=False, proc="running")
+                              started=time.time(), cancelled=False, proc="running",
+                              snapshot=bool(job.get("snapshot")))
         download_state["buffer"].clear()
         download_state["buffer"].append(
-            f"[{len(job['files'])} file(s) from {job['repo']} -> {job['target']}]")
+            f"[snapshot of {job['repo']} -> {job['target']}]" if job.get("snapshot")
+            else f"[{len(job['files'])} file(s) from {job['repo']} -> {job['target']}]")
         rc = 0
         try:
             rc = await asyncio.to_thread(_download_job, job)
@@ -988,6 +1145,7 @@ async def _dl_run_queue():
         download_state["buffer"].append(f"[finished, exit {rc}]")
         download_recent.append({"id": job["id"], "repo": job["repo"],
                                 "target": job["target"], "rc": rc,
+                                "snapshot": bool(job.get("snapshot")),
                                 "ts": time.time()})
 
 
@@ -996,13 +1154,25 @@ async def hf_download(body: dict):
     global _dl_task
     _require_hf()
     repo, files = body.get("repo"), body.get("files") or []
-    if not repo or not files:
-        raise HTTPException(400, "repo and files are required")
+    snapshot = bool(body.get("snapshot"))
+    if not repo or not (files or snapshot):
+        raise HTTPException(400, "repo and files (or snapshot) are required")
+    if snapshot:
+        # the repo's name part, as the folder discovery will list it by
+        folder = re.sub(r"[^\w.-]", "_", str(repo).rstrip("/").split("/")[-1])
+        if folder in ("", ".", ".."):
+            raise HTTPException(400, f"cannot name a folder after '{repo}'")
+        files = []
+    else:
+        folder = _download_folder_name(files)
+    try:
+        total = int(body.get("total_bytes") or 0)
+    except (TypeError, ValueError):
+        total = 0
     job = {"id": f"{int(time.time() * 1000)}-{os.urandom(3).hex()}",
-           "repo": repo, "files": files,
-           "total_bytes": int(body.get("total_bytes") or 0),
-           "target": os.path.join(config.MODELS_DOWNLOAD_DIR,
-                                  _download_folder_name(files))}
+           "repo": repo, "files": files, "snapshot": snapshot,
+           "total_bytes": total,
+           "target": os.path.join(config.MODELS_DOWNLOAD_DIR, folder)}
     download_queue.append(job)
     if _dl_task is None or _dl_task.done():
         _dl_task = asyncio.create_task(_dl_run_queue())
@@ -1034,8 +1204,10 @@ async def hf_status():
         if download_state["started"] else None,
         "lines": list(download_state["buffer"])[-12:],
         "id": download_state["id"],
+        "snapshot": bool(download_state.get("snapshot")),
         "queue": [{"id": j["id"], "repo": j["repo"], "files": len(j["files"]),
                    "total_bytes": j["total_bytes"],
+                   "snapshot": bool(j.get("snapshot")),
                    "name": os.path.basename(j["target"])} for j in download_queue],
         "recent": [{**r, "name": os.path.basename(r["target"])}
                    for r in list(download_recent)[-6:]],

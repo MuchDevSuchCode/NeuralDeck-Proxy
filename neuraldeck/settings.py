@@ -32,6 +32,7 @@ from . import config
 
 SPEC_CHOICES = ["auto", "ngram", "off"]
 THINK_CHOICES = ["off", "low", "medium", "high"]
+VLLM_KV_CHOICES = ["auto", "fp8", "fp8_e4m3", "fp8_e5m2"]
 
 
 # restart: False  — the dashboard re-reads it on save, applies at once
@@ -49,8 +50,9 @@ def _f(key, label, type_, group, help_="", restart=False, choices=None,
 SCHEMA = [
     # ── Models ────────────────────────────────────────────────────────────
     _f("model_dirs", "Model directories", "dirlist", "Models",
-       "Folders scanned for GGUF models. A model is a subfolder holding a "
-       ".gguf, plus any mmproj or draft head beside it."),
+       "Folders scanned for models. A model is a subfolder holding a "
+       ".gguf (plus any mmproj or draft head beside it), or a Hugging Face "
+       "safetensors folder (config.json + *.safetensors) for vLLM."),
     _f("download_dir", "Download directory", "dir", "Models",
        "Where the Hugging Face downloader puts new models. Usually the "
        "first model directory."),
@@ -58,7 +60,9 @@ SCHEMA = [
     # ── Backends ──────────────────────────────────────────────────────────
     _f("backends", "llama-server builds", "map", "Backends",
        "Label → path to a llama-server binary. Add several to A/B a fork "
-       "against upstream from the launch form."),
+       "against upstream from the launch form. A vLLM executable (the "
+       "`vllm` script in its environment's bin folder) works too, and "
+       "serves safetensors models."),
     _f("default_backend", "Default build", "str", "Backends",
        "Which label the launch form starts on."),
     _f("llama_port_range", "llama port range", "str", "Backends",
@@ -96,6 +100,19 @@ SCHEMA = [
     _f("extra_llama_args", "Extra llama-server args", "strlist",
        "Launch defaults",
        "Appended to every launch, one argument per entry."),
+
+    # ── vLLM ──────────────────────────────────────────────────────────────
+    _f("vllm_kv_cache_dtype", "vLLM KV cache dtype", "choice", "vLLM",
+       "--kv-cache-dtype for vLLM launches. auto keeps the model's dtype; "
+       "fp8 halves KV memory at a small quality cost.",
+       choices=VLLM_KV_CHOICES),
+    _f("vllm_gpu_frac_max", "vLLM max GPU memory fraction", "float", "vLLM",
+       "Ceiling for --gpu-memory-utilization. Each launch is sized to the "
+       "VRAM actually free (so vLLM can run beside llama-servers), never "
+       "above this.", min_=0.5, max_=0.98),
+    _f("vllm_extra_args", "Extra vLLM args", "strlist", "vLLM",
+       "Appended to every `vllm serve`, one argument per entry, e.g. "
+       "--max-num-batched-tokens then 2048."),
 
     # ── Sampling ──────────────────────────────────────────────────────────
     _f("temp", "Temperature", "float", "Sampling",
@@ -195,6 +212,8 @@ ATTR = {
     "thinking": "THINKING_DEFAULT", "kv_cache_type": "KV_CACHE_TYPE",
     "flash_attn": "FLASH_ATTN", "n_gpu_layers": "N_GPU_LAYERS",
     "threads": "THREADS", "extra_llama_args": "EXTRA_LLAMA_ARGS",
+    "vllm_kv_cache_dtype": "VLLM_KV_CACHE_DTYPE",
+    "vllm_gpu_frac_max": "VLLM_GPU_FRAC_MAX", "vllm_extra_args": "VLLM_EXTRA_ARGS",
     "temp": "TEMP", "top_p": "TOP_P", "min_p": "MIN_P",
     "repeat_penalty": "REPEAT_PENALTY",
     "deck_port": "DECK_PORT", "deck_host": "DECK_HOST",

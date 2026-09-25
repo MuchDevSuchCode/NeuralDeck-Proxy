@@ -6,6 +6,7 @@ anyway — `pkill -f llama` cheerfully matches the dashboard that ran it.
 Stopping something means signalling a pid we identified, never a pattern.
 """
 
+import json
 import os
 import re
 import socket
@@ -182,11 +183,17 @@ def backend_of(exe, cmd: str) -> str:
 
 
 def llama_instances() -> list:
-    """Every running llama-server, with what it was launched with."""
+    """Every running model server — llama-server and vLLM — with what it
+    was launched with. Each entry's "kind" says which."""
     out, seen = [], set()
-    for p in psutil.process_iter(["name", "cmdline", "status"]):
+    vllm_procs = []
+    for p in psutil.process_iter(["name", "cmdline", "status", "ppid"]):
         try:
             if (p.info["name"] or "") not in LLAMA_NAMES:
+                if p.info["status"] != psutil.STATUS_ZOMBIE \
+                        and (p.info["name"] or "") not in _WRAPPERS \
+                        and _vllm_script(p.info["cmdline"] or []) is not None:
+                    vllm_procs.append(p)
                 continue
             # An exited server nobody has reaped yet: no port, no command
             # line, and nothing to stop.
@@ -237,12 +244,268 @@ def llama_instances() -> list:
                 "kv_tokens": kv,
                 "kv_pct": round(kv / ctx * 100, 1) if kv is not None and ctx else None,
                 "backend": backend_of(_exe_of(p), " ".join(cmd)),
+                "kind": "llama.cpp",
             })
+        except Exception:
+            continue
+    # vLLM forks an engine process (and, with some settings, API server
+    # workers) that can carry the same command line: only the top-level
+    # serve process is the instance.
+    vpids = {p.pid for p in vllm_procs}
+    for p in vllm_procs:
+        try:
+            if p.info.get("ppid") in vpids or _has_ancestor(p, vpids):
+                continue
+            inst = _vllm_instance(p)
+            if inst is None:
+                continue
+            seen.add(p.pid)
+            proc = _llama_cache.get(p.pid)
+            if proc is None:
+                p.cpu_percent(None)
+                _llama_cache[p.pid] = proc = p
+            out.append({**(metrics(proc) or {"pid": p.pid}), **inst})
         except Exception:
             continue
     for pid in [k for k in _llama_cache if k not in seen]:
         del _llama_cache[pid]
+    for port in [k for k in _vllm_scrape if k not in
+                 {i["port"] for i in out if i.get("kind") == "vllm"}]:
+        _vllm_scrape.pop(port, None)
     return sorted(out, key=lambda i: i["port"] or 0)
+
+
+# ── vLLM instances ─────────────────────────────────────────────────────────
+# `vllm serve` is a Python script, so the process is python running it: the
+# instance is recognised by its command line, never by process name.
+
+_VLLM_MODULES = {"vllm.entrypoints.openai.api_server"}
+
+
+def _vllm_script(cmd: list):
+    """Index of the token that makes this a vLLM server's command line
+    (the `vllm` script before `serve`, or the api_server module), or None.
+
+    The token must be the program itself or what a Python interpreter runs
+    — a shell, `tail -f vllm.log` or an editor mentioning vllm is not one.
+    """
+    if not cmd:
+        return None
+    cands = [0]
+    if os.path.basename(cmd[0]).lower().startswith("python"):
+        j = 1
+        while j < len(cmd) and cmd[j].startswith("-") and cmd[j] != "-m":
+            j += 1                       # interpreter switches (-u, -O …)
+        if j < len(cmd) and cmd[j] == "-m":
+            j += 1
+        cands.append(j)
+    for i in cands:
+        if i >= len(cmd):
+            continue
+        tok = cmd[i]
+        if os.path.basename(tok).lower() in config.VLLM_NAMES \
+                or tok == "vllm.entrypoints.cli.main":
+            if i + 1 < len(cmd) and cmd[i + 1] == "serve":
+                return i
+        elif tok in _VLLM_MODULES:
+            return i
+    return None
+
+
+def _has_ancestor(p, pids: set) -> bool:
+    try:
+        return any(a.pid in pids for a in p.parents())
+    except Exception:
+        return False
+
+
+def _vllm_args(cmd: list) -> dict:
+    """{flag: value} from a vLLM command line — both `--flag value` and
+    `--flag=value` spellings — plus the positional model as "model"."""
+    i = _vllm_script(cmd)
+    rest = cmd[i + 1:] if i is not None else cmd
+    if rest and rest[0] == "serve":
+        rest = rest[1:]
+    out = {}
+    if rest and not rest[0].startswith("-"):
+        out["model"] = rest[0]
+        rest = rest[1:]
+    k = 0
+    while k < len(rest):
+        tok = rest[k]
+        if tok.startswith("--") and "=" in tok:
+            flag, _, val = tok.partition("=")
+            out[flag] = val
+        elif tok.startswith("-"):
+            nxt = rest[k + 1] if k + 1 < len(rest) else None
+            if nxt is not None and (not nxt.startswith("-")
+                                    or re.fullmatch(r"-[\d.]+", nxt)):
+                out[tok] = nxt
+                k += 1
+            else:
+                out[tok] = True          # a bare switch
+        k += 1
+    return out
+
+
+def parse_len(v):
+    """vLLM's --max-model-len: an int, or 32k (x1000) / 32K (x1024) style."""
+    m = re.fullmatch(r"\s*([\d.]+)\s*([kmgKMG]?)\s*", str(v or ""))
+    if not m:
+        return None
+    mult = {"": 1, "k": 10**3, "m": 10**6, "g": 10**9,
+            "K": 2**10, "M": 2**20, "G": 2**30}[m.group(2)]
+    try:
+        return int(float(m.group(1)) * mult)
+    except ValueError:
+        return None
+
+
+def _vllm_instance(p):
+    cmd = p.info["cmdline"] or []
+    a = _vllm_args(cmd)
+    model = a.get("--model") if isinstance(a.get("--model"), str) else a.get("model")
+    served = a.get("--served-model-name")
+    alias = served if isinstance(served, str) else None
+    if not alias and isinstance(model, str):
+        alias = os.path.basename(model.rstrip("/\\")) or model
+    try:
+        port = int(a.get("--port", 8000))
+    except (TypeError, ValueError):
+        port = None
+    ctx = parse_len(a.get("--max-model-len"))
+    try:
+        slots = max(1, int(a.get("--max-num-seqs")))
+    except (TypeError, ValueError):
+        slots = None                   # vLLM's own default, not known here
+    spec = None
+    raw_spec = a.get("--speculative-config") or a.get("-sc")
+    if isinstance(raw_spec, str):
+        try:
+            spec = (json.loads(raw_spec) or {}).get("method") or "on"
+        except (ValueError, AttributeError):
+            spec = "on"
+    host = a.get("--host") if isinstance(a.get("--host"), str) else ""
+    script = cmd[_vllm_script(cmd)]
+    m = vllm_metrics(port, host) if port else {}
+    kv = m.get("kv_pct")
+    return {
+        "port": port, "alias": alias, "ctx_total": ctx, "ctx": ctx,
+        "slots": slots or 1,
+        "spec": spec, "draft_model": None, "mmproj": None,
+        "kv_type": a.get("--kv-cache-dtype") if isinstance(
+            a.get("--kv-cache-dtype"), str) else None,
+        "reasoning_budget": None, "embeddings": False,
+        "model_path": os.path.basename(str(model).rstrip("/\\")) if model else None,
+        # --max-model-len is per request in vLLM; nothing is split by slot
+        "ctx_per_req": ctx,
+        "kv_tokens": m.get("kv_tokens"),
+        "kv_pct": kv,
+        "running": m.get("running"),
+        "waiting": m.get("waiting"),
+        "prefill_tps": m.get("prefill_tps"),
+        "decode_tps": m.get("decode_tps"),
+        "backend": backend_of(script if os.path.isabs(script) else _exe_of(p),
+                              " ".join(cmd)),
+        "kind": "vllm",
+    }
+
+
+# port -> {"at", "val", "prev": (t, prompt_total, gen_total)}
+_vllm_scrape: dict = {}
+_METRIC_RE = re.compile(r"^([a-zA-Z_:][\w:]*)(\{[^}]*\})?\s+(\S+)")
+_LABEL_RE = re.compile(r'(\w+)="((?:[^"\\]|\\.)*)"')
+
+
+def parse_prometheus(text: str) -> dict:
+    """name -> list of (labels, value) from Prometheus exposition text."""
+    out = {}
+    for line in text.splitlines():
+        if not line or line[0] == "#":
+            continue
+        m = _METRIC_RE.match(line)
+        if not m:
+            continue
+        try:
+            val = float(m.group(3))
+        except ValueError:
+            continue
+        labels = dict(_LABEL_RE.findall(m.group(2) or ""))
+        out.setdefault(m.group(1), []).append((labels, val))
+    return out
+
+
+def _metric_sum(parsed: dict, *names):
+    for n in names:
+        if n in parsed:
+            return sum(v for _, v in parsed[n])
+    return None
+
+
+def vllm_metrics(port: int, host: str = "", ttl: float = 1.0) -> dict:
+    """KV occupancy, queue and token rates from a vLLM server's /metrics.
+
+    Short timeout and cached for `ttl`: called from the sampler thread every
+    second, and from API handlers (always via a thread). Token rates are
+    the counters' growth between two scrapes; a counter that went down
+    means the server restarted, which is a new baseline, not a rate.
+    """
+    import time
+    now = time.monotonic()
+    st = _vllm_scrape.setdefault(port, {"at": 0.0, "val": {}, "prev": None})
+    if now - st["at"] < ttl:
+        return st["val"]
+    st["at"] = now
+    h = (host or "").strip()
+    h = "127.0.0.1" if h in ("", "0.0.0.0", "::", "[::]", "*") else h
+    url = f"http://{'[%s]' % h if ':' in h else h}:{port}/metrics"
+    try:
+        import httpx
+        r = httpx.get(url, timeout=0.5)
+        if r.status_code != 200:
+            raise ValueError(r.status_code)
+        parsed = parse_prometheus(r.text)
+    except Exception:
+        st["val"], st["prev"] = {}, None
+        return {}
+    val = {}
+    usage = parsed.get("vllm:kv_cache_usage_perc") \
+        or parsed.get("vllm:gpu_cache_usage_perc")
+    if usage:
+        frac = max(v for _, v in usage)          # the fullest engine
+        val["kv_pct"] = round(frac * 100, 1)
+        blocks = None
+        for labels, _ in parsed.get("vllm:cache_config_info") or []:
+            # A hybrid (Mamba-style) model allocates in blocks of hundreds of
+            # tokens and parks each sequence's state in whole blocks, so
+            # usage x capacity reads as thousands of tokens for a short chat.
+            # The percentage is still vLLM's own truth; only the token count
+            # is dropped there. Attention-only models use 16-token blocks.
+            if labels.get("mamba_block_size") not in (None, "", "None"):
+                break
+            try:
+                blocks = int(labels["num_gpu_blocks"]) * int(labels["block_size"])
+                break
+            except (KeyError, ValueError):
+                continue
+        val["kv_tokens"] = int(round(frac * blocks)) if blocks else None
+    running = _metric_sum(parsed, "vllm:num_requests_running")
+    waiting = _metric_sum(parsed, "vllm:num_requests_waiting")
+    val["running"] = int(running) if running is not None else None
+    val["waiting"] = int(waiting) if waiting is not None else None
+    pt = _metric_sum(parsed, "vllm:prompt_tokens_total", "vllm:prompt_tokens")
+    gt = _metric_sum(parsed, "vllm:generation_tokens_total",
+                     "vllm:generation_tokens")
+    prev = st["prev"]
+    val["prefill_tps"] = val["decode_tps"] = None
+    if prev and pt is not None and gt is not None:
+        dt = now - prev[0]
+        if dt > 0 and pt >= prev[1] and gt >= prev[2]:
+            val["prefill_tps"] = round((pt - prev[1]) / dt, 1)
+            val["decode_tps"] = round((gt - prev[2]) / dt, 1)
+    st["prev"] = (now, pt, gt) if pt is not None and gt is not None else None
+    st["val"] = val
+    return val
 
 
 # ── ports ──────────────────────────────────────────────────────────────────
@@ -387,14 +650,51 @@ def tail_text(path, n_bytes: int = 262144) -> str:
         return ""
 
 
-def newest_llama_log():
+# The launcher opens every vLLM log with this line; vLLM's own startup
+# banner identifies logs of instances started some other way.
+VLLM_LOG_MARK = "[neuraldeck] backend=vllm"
+_VLLM_LOG_SIGNS = (VLLM_LOG_MARK, "vLLM API server version", "(APIServer pid=")
+_log_kind: dict = {}     # (path, inode) -> is vLLM
+
+
+def is_vllm_log(path) -> bool:
+    """Whether an instance log was written by vLLM. Only the head is read,
+    and the answer is kept per file (a rotated log is a new inode)."""
+    try:
+        key = (str(path), os.stat(path).st_ino)
+    except OSError:
+        return False
+    if key not in _log_kind:
+        try:
+            with open(path, "rb") as f:
+                head = f.read(65536).decode("utf-8", errors="replace")
+        except OSError:
+            return False
+        found = any(s in head for s in _VLLM_LOG_SIGNS)
+        if not found and len(head) < 16384:
+            return False        # vLLM may not have printed its banner yet
+        if len(_log_kind) > 256:
+            _log_kind.clear()
+        _log_kind[key] = found
+    return _log_kind[key]
+
+
+def newest_llama_log(skip_vllm: bool = False):
     """The most recently written instance log — the dashboard's headline
-    inference numbers come from whichever instance is busiest."""
-    logs = sorted(config.LOG_DIR.glob("*.log"), key=lambda p: p.stat().st_mtime
-                  if p.exists() else 0, reverse=True)
+    inference numbers come from whichever instance is busiest. Those come
+    from llama.cpp's timing lines, so that caller passes skip_vllm."""
+    def mtime(p):
+        try:
+            return p.stat().st_mtime
+        except OSError:
+            return 0
+    logs = sorted(config.LOG_DIR.glob("*.log"), key=mtime, reverse=True)
     skip = {config.PROXY_LOG.name, config.WHISPER_LOG.name,
             config.COMFY_LOG.name, config.TTS_LOG.name, "deck.log"}
     for p in logs:
-        if p.name not in skip:
-            return str(p)
+        if p.name in skip:
+            continue
+        if skip_vllm and is_vllm_log(p):
+            continue
+        return str(p)
     return None

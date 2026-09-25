@@ -205,6 +205,15 @@
   .mrow .micons { font-size:13px; letter-spacing:2px; flex:none; cursor:default; }
   .mrow .btns { margin-left:auto; display:flex; gap:6px; flex:none; }
   .mrow .meta { color:var(--muted); font-size:12px; margin:3px 0 0 20px; }
+  /* format badge: safetensors models need a vLLM backend, so say so on the row */
+  .fmtb { display:inline-block; padding:0 7px; border:1px solid color-mix(in srgb, var(--pink) 55%, transparent);
+          color:var(--pink); border-radius:8px; font-size:10.5px; white-space:nowrap; }
+  .kindb { display:inline-block; padding:0 6px; border:1px solid var(--border-dim); color:var(--muted);
+           border-radius:8px; font-size:10px; margin-left:6px; white-space:nowrap; }
+  .hf-fmt { margin-left:auto; display:flex; gap:6px; flex-wrap:wrap; }
+  .hf-fmt button.active::before { content:"✓ "; }   /* the sort tabs beside it are also "active" */
+  #hf-filelist .ro { display:flex; gap:8px; align-items:center; padding:3px 2px;
+                     border-bottom:1px solid var(--grid); }
 
   /* servers */
   .srow { padding:8px 2px; border-bottom:1px solid var(--grid);
@@ -536,12 +545,13 @@
         <span id="hf-mini" role="status"></span>
         <span class="meta" id="mm-count"></span></h2>
       <div style="display:flex; gap:8px; margin-bottom:6px; flex-wrap:wrap; align-items:center;">
-        <select id="backend-sel" title="which llama-server build to launch" aria-label="llama-server build"></select>
+        <select id="backend-sel" title="which backend (llama-server build or vLLM) to launch with" aria-label="Backend"
+          onchange="launchOptsSync()"></select>
         <select id="slots-sel" onchange="ctxPerSlot()" aria-label="Parallel slots">
           <option value="1">1 slot</option><option value="2">2 slots</option>
           <option value="4">4 slots</option><option value="8">8 slots</option>
         </select>
-        <label class="sub" title="total context budget in tokens — divided across slots">ctx
+        <label class="sub" id="ctx-lbl" title="total context budget in tokens — divided across slots">ctx
           <input id="ctx-in" class="pl-input" type="number" list="ctx-presets"
             step="1024" min="1024" max="1048576" value="64000" style="width:104px"
             oninput="ctxPerSlot()"></label>
@@ -566,7 +576,7 @@
           replace running instances</label>
       </div>
       <div id="models"></div>
-      <div class="advisory">👁 vision &nbsp;·&nbsp; 🎬 video (frames via proxy) &nbsp;·&nbsp; ⚡ MTP/NextN speculative &nbsp;·&nbsp; 💭 thinking (level set at launch) &nbsp;·&nbsp; 🧬 embedding &nbsp;·&nbsp; audio input works on every chat model via whisper</div>
+      <div class="advisory">👁 vision &nbsp;·&nbsp; 🎬 video (frames via proxy) &nbsp;·&nbsp; ⚡ MTP/NextN speculative &nbsp;·&nbsp; 💭 thinking (level set at launch) &nbsp;·&nbsp; 🧬 embedding &nbsp;·&nbsp; <span class="fmtb">safetensors</span> needs a vLLM backend &nbsp;·&nbsp; audio input works on every chat model via whisper</div>
       <div id="launch-status" role="status"></div>
       <pre class="logbox" id="launch-log" style="display:none"></pre>
     </div>
@@ -590,7 +600,7 @@
     </div>
 
     <div class="panel">
-      <h2>Llama.cpp inference <span class="meta" id="inf-build"></span></h2>
+      <h2>Inference <span class="meta" id="inf-build"></span></h2>
       <div class="advisory" id="inf-which" style="margin:-4px 0 6px"></div>
       <dl class="kv">
         <dt>Health</dt><dd id="inf-health">—</dd>
@@ -603,7 +613,7 @@
         <div class="barwrap"><div class="bar"><i id="b-pf"></i></div><span class="barpct" id="p-pf"></span></div></div>
       <div class="meter"><div class="row"><b>Decode t/s</b><span id="inf-dc">—</span></div>
         <div class="barwrap"><div class="bar"><i id="b-dc"></i></div><span class="barpct" id="p-dc"></span></div></div>
-      <div class="meter" id="inf-ctx-row"><div class="row"><b>Context (live prompt)</b><span id="inf-ctx">—</span></div>
+      <div class="meter" id="inf-ctx-row"><div class="row"><b id="inf-ctx-l">Context (live prompt)</b><span id="inf-ctx">—</span></div>
         <div class="barwrap"><div class="bar"><i id="b-ctx"></i></div><span class="barpct" id="p-ctx"></span></div></div>
       <div id="inf-insts" style="margin-top:8px"></div>
     </div>
@@ -746,6 +756,10 @@
       <button id="hfs-trending" onclick="hfSetSort('trending')">🔥 trending</button>
       <button id="hfs-downloads" onclick="hfSetSort('downloads')">⬇ top downloads</button>
       <button id="hfs-likes" onclick="hfSetSort('likes')">♥ most liked</button>
+      <span class="hf-fmt" role="group" aria-label="Model format">
+        <button id="hff-gguf" onclick="hfSetFormat('gguf')" title="GGUF files for llama.cpp">GGUF</button>
+        <button id="hff-hf" onclick="hfSetFormat('hf')" title="safetensors repos for vLLM — downloaded whole">vLLM (safetensors)</button>
+      </span>
     </div>
     <div id="hf-results"></div>
     <div id="hf-files" style="display:none">
@@ -940,7 +954,7 @@ let chKv=null;
       .trim().toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");};
   panels.forEach(p=>p.dataset.panel=slug(p));
   // panels renamed since a layout may have been saved: old slug -> new
-  const RENAMED={model:"cpu"};
+  const RENAMED={model:"cpu","llama-cpp-inference":"inference"};
   try{  // restore saved order; unknown/new panels keep their markup position
     const saved=JSON.parse(localStorage.getItem(LAYOUT_KEY)||"null");
     if(saved){
@@ -1012,8 +1026,8 @@ function applyConfig(cfg){
   // backend picker: keep the user's current pick across a re-apply
   const bs=$("backend-sel"), bcur=first?null:bs.value;
   bs.innerHTML=(CFG.backends||[]).map(b=>
-    `<option value="${escA(b)}"${b===(bcur||CFG.default_backend)?" selected":""}>backend: ${escH(b)}</option>`).join("")
-    || '<option value="">no llama-server configured</option>';
+    `<option value="${escA(b)}"${b===(bcur||CFG.default_backend)?" selected":""}>backend: ${escH(b)}${bkKind(b)==="vllm"?" (vLLM)":""}</option>`).join("")
+    || '<option value="">no backend configured</option>';
   // launch defaults: only on the first apply — a settings save must not
   // reset what the user has typed into the launch form
   const d=CFG.defaults||{};
@@ -1023,7 +1037,8 @@ function applyConfig(cfg){
     if(d.spec) $("spec-sel").value=d.spec;
     if(d.thinking) $("think-sel").value=d.thinking;
   }
-  ctxPerSlot();
+  launchOptsSync();
+  hfFormatSync();
   // multimodal panel
   $("mm-proxy").textContent="proxy :"+CFG.proxy_port;
   $("mm-links").innerHTML=(CFG.links||[]).map(l=>
@@ -1069,9 +1084,38 @@ function kvLegend(){
   $("kv-legend").dataset.sig=sig;
   $("kv-legend").innerHTML=(on.length?on.map(([p,i])=>
     `<span><i style="background:${KV_COLORS[i%KV_COLORS.length]}"></i>:${escH(p)}</span>`).join("")
-    :'<span class="sub">no llama instance on the charted ports yet</span>')
+    :'<span class="sub">no model instance on the charted ports yet</span>')
     +'<span class="sub" style="margin-left:auto">KV cache fill %</span>';
   if(chKv) chKv.setVisible(on.map(([,i])=>"kv"+(i+1)));
+}
+
+/* ---------- backend kinds ----------
+   A backend label maps to "llama.cpp" or "vllm" (/api/config backend_kinds;
+   an older deck sends none, so everything is llama.cpp). A model's format
+   says which kind can serve it: GGUF -> llama.cpp, safetensors (hf) -> vLLM. */
+const bkKind=b=>((CFG.backend_kinds||{})[b]==="vllm")?"vllm":"llama.cpp";
+const hasVllm=()=>(CFG.backends||[]).some(b=>bkKind(b)==="vllm");
+const modelKind=m=>m&&m.format==="hf"?"vllm":"llama.cpp";
+const instKind=i=>i&&i.kind==="vllm"?"vllm":"llama.cpp";
+const KIND_LBL={"vllm":"vLLM","llama.cpp":"llama.cpp"};
+// the launch form's options mean slightly different things on vLLM; keep
+// them all visible (each maps to a vLLM flag) but say what they do there
+const LAUNCH_TITLES={
+  "llama.cpp":{slots:"parallel slots (-np) — the context is divided across them",
+    ctx:"total context budget in tokens — divided across slots",
+    spec:"speculative decoding: use the model's MTP/NextN head when it has one",
+    think:"reasoning budget for models that support thinking"},
+  "vllm":{slots:"vLLM: max concurrent sequences (--max-num-seqs); KV memory is a shared pool",
+    ctx:"vLLM: max tokens per request (--max-model-len) — not divided across sequences",
+    spec:"vLLM: auto uses the model's MTP head when it has one; ngram/off as named",
+    think:"vLLM has no reasoning budget: low/medium/high all leave thinking on; "
+      +"off works only where the model's chat template can switch it off"},
+};
+function launchOptsSync(){
+  const k=bkKind($("backend-sel").value), t=LAUNCH_TITLES[k];
+  $("slots-sel").title=t.slots; $("ctx-lbl").title=t.ctx;
+  $("spec-sel").title=t.spec; $("think-sel").title=t.think;
+  ctxPerSlot();
 }
 
 /* ---------- helpers ---------- */
@@ -1167,7 +1211,15 @@ function renderSnapshot(s){
   $("mp-swap").textContent=fmt(s.mem.swap_pct)+"%";
   $("mp-gfx").textContent=fmt(s.gpu.util)+"%";
   const ll=s.llama||{};
-  $("mp-reqs").textContent=ll.live_active?"1":"0";
+  // llama stats come from the newest llama-server log; vLLM instances carry
+  // their own live numbers in the snapshot. With no llama.cpp instance up,
+  // the panels below describe a vLLM one (a busy one first).
+  const allI=s.llama_instances||[];
+  const vInsts=allI.filter(i=>instKind(i)==="vllm");
+  const vDesc=vInsts.length&&vInsts.length===allI.length
+    ?(vInsts.find(i=>i.running>0)||vInsts[0]):null;
+  const vRunning=vInsts.reduce((a,i)=>a+(+i.running||0),0);
+  $("mp-reqs").textContent=String((ll.live_active&&!vDesc?1:0)+vRunning);
   setBar("b-press","p-press",press); $("mp-pct").textContent=fmt(press)+"%";
   $("mp-advice").textContent=press>=90?"Headroom exhausted — do not load more models.":
     press>=70?"Headroom is getting tight; watch VRAM before loading more.":
@@ -1177,14 +1229,15 @@ function renderSnapshot(s){
   // models (e.g. 26B-A4B) only the active experts are read each token, so
   // parse "<total>B-A<active>B" from the name and scale the bytes down.
   $("rl-peak").textContent="peak "+s.gpu.peak_bw_gbs+" GB/s";
-  const cur=matchModel(ll.model,modelsCache);
-  let gb=cur?cur.vram_bytes/1073741824:null, moe="";
+  const cur=vDesc?(modelsCache.find(x=>x.name===vDesc.alias)||matchModel(vDesc.alias,modelsCache))
+    :matchModel(ll.model,modelsCache);
+  let gb=cur&&cur.vram_bytes?cur.vram_bytes/1073741824:null, moe="";
   if(cur&&gb){
     const tot=/(\d+(?:\.\d+)?)B/.exec(cur.name), act=/-A(\d+(?:\.\d+)?)B/i.exec(cur.name);
     if(tot&&act&&+act[1]<+tot[1]){ gb=gb*+act[1]/+tot[1]; moe=` (MoE: ${act[1]}B active)`; }
   }
   const ceil=gb?s.gpu.peak_bw_gbs/gb:null;
-  const dec=ll.decode_tps_weighted;
+  const dec=vDesc?vDesc.decode_tps:ll.decode_tps_weighted;
   $("rl-model").textContent=gb?fmt(gb)+" GiB/token"+moe:"—";
   $("rl-ceiling").textContent=ceil?fmt(ceil)+" tok/s":"—";
   $("rl-now").textContent=dec?fmt(dec)+" tok/s":"N/A";
@@ -1234,20 +1287,49 @@ function renderSnapshot(s){
 
   // inference: these stats come from the newest llama log, i.e. one
   // instance — say which, and list the rest compactly
-  $("inf-build").textContent=ll.build||"";
-  const insts=s.llama_instances||[];
-  const infI=ll.model?matchModel(ll.model,insts,i=>i.model_path||i.alias):null;
+  const insts=allI;
+  const infI=vDesc||(ll.model?matchModel(ll.model,insts.filter(i=>instKind(i)!=="vllm"),i=>i.model_path||i.alias):null);
+  $("inf-build").textContent=vDesc?`vLLM · ${vDesc.backend||"?"}`:(ll.build||"");
   $("inf-which").textContent=!insts.length?"no instance running":
-    infI?`describes :${infI.port}${insts.length>1?` (newest log) — ${insts.length} instances running`:""}`
-    :insts.length>1?`newest log — ${insts.length} instances running`:"";
-  const isig=JSON.stringify(insts.map(i=>[i.port,i.alias,i.kv_pct,i.kv_tokens,i.ctx_total]));
+    vDesc?`describes vLLM :${vDesc.port} (live from the server)${insts.length>1?` — ${insts.length} instances running`:""}`:
+    infI?`describes :${infI.port}${insts.length>1?` (newest llama.cpp log) — ${insts.length} instances running`:""}`
+    :insts.length>1?`newest llama.cpp log — ${insts.length} instances running`:"";
+  const isig=JSON.stringify(insts.map(i=>[i.port,i.alias,i.kind,i.kv_pct,i.kv_tokens,i.ctx_total??i.ctx,i.running,i.decode_tps]));
   if(insts.length>1&&$("inf-insts").dataset.sig!==isig){
     $("inf-insts").dataset.sig=isig;
-    $("inf-insts").innerHTML=insts.map(i=>`<div class="instrow"><span class="port">:${escH(i.port)}</span>`
+    $("inf-insts").innerHTML=insts.map(i=>{ const c=i.ctx_total??i.ctx, vl=instKind(i)==="vllm";
+      return `<div class="instrow"><span class="port">:${escH(i.port)}</span>`
+      +(vl?'<span class="kindb" style="margin:0">vLLM</span>':"")
       +`<span style="color:var(--ink-2);overflow-wrap:anywhere">${escH(i.alias||"?")}</span>`
-      +(i.ctx_total?`<span>ctx ${escH(ktok(i.ctx_total))}</span>`:"")
-      +(i.kv_pct!=null?`<span>kv ${fmt(i.kv_pct)}%</span>`:"")+`</div>`).join("");
+      +(c?`<span>ctx ${escH(ktok(+c))}</span>`:"")
+      +(i.kv_pct!=null?`<span>kv ${fmt(i.kv_pct)}%</span>`:"")
+      +(vl&&i.running!=null?`<span>${escH(i.running)} running</span>`:"")
+      +(vl&&i.decode_tps!=null?`<span>${fmt(i.decode_tps)} t/s</span>`:"")+`</div>`; }).join("");
   } else if(insts.length<=1){ $("inf-insts").innerHTML=""; $("inf-insts").dataset.sig=""; }
+  if(vDesc){
+    // a vLLM instance listed in the snapshot is one the deck found serving
+    const busy=vDesc.running>0;
+    $("inf-health").textContent="OK"; $("inf-health").style.color="var(--green)";
+    $("inf-status").textContent=busy?`Generating (${vDesc.running} running)`:"Idle";
+    $("inf-status").style.color=busy?"var(--green)":"var(--muted)";
+    $("inf-model").textContent=vDesc.alias||"—";
+    $("inf-reqs").textContent=vDesc.requests??"—";
+    $("inf-spec").textContent=vDesc.spec?specLabel(vDesc.spec):"none";
+    $("inf-pf").textContent=vDesc.prefill_tps!=null?fmt(vDesc.prefill_tps)+" t/s":"N/A";
+    setBar("b-pf",null,Math.min(100,(vDesc.prefill_tps||0)/8));
+    $("inf-dc").textContent=vDesc.decode_tps!=null?fmt(vDesc.decode_tps)+" t/s":"N/A";
+    setBar("b-dc",null,Math.min(100,(vDesc.decode_tps||0)));
+    // vLLM has no "live prompt" figure; its KV pool fill is the useful one
+    $("inf-ctx-l").textContent="KV cache";
+    const c=vDesc.ctx_total??vDesc.ctx;
+    $("inf-ctx").textContent=vDesc.kv_tokens!=null?`${Number(vDesc.kv_tokens).toLocaleString()} tok`
+      +(vDesc.kv_pct!=null?` · ${fmt(vDesc.kv_pct)}%`:""):vDesc.kv_pct!=null?fmt(vDesc.kv_pct)+"%"
+      :c?`max ${Number(c).toLocaleString()} tok/req`:"—";
+    setBar("b-ctx","p-ctx",vDesc.kv_pct||0);
+    if(vDesc.kv_pct==null) $("p-ctx").textContent="";
+    return;
+  }
+  $("inf-ctx-l").textContent="Context (live prompt)";
   $("inf-health").textContent=s.services.llama.up?"OK":"DOWN";
   $("inf-health").style.color=s.services.llama.up?"var(--green)":"var(--critical)";
   $("inf-status").textContent=ll.live_active?"Generating":"Idle";
@@ -1301,7 +1383,20 @@ function serverRow(host,{key,port,upState,label,detail,stop,start}){
 // exact when the value is a clean multiple of 1024, else full digits
 const specLabel=sp=>!sp?"\u2014":(sp==="?"?"\u26a1":"\u26a1"+String(sp).replace(/^draft-/,""));
 const ktok=n=>n%1024===0?(n/1024)+"k":n.toLocaleString();
+// a vLLM instance: its knobs are max-model-len / max-num-seqs, and it
+// reports live load (running requests, throughput) instead of launch flags
+function vllmSub(i){
+  const parts=[], ctx=i.ctx_total??i.ctx;
+  if(ctx) parts.push(`ctx ${escH(ktok(+ctx))}/req`+(i.slots?` · ${escH(i.slots)} seq${i.slots==1?"":"s"}`:""));
+  if(i.running!=null) parts.push(`<span style="color:${i.running>0?"var(--green)":"inherit"}">${escH(i.running)} running</span>`);
+  if(i.kv_tokens!=null) parts.push(`kv ${Number(i.kv_tokens).toLocaleString()}`+(i.kv_pct!=null?` (${fmt(i.kv_pct)}%)`:""));
+  else if(i.kv_pct!=null) parts.push(`kv ${fmt(i.kv_pct)}%`);
+  if(i.decode_tps!=null) parts.push(`${fmt(i.decode_tps)} t/s decode`);
+  if(i.spec) parts.push(`<span style="color:var(--green)">⚡${escH(String(i.spec).replace(/^draft-/,""))}</span>`);
+  return parts.join(" · ");
+}
 function llamaSub(i){
+  if(instKind(i)==="vllm") return vllmSub(i);
   const parts=[];
   if(i.ctx_total)
     parts.push(i.slots>1
@@ -1341,14 +1436,16 @@ function renderServers(s){
   for(const k in svcPending){ const p=svcPending[k];
     if(!!upNow[k]!==p.wasUp||Date.now()-p.t>30000) delete svcPending[k]; }
   const rows=[];
-  const perf=(up,pid,cpu,rss)=>up&&pid!=null?`pid ${escH(pid)} · ${fmt(cpu)}% · ${rssFmt(rss)}`:"";
+  // unknown cpu/rss (e.g. a vLLM worker the deck couldn't sample) are left out
+  const perf=(up,pid,cpu,rss)=>up&&pid!=null?[`pid ${escH(pid)}`,cpu!=null?fmt(cpu)+"%":"",
+    rss!=null?rssFmt(rss):""].filter(Boolean).join(" · "):"";
   // running first: llama instances, then the other services that are up
   for(const i of inst){
-    const key="llama:"+i.port;
+    const key="llama:"+i.port, vl=instKind(i)==="vllm";
     rows.push({key,port:i.port,upState:true,
-      label:`llama-server · ${i.backend||"?"}${i.alias?" · "+i.alias.slice(0,34):""}`,
+      label:`${vl?"vLLM":"llama-server"} · ${i.backend||"?"}${i.alias?" · "+String(i.alias).slice(0,34):""}`,
       detail:[llamaSub(i),perf(true,i.pid,i.cpu,i.rss)].filter(Boolean).join(" · "),
-      stop:()=>{if(confirm(`Stop llama on :${i.port}?\n${i.alias||""}`))
+      stop:()=>{if(confirm(`Stop ${vl?"vLLM":"llama"} on :${i.port}?\n${i.alias||""}`))
         svcAct(key,"stopping",`/api/llama/${i.port}/stop`,true);}});
   }
   const svcRow=([name,svc])=>({key:name,port:svc.port,upState:svc.up,label:svcLabel(name,svc),
@@ -1387,8 +1484,10 @@ function renderServers(s){
 // spell that out: an agent client (Claude Code) needs it all in one slot.
 function ctxPerSlot(){
   const ctx=parseInt($("ctx-in").value)||0, slots=+$("slots-sel").value||1;
+  // vLLM's --max-model-len is already per request (KV is a shared pool)
+  const vl=bkKind($("backend-sel").value)==="vllm";
   $("ctx-slot-note").textContent=
-    ctx?`= ${Math.floor(ctx/slots).toLocaleString()} tok/request`:"";
+    ctx?(vl?`= up to ${ctx.toLocaleString()} tok/request`:`= ${Math.floor(ctx/slots).toLocaleString()} tok/request`):"";
 }
 let servingPorts={};  // model display name -> llama port currently serving it
 let launching=false, launchPoll=null;
@@ -1430,7 +1529,9 @@ function renderModels(){
       sp.className="grpsep"; sp.textContent="not running"; host.appendChild(sp);
     }
     wasServing=!!port;
-    const g=(m.vram_bytes/1073741824).toFixed(1);
+    const g=m.vram_bytes!=null?(m.vram_bytes/1073741824).toFixed(1)+" GiB":"size ?";
+    const fmtB=m.format==="hf"?`<span class="fmtb" title="safetensors model — served by a vLLM backend">`
+      +`${escH(["safetensors",m.quant].filter(Boolean).join(" · "))}</span> · `:"";
     const icons=[
       m.vision?'<span title="vision — image input (mmproj)">👁<span class="vh"> vision</span></span>':null,
       m.vision?'<span title="video — frames extracted by the proxy">🎬<span class="vh"> video</span></span>':null,
@@ -1444,7 +1545,7 @@ function renderModels(){
         <span class="name">${escH(m.name)}</span>
         <span class="micons">${icons}</span>
         <span class="btns"></span></div>
-      <div class="meta">${port?`<span class="serving">serving on :${escH(port)}</span> · `:""}${g} GiB${m.source?" · "+escH(m.source):""}</div>`;
+      <div class="meta">${port?`<span class="serving">serving on :${escH(port)}</span> · `:""}${fmtB}${g}${m.source?" · "+escH(m.source):""}</div>`;
     const btn=document.createElement("button");
     btn.textContent=port?"Relaunch":"Launch"; if(port)btn.className="primary";
     btn.disabled=launching;
@@ -1465,8 +1566,8 @@ function renderModels(){
   }
 }
 async function doDelete(m){
-  const g=(m.vram_bytes/1073741824).toFixed(1);
-  if(!confirm(`PERMANENTLY delete from disk:\n${m.name} (${g} GiB)\n\nIts weights plus any mmproj/draft files beside it. This cannot be undone.`))return;
+  const g=m.vram_bytes!=null?(m.vram_bytes/1073741824).toFixed(1):"?";
+  if(!confirm(`PERMANENTLY delete from disk:\n${m.name} (${g} GiB)\n\n${m.format==="hf"?"Its model folder (weights, config, tokenizer).":"Its weights plus any mmproj/draft files beside it."} This cannot be undone.`))return;
   try{
     const r=await api("/api/models/delete","POST",{name:m.name});
     const n=(r.removed||[]).length;
@@ -1498,7 +1599,22 @@ function launchStatus(txt,kind){
 async function doLaunch(m){
   if(launching)return;
   const model=m.name, relaunch=!!servingPorts[model];
+  // a GGUF can't run on vLLM here, nor safetensors on llama.cpp: switch to
+  // the first backend that can serve it, or explain instead of sending a
+  // request the deck would only refuse
+  const want=modelKind(m);
+  if((CFG.backends||[]).length&&bkKind($("backend-sel").value)!==want){
+    const alt=(CFG.backends||[]).find(b=>bkKind(b)===want);
+    const what=want==="vllm"?"a safetensors model":"a GGUF model";
+    if(!alt){
+      toast(`${model} is ${what} — add a ${want==="vllm"?"vLLM":"llama-server"} backend in Settings`,"warn",{ms:9000});
+      return;
+    }
+    $("backend-sel").value=alt; launchOptsSync();
+    toast(`${model} is ${what} — using backend ${alt} (${KIND_LBL[want]})`,"",{ms:6000});
+  }
   const backend=$("backend-sel").value, slots=+$("slots-sel").value;
+  const vllm=bkKind(backend)==="vllm";
   const thinking=$("think-sel").value;
   const ctx=parseInt($("ctx-in").value)||0;
   const spec=$("spec-sel").value;
@@ -1508,10 +1624,11 @@ async function doLaunch(m){
     relaunch?`RESTARTS the instance on :${servingPorts[model]} with these settings (brief outage for it)`:
     already?"adds a NEW instance on the next free port (running ones stay up)":
     `starts on :${(CFG.llama_ports||[8081])[0]}`;
-  if(!confirm(`${relaunch?"Relaunch":"Launch"}:\n${model}\nbackend=${backend} · slots=${slots} · ctx=${ctx?ctx.toLocaleString():"default"} · thinking=${thinking} · spec=${spec}\n\n${modeTxt}`))return;
+  const VHINT="vLLM: first start compiles kernels, this can take several minutes";
+  if(!confirm(`${relaunch?"Relaunch":"Launch"}:\n${model}\nbackend=${backend}${vllm?" (vLLM)":""} · ${vllm?"max seqs":"slots"}=${slots} · ctx=${ctx?ctx.toLocaleString():"default"} · thinking=${thinking} · spec=${spec}\n\n${modeTxt}${vllm?"\n\n"+VHINT+".":""}`))return;
   launching=true; renderModels();
   $("launch-log").style.display="block"; $("launch-log").textContent="";
-  launchStatus(`launching ${model}…`);
+  launchStatus(`launching ${model}…`+(vllm?` — ${VHINT}`:""));
   const payload={model,backend,slots,thinking,spec,ctx,replace,relaunch};
   const post=b=>fetch("/api/llama/launch",{method:"POST",
     headers:{"Content-Type":"application/json"},body:JSON.stringify(b)});
@@ -1520,7 +1637,9 @@ async function doLaunch(m){
     let r=await post(payload);
     if(r.status===409){
       const d=await r.json().catch(()=>({})), msg=errText(d,"launch refused");
-      if(/VRAM/i.test(msg) && confirm(msg+"\n\nForce the launch anyway? (may hang the instance)"))
+      // vLLM preallocates its KV pool: its VRAM refusal ("stop a model or
+      // tick replace") is final, forcing it would only fail to start
+      if(/VRAM/i.test(msg) && !vllm && confirm(msg+"\n\nForce the launch anyway? (may hang the instance)"))
         r=await post({...payload,force:true});
       else { launchStatus("launch refused: "+msg,"err"); toast("launch refused: "+msg,"err",{ms:9000}); return; }
     }
@@ -1543,7 +1662,11 @@ async function doLaunch(m){
     catch(e){ return; }  // transient — keep polling
     finally{ busy=false; }
     setLogText($("launch-log"),(st.lines||[]).join("\n"));
-    if(st.running){ launchStatus(`launching ${model}… ${Math.round(st.elapsed||0)}s`); return; }
+    // no client-side timeout: a vLLM first start (torch.compile + CUDA
+    // graphs) can take many minutes, and the deck decides when it failed
+    if(st.running){ const s=Math.round(st.elapsed||0);
+      launchStatus(`launching ${model}… ${s>=60?Math.floor(s/60)+"m "+String(s%60).padStart(2,"0")+"s":s+"s"}`
+        +(vllm?` — ${VHINT}`:"")); return; }
     clearInterval(id); if(launchPoll===id)launchPoll=null;
     launching=false; renderModels(); loadModels().catch(()=>{});
     const ok=st.returncode===0||st.returncode==null;
@@ -1584,6 +1707,8 @@ setInterval(()=>{ if(!document.hidden&&$("view-bench").style.display!=="none"&&!
 let hfFilesData=[], hfRepo=null, hfPoll=null, hfPollMs=0, hfSort="trending", hfLoaded=false;
 let hfSearchSeq=0, hfFilesSeq=0;   // newest request wins; stale replies are dropped
 const gib=b=>(b/1073741824).toFixed(2)+" GiB";
+// a whole repo lists configs and tokenizers too: "0.00 GiB" says nothing
+const hsize=b=>b>=1073741824?gib(b):b>=1048576?(b/1048576).toFixed(1)+" MiB":Math.max(1,Math.round(b/1024))+" KiB";
 function hfIcons(caps){
   if(!caps) return "";
   return [
@@ -1656,22 +1781,45 @@ $("hf-dialog").addEventListener("close",()=>hfPollStatus(5000));
 // a scrolled list leaves the tip pointing at the wrong row
 $("hf-dialog").addEventListener("scroll",hfTipHide,true);
 function hfBack(){ hfTipHide(); hfFilesSeq++; $("hf-files").style.display="none"; $("hf-results").style.display="block"; }
+/* GGUF (llama.cpp, pick files) or safetensors (vLLM, the whole repo). The
+   choice is remembered; safetensors is offered only with a vLLM backend. */
+let hfFormat=(()=>{try{return localStorage.getItem("nd-hf-format")==="hf"?"hf":"gguf";}catch(e){return "gguf";}})();
+let hfFilesFmt="gguf";            // the format the open repo was listed in
+const hfFmt=()=>hfFormat==="hf"&&hasVllm()?"hf":"gguf";
+function hfFormatSync(){
+  const f=hfFmt(), b=$("hff-hf");
+  b.disabled=!hasVllm();
+  b.title=hasVllm()?"safetensors repos for vLLM — downloaded whole"
+    :"add a vLLM backend in Settings to download safetensors models";
+  for(const x of ["gguf","hf"]){ $("hff-"+x).classList.toggle("active",x===f);
+    $("hff-"+x).setAttribute("aria-pressed",x===f); }
+  $("hf-q").placeholder=f==="hf"?"search safetensors repos for vLLM… (empty = browse the hub)"
+    :"search GGUF repos… (empty = browse the hub)";
+}
+function hfSetFormat(f){
+  if(f==="hf"&&!hasVllm())return;
+  const was=hfFmt(); hfFormat=f;
+  try{localStorage.setItem("nd-hf-format",f);}catch(e){}
+  hfFormatSync();
+  if(hfFmt()!==was) hfSearch();
+}
 function hfSetSort(s){ hfSort=s;
   for(const x of ["trending","downloads","likes"]){
     $("hfs-"+x).classList.toggle("active",x===s); $("hfs-"+x).setAttribute("aria-pressed",x===s);}
   hfSearch(); }
 async function hfSearch(){
-  const q=$("hf-q").value.trim(), seq=++hfSearchSeq;
+  const q=$("hf-q").value.trim(), seq=++hfSearchSeq, fmtQ=hfFmt();
   $("hf-results").innerHTML='<div class="advisory">'+(q?"searching…":"browsing the hub…")+'</div>';
   $("hf-results").style.display="block"; $("hf-files").style.display="none"; hfFilesSeq++;
   let d;
   try{ d=await api("/api/hf/search?q="+encodeURIComponent(q)+"&sort="+encodeURIComponent(hfSort)
-         +"&limit="+(q?20:30),"GET",undefined,{quiet:true}); }
+         +"&limit="+(q?20:30)+"&format="+fmtQ,"GET",undefined,{quiet:true}); }
   catch(e){ if(seq===hfSearchSeq) $("hf-results").innerHTML=
     `<div class="advisory">search failed: ${escH(e.message)}</div>`; return; }
   if(seq!==hfSearchSeq)return;
   hfLoaded=true;
-  $("hf-results").innerHTML=d.results.length?"":'<div class="advisory">no GGUF repos found</div>';
+  d.results=d.results||[];
+  $("hf-results").innerHTML=d.results.length?"":`<div class="advisory">no ${fmtQ==="hf"?"safetensors":"GGUF"} repos found</div>`;
   for(const r of d.results){
     // a focusable row: Enter/Space open it like a click
     const row=document.createElement("div"); row.className="mrow hfrow"; row.style.cursor="pointer";
@@ -1692,7 +1840,9 @@ async function hfSearch(){
 }
 async function hfShowFiles(repo){
   const seq=++hfFilesSeq;
-  hfRepo=repo; hfFilesData=[];
+  hfRepo=repo; hfFilesData=[]; hfFilesFmt=hfFmt(); hfSnap=null;
+  const snap=hfFilesFmt==="hf";
+  $("hf-dl").textContent=snap?"⬇ Download whole repo":"⬇ Queue download";
   $("hf-repo-name").innerHTML=escH(repo)+' <span class="micons" id="hf-repo-icons"></span>';
   $("hf-repo-desc").innerHTML='<span class="sub">loading model card…</span>';
   hfCard(repo).then(c=>{
@@ -1705,13 +1855,15 @@ async function hfShowFiles(repo){
   $("hf-results").style.display="none"; $("hf-files").style.display="block";
   $("hf-filelist").innerHTML='<div class="advisory">listing files…</div>'; hfSel();
   let d;
-  try{ d=await api("/api/hf/files?repo="+encodeURIComponent(repo),"GET",undefined,{quiet:true}); }
+  try{ d=await api("/api/hf/files?repo="+encodeURIComponent(repo)+(snap?"&format=hf":""),"GET",undefined,{quiet:true}); }
   catch(e){ if(seq===hfFilesSeq) $("hf-filelist").innerHTML=
     `<div class="advisory">file listing failed: ${escH(e.message)}</div>`; return; }
   // the user went back or opened another repo while this was loading
   if(seq!==hfFilesSeq||repo!==hfRepo)return;
+  d.files=d.files||[];
   hfFilesData=d.files;
   $("hf-repo-icons").innerHTML=hfIcons(d.caps);
+  if(snap){ hfShowSnapshot(d); return; }
   $("hf-filelist").innerHTML=d.files.length?"":'<div class="advisory">no .gguf files in this repo</div>';
   const rec=hfRecommend(d.files);
   hfAuto={done:false, touched:new Set(), rec, added:[]};
@@ -1732,6 +1884,29 @@ async function hfShowFiles(repo){
     $("hf-filelist").appendChild(row);
   });
   hfSel();
+}
+/* vLLM loads a model from the whole repo folder (config, tokenizer, every
+   weight shard), so there is nothing to pick: list what will come down,
+   read-only, and offer one button for all of it */
+let hfSnap=null;                   // {total} for the open safetensors repo
+function hfShowSnapshot(d){
+  const total=d.total_bytes||d.files.reduce((a,f)=>a+(f.size||0),0);
+  hfSnap={total};
+  const fl=$("hf-filelist");
+  fl.innerHTML=d.files.length?"":'<div class="advisory">this repo lists no files</div>';
+  if(d.files.length) fl.insertAdjacentHTML("beforeend",
+    `<div class="sub" style="margin-bottom:4px">${escH(d.files.length)} file(s) · ${escH(gib(total))}`
+    +(d.quant?` · quant <span style="color:var(--yellow)">${escH(d.quant)}</span>`:"")
+    +" — the whole repo is downloaded; vLLM needs every file</div>");
+  for(const f of d.files){
+    fl.insertAdjacentHTML("beforeend",`<div class="ro">
+      <span style="color:var(--ink-2);overflow-wrap:anywhere;min-width:0">${escH(f.name)}</span>
+      <span style="flex:1"></span>
+      <span style="color:var(--green);white-space:nowrap">${escH(hsize(f.size||0))}</span></div>`);
+  }
+  $("hf-dl").textContent=`⬇ Download whole repo (${gib(total)})`;
+  $("hf-dl").disabled=!d.files.length;
+  $("hf-selinfo").textContent=d.files.length?`for vLLM · saved to ${CFG.download_dir||"the model directory"}`:"";
 }
 /* what each file in a repo is for — mirrors models.py's HELPER_RE / DRAFT_RE,
    so what's recommended here is what discovery will pair after download */
@@ -1787,6 +1962,11 @@ function hfSelected(){
   return [...document.querySelectorAll('#hf-filelist input:checked')].map(c=>hfFilesData[+c.dataset.i]).filter(Boolean);
 }
 function hfSel(){
+  if(hfFilesFmt==="hf"){          // snapshot view: nothing is selectable
+    $("hf-dl").disabled=!hfSnap||!hfFilesData.length;
+    if(!hfSnap) $("hf-selinfo").textContent="";
+    return;
+  }
   const sel=hfSelected(), tot=sel.reduce((a,f)=>a+f.size,0);
   $("hf-dl").disabled=!sel.length;
   // say what was ticked on the user's behalf, while it's still ticked
@@ -1797,6 +1977,22 @@ function hfSel(){
     :"pick one quant · the recommended mmproj (image input) and MTP head (faster decoding) come with it";
 }
 async function hfDownload(){
+  if(hfFilesFmt==="hf"){
+    if(!hfSnap)return;
+    const total=hfSnap.total, repo=hfRepo;
+    if(!confirm(`Download the whole repo ${repo} for vLLM:\n${hfFilesData.length} file(s), ${gib(total)}`
+      +`\n\n→ ${CFG.download_dir||"the model directory"}`))return;
+    $("hf-dl").disabled=true;
+    let r;
+    try{ r=await api("/api/hf/download","POST",{repo,snapshot:true,total_bytes:total}); }
+    catch(e){ hfSel(); return; }
+    hfSel();
+    if(repo===hfRepo) $("hf-selinfo").textContent=r.position>1
+      ? `queued at position ${r.position} — keep browsing to add more`
+      : "started — keep browsing to add more";
+    hfPollStatus($("hf-dialog").open?1500:5000);
+    return;
+  }
   const sel=hfSelected(); if(!sel.length)return;
   const total=sel.reduce((a,f)=>a+f.size,0);
   if(!confirm(`Queue download from ${hfRepo}:\n${sel.map(f=>f.name).join("\n")}`
@@ -1831,7 +2027,7 @@ async function hfTick(){
   const pct=st.total_bytes?Math.min(100,st.done_bytes/st.total_bytes*100):0;
   // header indicator, visible with the modal closed
   $("hf-mini").textContent=st.active?`⬇ ${pct.toFixed(0)}%`+(q.length?` +${q.length} queued`:""):"";
-  $("hf-mini").title=st.active?`downloading ${st.repo||""} — ${gib(st.done_bytes)} / ${gib(st.total_bytes)}`:"";
+  $("hf-mini").title=st.active?`downloading ${st.repo||""}${st.snapshot?" (whole repo)":""} — ${gib(st.done_bytes||0)} / ${st.total_bytes?gib(st.total_bytes):"?"}`:"";
   // a job finished (the active id changed or went idle): refresh models once
   if(hfPrevActive&&(!st.active||st.id!==hfPrevActive)&&hfPrevActive!==hfLastDone){
     hfLastDone=hfPrevActive; loadModels().catch(()=>{});
@@ -1846,7 +2042,8 @@ async function hfTick(){
   $("hf-prog-label").textContent=(st.active?"downloading ":"")+(st.repo||"");
   $("hf-prog-bar").style.width=pct+"%";
   $("hf-prog-pct").textContent=pct.toFixed(1)+"%";
-  $("hf-prog-v").textContent=`${gib(st.done_bytes)} / ${gib(st.total_bytes)}`
+  // a whole-repo job may start before its size is known
+  $("hf-prog-v").textContent=(st.total_bytes?`${gib(st.done_bytes)} / ${gib(st.total_bytes)}`:`${gib(st.done_bytes||0)} so far`)
     +(st.active?"":" · done (exit "+st.returncode+")");
   setLogText($("hf-log"),(st.lines||[]).join("\n"));
   $("hf-cancel").style.display=st.active?"":"none";
@@ -1858,7 +2055,7 @@ async function hfTick(){
         +q.map((j,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:2px 0;flex-wrap:wrap">
             <span class="sub">${i+1}.</span>
             <span style="color:var(--ink-2);overflow-wrap:anywhere;min-width:0">${escH(j.name)}</span>
-            <span class="sub">${gib(j.total_bytes)} · ${escH(j.files)} file(s)</span>
+            <span class="sub">${j.total_bytes?gib(j.total_bytes):"size ?"} · ${j.snapshot||!j.files?"whole repo":escH(j.files)+" file(s)"}</span>
             <span style="flex:1"></span>
             <button class="danger" style="padding:0 7px" data-id="${escA(j.id)}"
               aria-label="Remove ${escA(j.name)} from the queue" title="remove from queue">✕</button></div>`).join("")
@@ -1899,7 +2096,7 @@ function progFrac(p){
 }
 async function streamChat(body,cb={},signal){
   const t0=performance.now();
-  let tFirst=null,timings=null,acc="",think="",served=null,err=null;
+  let tFirst=null,timings=null,acc="",think="",served=null,err=null,usage=null,nTok=0;
   const r=await fetch("/api/chat",{method:"POST",
     headers:{"Content-Type":"application/json"},
     body:JSON.stringify(body),signal});
@@ -1919,17 +2116,22 @@ async function streamChat(body,cb={},signal){
     if(j.error){ err=errText(j,"stream error"); return; }
     if(j.model)served=j.model;
     if(j.timings)timings=j.timings;
+    // stream_options.include_usage: the final chunk carries token counts
+    if(j.usage)usage=j.usage;
     if(j.prompt_progress!=null&&cb.onProgress){ const f=progFrac(j.prompt_progress);
       if(f!=null&&f<1)cb.onProgress(f); }
     const del=j.choices?.[0]?.delta||{};
-    if(del.reasoning_content){
+    // llama.cpp says reasoning_content; vLLM's reasoning parser says
+    // reasoning (older builds reasoning_content) — take one, never both
+    const rc=del.reasoning_content??del.reasoning;
+    if(rc){
       if(tFirst===null)tFirst=performance.now();
-      think+=del.reasoning_content;
+      think+=rc; nTok++;
       if(cb.onThink)cb.onThink(think);
     }
     if(del.content){
       if(tFirst===null)tFirst=performance.now();
-      acc+=del.content;
+      acc+=del.content; nTok++;
       if(cb.onText)cb.onText(acc);
     }
   };
@@ -1953,23 +2155,52 @@ async function streamChat(body,cb={},signal){
     while((i=buf.indexOf("\n\n"))>=0){
       const chunk=buf.slice(0,i); buf=buf.slice(i+2); event(chunk);
     }
-    if(cb.onTick)cb.onTick({t0,tFirst,timings,acc});
+    if(cb.onTick)cb.onTick({t0,tFirst,timings,acc,
+      est:timings?null:clientTimings(t0,tFirst,performance.now(),usage,nTok)});
   }
   buf=buf.replace(/\r\n?/g,"\n");
   if(buf.trim()) event(buf);   // a final event without the trailing blank line
-  return {t0,tFirst,timings,text:acc,think,served,err,
-          wall:(performance.now()-t0)/1000};
+  const tEnd=performance.now();
+  return {t0,tFirst,timings,text:acc,think,served,err,usage,
+          est:timings?null:clientTimings(t0,tFirst,tEnd,usage,nTok),
+          wall:(tEnd-t0)/1000};
+}
+/* Servers without llama.cpp's `timings` (vLLM): measure from the stream.
+   TTFT = first content/reasoning delta; tokens from the usage chunk, else
+   one per delta (a close count for token-by-token streaming). Shaped like
+   llama timings so every consumer reads one format; est:true marks it. */
+function clientTimings(t0,tFirst,tEnd,usage,nTok){
+  if(tFirst==null)return null;
+  const ttft=(tFirst-t0)/1000, gen=(tEnd-tFirst)/1000;
+  const pn=usage&&usage.prompt_tokens!=null?+usage.prompt_tokens:null;
+  const cn=usage&&usage.completion_tokens!=null?+usage.completion_tokens:(nTok||null);
+  return {est:true, fromUsage:!!(usage&&usage.completion_tokens!=null),
+    prompt_n:pn, predicted_n:cn,
+    prompt_per_second:pn!=null&&ttft>0?pn/ttft:null,
+    // a rate over a sliver of time is noise (and early ticks of a stream)
+    predicted_per_second:cn&&gen>=0.2?cn/gen:null};
+}
+// the instance a request went to, for the bench record's backend/kind
+function benchInst(res,body){
+  const insts=(lastSnap&&lastSnap.llama_instances)||[];
+  const name=res.served||body.model;
+  return (name&&(insts.find(i=>i.alias===name)||matchModel(name,insts,i=>i.alias||"")))
+    ||(!body.model&&insts.length===1?insts[0]:null);
 }
 function postBench(kind,res,body){
-  if(!res||!res.timings||res.err)return Promise.resolve();
-  const tm=res.timings;
-  return fetch("/api/bench",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({kind,model:res.served||body.model||"auto",
-      prompt_n:tm.prompt_n,predicted_n:tm.predicted_n,
-      prompt_tps:tm.prompt_per_second,decode_tps:tm.predicted_per_second,
+  const tm=res&&(res.timings||res.est);
+  if(!tm||res.err)return Promise.resolve();
+  const inst=benchInst(res,body), rec={kind,model:res.served||body.model||"auto",
+      prompt_n:tm.prompt_n??null,predicted_n:tm.predicted_n??null,
+      prompt_tps:tm.prompt_per_second??null,decode_tps:tm.predicted_per_second??null,
       ttft_ms:res.tFirst!=null?Math.round(res.tFirst-res.t0):null,
       wall_s:res.wall,temp:body.temperature,max_tokens:body.max_tokens,
-      draft_n:tm.draft_n,draft_acc:tm.draft_n_accepted})}).catch(()=>{});
+      draft_n:tm.draft_n??null,draft_acc:tm.draft_n_accepted??null};
+  // "kind" already names the run type (lab/std), so the serving engine
+  // goes in backend_kind
+  if(inst){ if(inst.backend)rec.backend=inst.backend; rec.backend_kind=instKind(inst); }
+  return fetch("/api/bench",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(rec)}).catch(()=>{});
 }
 
 /* ---------- prompt lab ---------- */
@@ -2065,6 +2296,7 @@ function plBench(t0,tFirst,tm,charCount,wall){
     if(tm.predicted_n!=null) rows.push(["Generated",tm.predicted_n.toLocaleString()]);
     if(tm.draft_n) rows.push(["Draft accept",
       ((tm.draft_n_accepted||0)/tm.draft_n*100).toFixed(0)+"% ("+(tm.draft_n_accepted||0)+"/"+tm.draft_n+")"]);
+    if(tm.est) rows.push(["Measured","client-side"+(tm.fromUsage?" (usage counts)":" (tokens ≈ deltas)")]);
   }
   if(tFirst!=null&&charCount>0){
     const gs=((wall!=null?t0+wall*1000:performance.now())-tFirst)/1000;
@@ -2081,7 +2313,8 @@ async function plSend(){
   const sys=$("pl-sys").value.trim(); if(sys)msgs.push({role:"system",content:sys});
   msgs.push({role:"user",content:prompt});
   // return_progress makes llama.cpp stream prompt_progress during prefill
-  const body={messages:msgs,stream:true,timings_per_token:true,return_progress:true};
+  const body={messages:msgs,stream:true,timings_per_token:true,return_progress:true,
+    stream_options:{include_usage:true}};  // usage: token counts where there are no llama timings
   if($("pl-model").value)body.model=$("pl-model").value;
   const t=parseFloat($("pl-temp").value); if(!isNaN(t))body.temperature=t;
   const mt=parseInt($("pl-max").value); if(mt>0)body.max_tokens=mt;
@@ -2099,7 +2332,7 @@ async function plSend(){
         th.style.display=""; th.textContent=t;
         if(stick)th.scrollTop=th.scrollHeight;},
       onText:t=>{plOutSet(t); st.textContent="generating…";},
-      onTick:s=>plBench(s.t0,s.tFirst,s.timings,s.acc.length,null),
+      onTick:s=>plBench(s.t0,s.tFirst,s.timings||s.est,s.acc.length,null),
     },plAbort.signal);
     if(res.err){ errMsg=res.err; plOutSet((res.text?res.text+"\n\n":"")+"[error] "+res.err); }
   }catch(e){
@@ -2110,10 +2343,10 @@ async function plSend(){
   plAbort=null; plValid(); $("pl-stop").style.display="none";
   if(errMsg){
     st.textContent="error"+(res?" · "+res.wall.toFixed(1)+"s":""); st.style.color="var(--critical)";
-    if(res)plBench(res.t0,res.tFirst,res.timings,res.text.length,res.wall);
+    if(res)plBench(res.t0,res.tFirst,res.timings||res.est,res.text.length,res.wall);
   }else if(res){
     st.textContent=(aborted?"stopped":"done")+" · "+res.wall.toFixed(1)+"s";
-    plBench(res.t0,res.tFirst,res.timings,res.text.length,res.wall);
+    plBench(res.t0,res.tFirst,res.timings||res.est,res.text.length,res.wall);
     if(!aborted)postBench("lab",res,body);
   }else{
     st.textContent=aborted?"stopped":"error";
@@ -2142,17 +2375,21 @@ async function benchRun(){
   benchBusy=true; bnValid();
   $("bn-status").textContent="running standard bench on "+model.slice(0,40)+"…";
   const body={model,messages:[{role:"user",content:BENCH_PROMPT}],
-    stream:true,timings_per_token:true,return_progress:true,temperature:0,max_tokens:320};
+    stream:true,timings_per_token:true,return_progress:true,temperature:0,max_tokens:320,
+    stream_options:{include_usage:true}};
   try{
     const res=await streamChat(body,{
       onProgress:p=>$("bn-status").textContent="prefill "+(p*100).toFixed(0)+"%",
       onTick:s=>{if(s.tFirst)$("bn-status").textContent="generating… "+s.acc.length+" chars";},
     });
     if(res.err)throw new Error(res.err);
-    if(!res.timings)throw new Error("no timings in response");
+    // no llama timings (vLLM): fall back to what the stream itself shows
+    const tm=res.timings||res.est;
+    if(!tm)throw new Error("no tokens in the response");
     await postBench("std",res,body);
     $("bn-status").textContent="done · "+res.wall.toFixed(1)+"s — decode "
-      +(res.timings.predicted_per_second||0).toFixed(1)+" tok/s";
+      +(tm.predicted_per_second!=null?tm.predicted_per_second.toFixed(1)+" tok/s":"—")
+      +(tm.est?" (measured client-side)":"");
     benchBusy=false; await benchLoad();
   }catch(e){$("bn-status").textContent="failed: "+e.message;}
   benchBusy=false; bnValid();
@@ -2235,7 +2472,8 @@ function benchChart(aggs){
       +`${escH(name)}${tags}</text></g>`;
     s+=T(LABW-6,ly,`×${a.n}`,"var(--muted)","end");
     for(const c of cols){
-      const v=a[c.key]||0;
+      const v=a[c.key];
+      if(v==null){ s+=T(c.x+COLW,mid+3.5,"—","var(--muted)","end"); continue; }   // unmeasured: no bar
       const w=Math.max(1,c.barW*(v/c.max));
       s+=`<rect x="${c.x}" y="${mid-4}" width="${w.toFixed(1)}" height="8" rx="2" fill="${c.color}"/>`;
       s+=T(c.x+COLW,mid+3.5,v.toFixed(c.dp),"var(--ink-2)","end");
@@ -2315,17 +2553,19 @@ function renderBench(){
                  .map(r=>r.draft_acc/r.draft_n*100);
     return {model:String(rs[0].model||""),backend:rs[0].backend||"—",
       spec:rs[0].spec||(accs.length?"?":null), acc:accs.length?median(accs):null, n:rs.length,
-      pf:nums("prompt_tps").length?median(nums("prompt_tps")):0,
-      dc:nums("decode_tps").length?median(nums("decode_tps")):0,
+      // null = no run in the group measured it (e.g. a client-side run
+      // without usage counts): shown as "—", never as a fake 0
+      pf:nums("prompt_tps").length?median(nums("prompt_tps")):null,
+      dc:nums("decode_tps").length?median(nums("decode_tps")):null,
       ttft:nums("ttft_ms").length?median(nums("ttft_ms")):null,
       best:nums("decode_tps").length?Math.max(...nums("decode_tps")):null};
   });
   // keep a model's backends adjacent so atomic vs vanilla reads as a
   // comparison; order models by their best backend, fastest first
   const bestOf={};
-  for(const a of aggs) bestOf[a.model]=Math.max(bestOf[a.model]??0,a.dc);
+  for(const a of aggs) bestOf[a.model]=Math.max(bestOf[a.model]??0,a.dc??0);
   aggs.sort((x,y)=> (bestOf[y.model]-bestOf[x.model])
-    || x.model.localeCompare(y.model) || (y.dc-x.dc));
+    || x.model.localeCompare(y.model) || ((y.dc??0)-(x.dc??0)));
   benchChart(aggs);
   $("bn-count").textContent=`· ${runs.length} run(s) across ${aggs.length} model/backend pair(s)`
     +(runs.length>150?" — newest 150 listed":"")+", newest first";
@@ -2338,7 +2578,7 @@ function renderBench(){
      <td style="color:${a.spec?"var(--green)":"var(--muted)"}">${escH(specLabel(a.spec))}</td>
      <td class="num">${a.acc!=null?a.acc.toFixed(0)+"%":"—"}</td><td class="num">${a.n}</td>
      <td class="num">${a.ttft!=null?(a.ttft/1000).toFixed(2)+"s":"—"}</td>
-     <td class="num">${a.pf.toFixed(0)}</td><td class="num">${a.dc.toFixed(1)}</td>
+     <td class="num">${a.pf!=null?a.pf.toFixed(0):"—"}</td><td class="num">${a.dc!=null?a.dc.toFixed(1):"—"}</td>
      <td class="num">${a.best!=null?a.best.toFixed(1):"—"}</td></tr>`).join(""));
   setBody("bn-runs",[...runs].reverse().slice(0,150).map(r=>{
     const d=new Date((r.ts||0)*1000);
@@ -2376,7 +2616,9 @@ const FP_HINTS={
   whisper_bin:["Choose the whisper-server binary","the whisper.cpp server executable"],
   whisper_model:["Choose a Whisper model","a ggml-*.bin model file",".bin"],
   ffmpeg:["Choose the ffmpeg binary","the ffmpeg executable (only needed for video input)"],
-  backends:["Choose a llama-server binary","the llama-server executable for this build"],
+  // no extension filter: llama-server, llama-server.exe, or vLLM's `vllm`
+  // entry point (e.g. <venv>/bin/vllm) must all be pickable
+  backends:["Choose a backend executable","a llama-server binary, or the vllm executable (e.g. <venv>/bin/vllm)"],
 };
 function stStatus(txt,kind){ const d=$("st-dirty"); d.textContent=txt; d.className="sub"+(kind?" "+kind:""); }
 function stDirtyNote(){
@@ -2545,7 +2787,9 @@ function stControl(f){
     const m=v||{};
     Object.entries(m).forEach(([label,path])=>{
       const r=document.createElement("div"); r.className="pathrow";
-      r.innerHTML=`<span style="color:var(--cyan);flex:none;min-width:90px;max-width:40%;overflow-wrap:anywhere">${escH(label)}</span>`
+      // the deck decides a backend's kind (from the path); show it once known
+      const kb=f.key==="backends"&&(CFG.backend_kinds||{})[label]==="vllm"?'<span class="kindb">vLLM</span>':"";
+      r.innerHTML=`<span style="color:var(--cyan);flex:none;min-width:90px;max-width:40%;overflow-wrap:anywhere">${escH(label)}${kb}</span>`
         +`<span class="p${missing(path)?" gone":""}">${escH(path)}`
         +`${missing(path)?' <span class="badge missing">not found</span>':""}</span>`;
       if(!dis){
@@ -2563,7 +2807,7 @@ function stControl(f){
       name.placeholder="label (e.g. upstream)"; name.style.cssText="flex:0 1 180px;width:180px";
       name.setAttribute("aria-label","New entry label");
       const path=document.createElement("input"); path.type="text";
-      path.placeholder="path to llama-server"; path.style.flex="1 1 200px";
+      path.placeholder=f.key==="backends"?"path to llama-server or vllm":"path"; path.style.flex="1 1 200px";
       path.setAttribute("aria-label","New entry path");
       const br=document.createElement("button"); br.textContent="browse…";
       br.onclick=()=>fpOpen(path.value,picked=>{path.value=picked; ok();},
@@ -2800,7 +3044,10 @@ function kvTrack(insts){
     kvTrack(s.llama_instances);
     try{ renderSnapshot(s); }catch(e){ console.error(e); }
     chUtil.push(s.ts,{cpu:s.cpu.util,gpu:s.gpu.util||0});
-    chTps.push(s.ts,{prefill:ll.prefill_tps_weighted||0,decode:ll.decode_tps_weighted||0});
+    // vLLM instances report throughput in the snapshot, not in the llama log
+    const vsum=k=>(s.llama_instances||[]).reduce((a,i)=>a+(instKind(i)==="vllm"&&i[k]>0?+i[k]:0),0);
+    chTps.push(s.ts,{prefill:(ll.prefill_tps_weighted||0)+vsum("prefill_tps"),
+                     decode:(ll.decode_tps_weighted||0)+vsum("decode_tps")});
     chVram.push(s.ts,{vram:s.gpu.vram_used_gb});
     chTemp.push(s.ts,{gpu_temp:s.gpu.temp});
     const byPort={}; for(const i of (s.llama_instances||[])) byPort[i.port]=i;

@@ -336,6 +336,13 @@ def _compute(src: dict = None, make_dirs: bool = True) -> dict:
     THREADS = _int("threads", 0)  # 0 = physical core count
     EXTRA_LLAMA_ARGS = _cmd("extra_llama_args", [])
 
+    # ── vLLM (a backend whose executable is `vllm`) ────────────────────────────
+    VLLM_EXTRA_ARGS = _cmd("vllm_extra_args", [])
+    VLLM_KV_CACHE_DTYPE = str(get("vllm_kv_cache_dtype", "auto")).strip() or "auto"
+    # Ceiling for --gpu-memory-utilization; the launcher sizes each vLLM
+    # instance to the VRAM actually free, never above this.
+    VLLM_GPU_FRAC_MAX = min(0.98, max(0.5, _float("vllm_gpu_frac_max", 0.92)))
+
     # ── dashboard tuning ───────────────────────────────────────────────────────
     # Memory bandwidth for the roofline panel. The default is a dual-channel
     # DDR5 figure; set it to your GPU's (or APU's) real peak for the ceiling
@@ -409,6 +416,9 @@ def _compute(src: dict = None, make_dirs: bool = True) -> dict:
         'FLASH_ATTN': FLASH_ATTN,
         'THREADS': THREADS,
         'EXTRA_LLAMA_ARGS': EXTRA_LLAMA_ARGS,
+        'VLLM_EXTRA_ARGS': VLLM_EXTRA_ARGS,
+        'VLLM_KV_CACHE_DTYPE': VLLM_KV_CACHE_DTYPE,
+        'VLLM_GPU_FRAC_MAX': VLLM_GPU_FRAC_MAX,
         'PEAK_BW_GBS': PEAK_BW_GBS,
         'VRAM_TOTAL_GB_FALLBACK': VRAM_TOTAL_GB_FALLBACK,
         'HISTORY_LEN': HISTORY_LEN,
@@ -471,6 +481,23 @@ def on_reload(fn):
     return fn
 
 
+VLLM_NAMES = {"vllm", "vllm.exe"}
+
+
+def backend_kind(path) -> str:
+    """"vllm" for a backend whose executable is vLLM's CLI, else "llama.cpp".
+
+    The executable's name is the whole test: a llama-server build can be
+    called anything, but vLLM is always started through its `vllm` script.
+    """
+    name = os.path.basename(str(path or "").rstrip("/\\")).lower()
+    return "vllm" if name in VLLM_NAMES else "llama.cpp"
+
+
+def backend_kinds() -> dict:
+    return {label: backend_kind(path) for label, path in BACKENDS.items()}
+
+
 def summary() -> dict:
     """Everything worth printing in `neuraldeck doctor`."""
     return {
@@ -486,6 +513,7 @@ def summary() -> dict:
         "llama_ports": LLAMA_PORT_RANGE,
         "model_dirs": MODEL_DIRS,
         "backends": BACKENDS,
+        "backend_kinds": backend_kinds(),
         "whisper_bin": WHISPER_BIN,
         "whisper_model": WHISPER_MODEL,
         "ffmpeg": FFMPEG,

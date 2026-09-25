@@ -4,11 +4,16 @@ A model is a directory under one of the configured model roots containing a
 .gguf, plus the helper files that belong to it: a vision projector, and an
 MTP/NextN draft head. Loose .gguf files sitting in a root count too.
 
+A folder holding config.json and *.safetensors instead is a Hugging Face
+format model ("format": "hf"), served by a vLLM backend; its capabilities
+are read from config.json and the chat template rather than a GGUF header.
+
 Which file is the *model* takes some care — a folder can hold the weights,
 an mmproj, a separate draft head and several shards, and picking the wrong
 one loads a projector as a language model.
 """
 
+import json
 import os
 import re
 from pathlib import Path
@@ -119,6 +124,7 @@ def _entry(main: Path, mmproj, draft, root: Path) -> dict:
     info = gguf.info(str(main))
     return {
         "name": name,
+        "format": "gguf",
         "path": str(main),
         "mmproj_path": str(mmproj) if mmproj else None,
         "draft_path": str(draft) if draft else None,
@@ -135,6 +141,216 @@ def _entry(main: Path, mmproj, draft, root: Path) -> dict:
         "embed": "embed" in name.lower(),
         "thinking": info["thinking"],
         "arch": info["arch"],
+    }
+
+
+# ── Hugging Face (safetensors) folders ─────────────────────────────────────
+
+# Keys a config uses to declare multi-token-prediction layers; which one
+# depends on the family (DeepSeek/GLM, Qwen3.5+, others).
+MTP_KEYS = ("num_nextn_predict_layers", "mtp_num_hidden_layers",
+            "num_mtp_layers", "mtp_num_layers", "n_mtp_layers")
+
+_hf_cache: dict = {}   # folder -> (stamp, info)
+
+
+def _read_json(path, head: int = None):
+    """A JSON file as a dict, {} when absent or unreadable. With `head`,
+    only that many bytes are read and parsed leniently — exl3's
+    quantization_config.json carries a per-tensor table of ~600 KB after
+    the few keys that matter."""
+    try:
+        with open(path, "rb") as f:
+            raw = f.read(head) if head else f.read()
+    except OSError:
+        return {}
+    return parse_json(raw, lenient=bool(head))
+
+
+def parse_json(raw: bytes, lenient: bool = False) -> dict:
+    """A JSON object from bytes, {} if it is not one. `lenient` accepts a
+    truncated head and picks the top-level quantisation keys out of it."""
+    text = raw.decode("utf-8", errors="replace")
+    try:
+        data = json.loads(text)
+        return data if isinstance(data, dict) else {}
+    except ValueError:
+        if not lenient:
+            return {}
+    # the per-tensor table nests the same key names one level down, so
+    # only matches at the top level count
+    out = {}
+    for m in re.finditer(r'"(quant_method|bits|bits_per_weight|w_bit|'
+                         r'load_in_4bit|load_in_8bit|fmt)"\s*:\s*'
+                         r'("([^"]*)"|[\d.]+|true|false)', text):
+        before = text[:m.start()]
+        if before.count("{") - before.count("}") != 1:
+            continue
+        key, val = m.group(1), m.group(3) if m.group(3) is not None else m.group(2)
+        out.setdefault(key, val)
+    return out
+
+
+def hf_quant(cfg: dict, qcfg: dict = None):
+    """A short quantisation label from config.json's quantization_config
+    (or quantization_config.json beside it), or None for plain weights."""
+    q = cfg.get("quantization_config") if isinstance(cfg, dict) else None
+    q = q if isinstance(q, dict) and q else (qcfg or {})
+    if not isinstance(q, dict) or not q:
+        return None
+    method = str(q.get("quant_method") or q.get("method") or "").lower()
+    if not method:
+        return None
+
+    def num(v):
+        try:
+            f = float(v)
+            return f"{f:g}"
+        except (TypeError, ValueError):
+            return None
+    if method in ("exl2", "exl3"):
+        bpw = num(q.get("bits_per_weight")) or num(q.get("bits"))
+        return f"{method} {bpw}bpw" if bpw else method
+    if method == "gptq":
+        bits = num(q.get("bits"))
+        return f"gptq {bits}bit" if bits else "gptq"
+    if method == "bitsandbytes":
+        if str(q.get("load_in_4bit")).lower() == "true":
+            return "bnb 4bit"
+        if str(q.get("load_in_8bit")).lower() == "true":
+            return "bnb 8bit"
+        return "bnb"
+    return method
+
+
+def _sub(cfg: dict) -> dict:
+    t = cfg.get("text_config") if isinstance(cfg, dict) else None
+    return t if isinstance(t, dict) else {}
+
+
+def hf_arch(cfg: dict):
+    archs = cfg.get("architectures") if isinstance(cfg, dict) else None
+    return (cfg.get("model_type")
+            or (archs[0] if isinstance(archs, list) and archs else None)
+            or _sub(cfg).get("model_type"))
+
+
+def hf_mtp(cfg: dict) -> bool:
+    """True when config.json declares MTP layers, at the top or in its
+    text_config (multimodal configs nest the language model there)."""
+    for d in (cfg, _sub(cfg)):
+        for k in MTP_KEYS:
+            try:
+                if int(d.get(k) or 0) > 0:
+                    return True
+            except (TypeError, ValueError):
+                continue
+    return False
+
+
+def hf_template(folder: Path) -> str:
+    """The chat template text: chat_template.jinja, chat_template.json, or
+    tokenizer_config.json's chat_template, whichever is present."""
+    try:
+        return (folder / "chat_template.jinja").read_text(encoding="utf-8",
+                                                          errors="replace")
+    except OSError:
+        pass
+    for name in ("chat_template.json", "tokenizer_config.json"):
+        tpl = _read_json(folder / name).get("chat_template")
+        if isinstance(tpl, list):          # named templates: [{name, template}]
+            tpl = " ".join(str(t.get("template", "")) for t in tpl
+                           if isinstance(t, dict))
+        if isinstance(tpl, str) and tpl:
+            return tpl
+    return ""
+
+
+def template_thinking(tpl: str) -> bool:
+    return "enable_thinking" in tpl or "<think>" in tpl
+
+
+def _safetensors(folder: Path) -> list:
+    try:
+        return sorted(p for p in folder.iterdir()
+                      if p.is_file() and p.suffix.lower() == ".safetensors")
+    except OSError:
+        return []
+
+
+def is_hf_folder(folder: Path) -> bool:
+    return (folder / "config.json").is_file() and bool(_safetensors(folder))
+
+
+def _all_files(folder: Path) -> list:
+    """Every file under a model folder — what deleting it removes. Links
+    are listed, never followed."""
+    out = []
+    for dirpath, dirnames, names in os.walk(folder):
+        dirnames[:] = [d for d in dirnames
+                       if not os.path.islink(os.path.join(dirpath, d))]
+        out.extend(os.path.join(dirpath, n) for n in names)
+    return sorted(out)
+
+
+def _hf_info(folder: Path) -> dict:
+    """Capabilities of an HF folder, cached until one of the files they
+    come from changes."""
+    watched = ("config.json", "quantization_config.json", "chat_template.jinja",
+               "chat_template.json", "tokenizer_config.json",
+               "preprocessor_config.json")
+    stamp = []
+    for name in watched:
+        try:
+            stamp.append(os.path.getmtime(folder / name))
+        except OSError:
+            stamp.append(None)
+    stamp = tuple(stamp)
+    hit = _hf_cache.get(str(folder))
+    if hit and hit[0] == stamp:
+        return hit[1]
+    cfg = _read_json(folder / "config.json")
+    qcfg = None
+    if not isinstance(cfg.get("quantization_config"), dict):
+        qcfg = _read_json(folder / "quantization_config.json", head=16384)
+    tpl = hf_template(folder)
+    info = {
+        "arch": hf_arch(cfg),
+        "architectures": [str(a) for a in (cfg.get("architectures") or [])
+                          if isinstance(a, str)],
+        "quant": hf_quant(cfg, qcfg),
+        "vision": bool(cfg.get("vision_config"))
+                  or (folder / "preprocessor_config.json").is_file(),
+        "mtp": hf_mtp(cfg),
+        "thinking": template_thinking(tpl),
+        # Qwen3.5+ templates emit tool calls as <function=name>…</function>
+        # rather than Hermes JSON, which needs vLLM's qwen3_xml parser
+        "tool_xml": "<function=" in tpl,
+    }
+    _hf_cache[str(folder)] = (stamp, info)
+    return info
+
+
+def _hf_entry(folder: Path, root: Path) -> dict:
+    info = _hf_info(folder)
+    return {
+        "name": folder.name,
+        "format": "hf",
+        "path": str(folder),
+        "mmproj_path": None,
+        "draft_path": None,
+        "source": _short(str(root)),
+        "root": str(root),
+        "files": _all_files(folder),
+        "vram_bytes": sum(_size(str(p)) for p in _safetensors(folder)),
+        "vision": info["vision"],
+        "mtp": info["mtp"],
+        "embed": "embed" in folder.name.lower(),
+        "thinking": info["thinking"],
+        "arch": info["arch"],
+        "architectures": info["architectures"],
+        "quant": info["quant"],
+        "tool_xml": info["tool_xml"],
     }
 
 
@@ -178,6 +394,8 @@ def discover() -> list:
                 continue
             main, mmproj, draft = _pick(folder)
             if main is None:
+                if is_hf_folder(folder):
+                    add(_hf_entry(folder, root), root)
                 continue
             add(_entry(main, mmproj, draft, root), root)
         for loose in _ggufs(root):

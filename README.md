@@ -1,6 +1,7 @@
 # NeuralDeck-Proxy
 
-A local LLM control room for [llama.cpp](https://github.com/ggml-org/llama.cpp),
+A local LLM control room for [llama.cpp](https://github.com/ggml-org/llama.cpp)
+(and [vLLM](https://github.com/vllm-project/vllm) for safetensors models),
 in one Python package that runs on **Windows or Linux**:
 
 * **Dashboard** — live CPU/GPU/VRAM/thermal telemetry, every running
@@ -50,7 +51,8 @@ launches models into it.
   passes flags it supports)
 * Optional: `whisper-server` from [whisper.cpp](https://github.com/ggml-org/whisper.cpp)
   for speech input, `ffmpeg` for video input, `huggingface_hub` for the
-  in-dashboard model downloader
+  in-dashboard model downloader, and a [vLLM](#vllm) install (its own
+  environment is fine) to serve Hugging Face safetensors models
 
 ## Install
 
@@ -119,7 +121,7 @@ missing before anything tries to start.
 ## Settings
 
 Everything configurable is on the **Settings** tab, grouped: Models,
-Backends, Launch defaults, Sampling, Ports, Speech & video, Proxy,
+Backends, Launch defaults, vLLM, Sampling, Ports, Speech & video, Proxy,
 Dashboard, Optional services.
 
 * **Model directories** — add or remove folders with a picker that shows
@@ -128,7 +130,8 @@ Dashboard, Optional services.
   flagged rather than dropped.
 * **llama-server builds** — label → path. Add more than one and the launch
   form lets you pick between them per launch, which is how you A/B a fork
-  against upstream on the same model.
+  against upstream on the same model. A path to a `vllm` executable adds a
+  vLLM backend (see [vLLM](#vllm)).
 * Each setting says when it takes effect:
   * **at once** — the dashboard re-reads the file on save: model folders,
     backends, launch and sampling defaults (for the next launch), the
@@ -191,13 +194,16 @@ The settings most worth checking on a new machine:
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `model_dirs` | `~/models` (+ `/mnt/models`) | where to look for GGUFs |
-| `backends` | first `llama-server` found | label → binary path |
+| `model_dirs` | `~/models` (+ `/mnt/models`) | where to look for models |
+| `backends` | first `llama-server` found | label → binary path (llama-server or `vllm`) |
 | `deck_port` / `proxy_port` | `8770` / `8080` | the two listening ports |
 | `deck_host` | `0.0.0.0` | `127.0.0.1` keeps the dashboard off the network |
 | `llama_port_range` | `8081-8089` | ports the deck launches into and the proxy discovers |
 | `ctx` / `slots` | `32768` / `1` | launch-form defaults |
 | `kv_cache_type` | `q8_0` | `-ctk`/`-ctv` for launched instances |
+| `vllm_kv_cache_dtype` | `auto` | `--kv-cache-dtype` for vLLM launches (`auto`, `fp8`, `fp8_e4m3`, `fp8_e5m2`) |
+| `vllm_gpu_frac_max` | `0.92` | ceiling for vLLM's `--gpu-memory-utilization` (0.5–0.98) |
+| `vllm_extra_args` | none | appended to every `vllm serve` |
 | `peak_bw_gbs` | `89.6` | memory bandwidth for the roofline panel — set it to your GPU's (or APU's) real figure |
 | `whisper_bin` / `whisper_model` | whisper.cpp defaults | speech input |
 | `ffmpeg` | from `PATH` | needed only for video input |
@@ -233,6 +239,17 @@ is serving is an error rather than a silent answer from the wrong model.
 | `GET /v1/models`, `/props`, `/health` | aggregated across every instance |
 | anything else | relayed to llama-server untouched |
 
+vLLM instances sit behind the same port. Discovery finds them by
+`/v1/models` (they have no `/props`), one route per served name, and the
+proxy rewrites a request's `model` to the exact served id, since vLLM —
+unlike llama-server — rejects any other spelling. `/v1/messages` is passed
+through (vLLM 0.30 speaks the Anthropic format itself), `stream_options`
+reaches it untouched, and `/tokenize` is translated (`content` → `prompt`).
+When the default instance is vLLM, `GET /props` is synthesized from what
+discovery knows (`"backend": "vllm"`, the served name, `max_model_len` as
+`n_ctx`); llama-server-only endpoints (`/slots`, `/apply-template`,
+`/infill`, `/completion` …) answer 404 with a message saying so.
+
 ## How models are found
 
 A model is a directory under a model root holding a `.gguf`, plus the
@@ -243,11 +260,55 @@ projector (`*mmproj*.gguf`) in the same folder makes the model a vision
 model; a separate draft head is used for speculative decoding when the
 backend supports it.
 
+A folder holding `config.json` and `*.safetensors` (sharded or not) is a
+Hugging Face format model instead, listed with `"format": "hf"` and served
+by a vLLM backend. Its quantisation (`exl3 3.21bpw`, `gptq 4bit`, `awq`,
+`fp8` …), architecture, vision (a `vision_config` or a
+`preprocessor_config.json`), MTP layers and reasoning template come from
+`config.json`, `quantization_config.json` and the chat template. Deleting
+one removes the whole folder, with the same guards as a GGUF delete.
+The downloader's safetensors mode fetches a whole repo into
+`<download dir>/<repo name>`, skipping other formats of the same weights.
+
+## vLLM
+
+Add a backend whose path is vLLM's `vllm` executable (e.g.
+`~/vllm-env/bin/vllm`); `neuraldeck doctor` runs `vllm --version` to check
+it. The launch form then serves safetensors folders with it, and refuses a
+GGUF on vLLM (or a safetensors folder on llama.cpp) with a plain message.
+
+* Flags come from `vllm serve --help=all` (read once per install, cached in
+  the data directory's `run/` folder), the same way llama-server's are:
+  `--served-model-name <model> --max-model-len <ctx> --max-num-seqs
+  <slots> --gpu-memory-utilization <frac> --enable-prefix-caching`, plus
+  the reasoning and tool-call parsers for Qwen models (`qwen3_xml` when the
+  template writes `<function=…>` calls, else `hermes`), the model's own MTP
+  layers as `--speculative-config` when speculation is `auto`, and
+  `enable_thinking: false` as the default template argument when thinking
+  is off. A launch that fails with speculation retries without it.
+* `ctx` is vLLM's `--max-model-len`, which is per request: vLLM does not
+  split it across slots the way llama.cpp does.
+* VRAM is sized to what is free, so vLLM can run beside llama-servers:
+  `--gpu-memory-utilization` is the free share of the card less 512 MiB,
+  capped by `vllm_gpu_frac_max`. A model that plainly cannot fit (weights
+  + 1.5 GiB + 1 GiB of KV) is refused before anything starts.
+* The child runs with its environment's `bin` first on `PATH` and
+  `CUDA_HOME` pointed at the CUDA toolkit pip installed into that
+  environment, when there is one (flashinfer compiles kernels with it).
+  `VLLM_USE_FLASHINFER_SAMPLER=0` is set unless you set it yourself.
+* Readiness is `/health` plus the served name in `/v1/models`, with up to
+  20 minutes allowed: the first start compiles and captures CUDA graphs.
+* The dashboard reads each vLLM instance's KV-cache use, running requests
+  and prefill/decode token rates from its `/metrics`.
+
 ## Benchmarks
 
 Runs land in `bench.jsonl` in the data directory, from three sources: the
 Prompt Lab, the Benchmarks tab's standard prompt, and a collector that
-reads each instance's log so requests from *any* client are measured too.
+reads each llama-server instance's log so requests from *any* client are
+measured too. vLLM logs no per-request timings, so vLLM runs come from the
+Prompt Lab and the standard prompt only. Each record names its backend and
+`backend_kind` (`llama.cpp` or `vllm`).
 The chart shows medians per model × backend × speculation setting, with
 each metric on its own scale.
 

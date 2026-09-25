@@ -40,6 +40,18 @@ def _doctor() -> int:
     ok = True
     for label, binary in config.BACKENDS.items():
         found = os.path.isfile(binary) or shutil.which(binary)
+        kind = config.backend_kind(binary)
+        if kind == "vllm":
+            # a vllm script that exists can still fail to import (a broken
+            # env); running it is the only real check
+            ver = launcher.vllm_version(binary) if found else None
+            ok = ok and bool(ver)
+            state = "ok " if ver else ("BROKEN" if found else "MISSING")
+            print(f"  vllm             [{state}] {label}: {binary}")
+            if found:
+                print(f"                   version: "
+                      f"{ver or '`vllm --version` failed or timed out'}")
+            continue
         ok = ok and bool(found)
         print(f"  llama-server     [{'ok ' if found else 'MISSING'}] {label}: {binary}")
         if found:
@@ -61,7 +73,9 @@ def _doctor() -> int:
         flags = "".join(c if m[k] else "·" for c, k in
                         (("V", "vision"), ("M", "mtp"), ("T", "thinking"),
                          ("E", "embed")))
-        print(f"  [{flags}] {m['vram_bytes'] / 1024**3:6.1f} GiB  {m['name']}")
+        fmt = (f"  (safetensors{', ' + m['quant'] if m.get('quant') else ''})"
+               if m.get("format") == "hf" else "")
+        print(f"  [{flags}] {m['vram_bytes'] / 1024**3:6.1f} GiB  {m['name']}{fmt}")
     if len(found) > 20:
         print(f"  … and {len(found) - 20} more")
     if not found:
@@ -70,7 +84,8 @@ def _doctor() -> int:
     print("\nRunning")
     print("=" * 56)
     for inst in procs.llama_instances():
-        print(f"  :{inst['port']} {inst['backend']:<16} {inst['alias']}")
+        print(f"  :{inst['port']} {inst['backend']:<16} {inst['alias']}"
+              f"  ({inst.get('kind', 'llama.cpp')})")
     for name, svc in services.snapshot().items():
         print(f"  :{svc['port']} {name:<16} {'running' if svc['up'] else 'stopped'}")
     return 0 if ok else 1

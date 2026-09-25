@@ -9,7 +9,13 @@ Three things write runs into one JSONL file:
 
 The collector tails each instance's log and reads the print_timing blocks,
 which is the only place per-request numbers exist for a request the
-dashboard did not itself issue.
+dashboard did not itself issue. vLLM logs no per-request timings, so its
+instances are measured only by the Prompt Lab and the standard prompt,
+which compute their numbers client-side.
+
+Every record carries "backend" (the label) and "backend_kind" (llama.cpp
+or vllm). A number that could not be measured is left out of the record,
+never written as 0, so medians only ever see real values.
 """
 
 import json
@@ -136,11 +142,24 @@ def add_client_run(body: dict, instances: list) -> dict:
            "model": model}
     inst = next((i for i in instances if i.get("alias") == model), None)
     rec["backend"] = inst.get("backend") if inst else None
+    rec["backend_kind"] = inst.get("kind") if inst else None
+    if inst is None and isinstance(body.get("backend"), str):
+        rec["backend"] = body["backend"][:80]      # the page knew better
+    if rec["backend_kind"] is None \
+            and body.get("backend_kind") in ("llama.cpp", "vllm"):
+        rec["backend_kind"] = body["backend_kind"]
     rec["spec"] = inst.get("spec") if inst else None
+    # A run without llama `timings` (vLLM) is measured by the page from the
+    # stream and its usage block, under the OpenAI names; either spelling
+    # lands in the same fields. Nulls are simply not recorded.
+    aliases = {"prompt_n": ("prompt_n", "prompt_tokens"),
+               "predicted_n": ("predicted_n", "completion_tokens")}
     for k in ("prompt_n", "predicted_n", "draft_n", "draft_acc", "max_tokens",
               "ttft_ms"):
-        if (v := _num(body.get(k))) is not None:
-            rec[k] = int(v)
+        for src in aliases.get(k, (k,)):
+            if (v := _num(body.get(src))) is not None:
+                rec[k] = int(v)
+                break
     for k in ("prompt_tps", "decode_tps", "wall_s", "temp"):
         if (v := _num(body.get(k))) is not None:
             rec[k] = round(v, 2)
@@ -170,7 +189,8 @@ def collect_traffic(instances: list) -> None:
     now = time.time()
     for inst in instances or []:
         alias = inst.get("alias")
-        if not alias:
+        # vLLM writes no print_timing blocks; there is nothing to collect
+        if not alias or inst.get("kind") == "vllm":
             continue
         path = str(config.LOG_DIR / f"{alias}.log")
         try:
@@ -225,6 +245,7 @@ def collect_traffic(instances: list) -> None:
 
 def _blank(alias, inst, now) -> dict:
     return {"model": alias, "backend": inst.get("backend"),
+            "backend_kind": inst.get("kind") or "llama.cpp",
             "spec": inst.get("spec"), "seen": now}
 
 
@@ -248,6 +269,7 @@ def _flush_pending(now: float) -> None:
             continue  # the browser already recorded this one
         rec = {"id": _new_id(), "ts": round(now, 1), "kind": "traffic",
                "model": p["model"], "backend": p.get("backend"),
+               "backend_kind": p.get("backend_kind"),
                "spec": p.get("spec"), "prompt_n": p.get("prompt_n"),
                "predicted_n": pn,
                "prompt_tps": round(p.get("prompt_tps", 0), 2),

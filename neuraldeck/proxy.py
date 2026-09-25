@@ -5,7 +5,8 @@ Apps point at this server as if it were llama-server itself. It owns the
 client port; llama-server instances sit behind it. What it adds:
 
   * multi-instance routing — several llama-servers are discovered by
-    probing /props, and a request's "model" field picks one
+    probing /props (vLLM servers, which have no /props, by /v1/models), and
+    a request's "model" field picks one
   * speech input — an `input_audio` content part is transcribed by whisper
     and rewritten to text before llama ever sees it (llama has no audio
     projector and would fail with a misleading mmproj error)
@@ -218,15 +219,36 @@ async def discover_instances(ttl: float = 10.0) -> list:
         base = f"http://127.0.0.1:{port}"
         try:
             resp = await _http().get(f"{base}/props", timeout=2.0)
+            if resp.status_code == 404:
+                return await probe_vllm(port, base)
             if resp.status_code != 200:
-                return None
-            props = resp.json()
+                return None             # e.g. llama-server still loading (503)
+            try:
+                props = resp.json()
+            except ValueError:
+                props = None
+            if not isinstance(props, dict):
+                return await probe_vllm(port, base)
             alias = (props.get("model_alias")
                      or os.path.basename(props.get("model_path") or ""))
-            return {"port": port, "base": base, "alias": alias,
-                    "modalities": props.get("modalities") or {}}
+            return [{"port": port, "base": base, "alias": alias,
+                     "modalities": props.get("modalities") or {},
+                     "kind": "llama.cpp"}]
         except Exception:
             return None
+
+    async def probe_vllm(port: int, base: str):
+        """A server with no /props: vLLM, known by what /v1/models serves.
+        One instance per served id, so each name routes."""
+        resp = await _http().get(f"{base}/v1/models", timeout=2.0)
+        if resp.status_code != 200:
+            return None
+        data = resp.json().get("data") or []
+        return [{"port": port, "base": base, "alias": m["id"],
+                 "modalities": await asyncio.to_thread(_vllm_modalities,
+                                                       m.get("root")),
+                 "kind": "vllm", "max_model_len": m.get("max_model_len")}
+                for m in data if isinstance(m, dict) and m.get("id")] or None
 
     # One probe pass at a time: when the cache expires under load, waiters
     # reuse the pass that finished while they queued instead of each
@@ -236,7 +258,7 @@ async def discover_instances(ttl: float = 10.0) -> list:
         if ts >= asked or time.monotonic() - ts < ttl:
             return _instances_cache["list"]
         found = await asyncio.gather(*[probe(p) for p in _probe_ports()])
-        instances = [f for f in found if f]
+        instances = [i for f in found if f for i in f]
         _instances_cache.update(ts=time.monotonic(), list=instances)
         return instances
 
@@ -277,7 +299,40 @@ async def pick_backend(model: Optional[str]) -> dict:
         return default
     if instances:
         return instances[0]
-    return {"port": None, "base": LLAMA_BASE, "alias": None, "modalities": None}
+    return {"port": None, "base": LLAMA_BASE, "alias": None, "modalities": None,
+            "kind": None}
+
+
+def _vllm_modalities(root) -> Optional[dict]:
+    """What a vLLM model can take, read from its folder (vLLM reports the
+    path it loaded as each model's "root"). None when that is not a local
+    folder: unknown, so video goes as frames and is never refused."""
+    if not isinstance(root, str) or not os.path.isfile(
+            os.path.join(root, "config.json")):
+        return None
+    from . import models
+    try:
+        vision = models._hf_info(Path(root))["vision"]
+    except Exception:
+        return None
+    # video_url is vLLM's own wire format, but frames work with every
+    # vision model, so video is not claimed as native
+    return {"vision": bool(vision), "video": False}
+
+
+def _is_vllm(target: dict) -> bool:
+    return target.get("kind") == "vllm"
+
+
+def _vllm_model(payload: dict, target: dict) -> bool:
+    """vLLM, unlike llama-server, rejects a model field that is not exactly
+    a served id — and routing accepts prefixes and case differences. Name
+    the served id before forwarding. True if the payload changed."""
+    if _is_vllm(target) and target.get("alias") \
+            and payload.get("model") != target["alias"]:
+        payload["model"] = target["alias"]
+        return True
+    return False
 
 
 async def probe_backend(endpoint: str) -> bool:
@@ -602,7 +657,8 @@ async def health():
             "ffmpeg": ffmpeg_bin(),
             "backends": {
                 "llama": {"endpoint": LLAMA_ENDPOINT, "reachable": llama_ok,
-                          "instances": [{"port": i["port"], "model": i["alias"]}
+                          "instances": [{"port": i["port"], "model": i["alias"],
+                                         "kind": i.get("kind")}
                                         for i in instances]},
                 "whisper": {"endpoint": WHISPER_ENDPOINT, "reachable": whisper_ok},
                 "tts": {"endpoint": TTS_ENDPOINT, "reachable": tts_ok},
@@ -680,6 +736,7 @@ async def multimodal(
         payload: dict = {"messages": messages, "stream": stream}
         if model:
             payload["model"] = model
+        _vllm_model(payload, target)
         if temperature is not None:
             payload["temperature"] = temperature
         if max_tokens is not None:
@@ -787,8 +844,26 @@ async def props():
     Clients treat `modalities` as authoritative, so audio is only true when
     a speech backend is actually reachable, and video is true when either
     llama decodes it natively or this proxy can extract frames for it.
+
+    vLLM has no /props. When the default instance is a vLLM server the body
+    is synthesized from what /v1/models told discovery — the served name
+    and max_model_len (as n_ctx) — marked "backend": "vllm".
     """
     target = await pick_backend(None)
+    if _is_vllm(target):
+        vision = bool((target.get("modalities") or {}).get("vision"))
+        body = {"backend": "vllm", "model_alias": target.get("alias"),
+                "model_path": target.get("alias"),
+                "default_generation_settings": {
+                    "n_ctx": target.get("max_model_len")},
+                "modalities": {"vision": vision,
+                               "audio": await whisper_reachable(),
+                               "video": vision and ffmpeg_bin() is not None}}
+        body["llama_instances"] = [
+            {"port": i["port"], "model": i["alias"],
+             "modalities": i["modalities"], "kind": i.get("kind")}
+            for i in await discover_instances()]
+        return JSONResponse(content=body)
     try:
         resp = await _http().get(f"{target['base']}/props", timeout=CONNECT_TIMEOUT)
         body = resp.json() if resp.status_code == 200 else None
@@ -808,7 +883,8 @@ async def props():
                  or (vision and ffmpeg_bin() is not None),
     }
     body["llama_instances"] = [
-        {"port": i["port"], "model": i["alias"], "modalities": i["modalities"]}
+        {"port": i["port"], "model": i["alias"], "modalities": i["modalities"],
+         "kind": i.get("kind")}
         for i in await discover_instances()]
     return JSONResponse(content=body)
 
@@ -969,6 +1045,8 @@ async def chat_completions(request: Request):
         # clean HTTP error even for a streaming request.
         await rewrite_audio_parts(messages)
         await rewrite_video_parts(messages, target.get("modalities"))
+    # everything else — stream_options included — goes through untouched
+    _vllm_model(body, target)
 
     headers = _client_headers(request, _REBODY_HEADERS)
     if body.get("stream"):
@@ -1080,7 +1158,7 @@ async def _route_anthropic(request: Request, path: str) -> StreamingResponse:
 
 async def _route_anthropic_inner(request: Request, path: str) -> StreamingResponse:
     content = await request.body()
-    model, shape = None, ""
+    model, shape, payload = None, "", None
     try:
         payload = json.loads(content)
         if isinstance(payload, dict):
@@ -1100,6 +1178,10 @@ async def _route_anthropic_inner(request: Request, path: str) -> StreamingRespon
     target = await pick_backend(model)
     print(f"[route] anthropic {path} requested={model!r} -> :{target.get('port')} "
           f"({target.get('alias') or 'static default'}){shape}", flush=True)
+    # vLLM (0.30 and later) serves the Anthropic Messages API itself
+    if _is_vllm(target) and isinstance(payload, dict) \
+            and _vllm_model(payload, target):
+        content = json.dumps(payload).encode()
     return await _relay_to(target["base"], request, path, "LLM", content=content)
 
 
@@ -1193,8 +1275,44 @@ async def passthrough(request: Request, path: str):
     if model:
         print(f"[route] /{path} requested={model!r} -> :{target.get('port')} "
               f"({target.get('alias') or 'static default'})", flush=True)
+    if _is_vllm(target):
+        first = path.strip("/").split("/")[0]
+        if first in _LLAMA_ONLY:
+            raise HTTPException(
+                404, f"/{path} is a llama-server endpoint; the instance on "
+                     f":{target.get('port')} ({target.get('alias')}) is vLLM, "
+                     "which has no equivalent")
+        content = _vllm_body(path, content, target)
     return await _relay_to(target["base"], request, f"/{path}", "LLM",
                            content=content)
+
+
+# llama-server's own endpoints with no vLLM counterpart: answered here with
+# a clear 404 rather than vLLM's bare {"detail": "Not Found"}.
+_LLAMA_ONLY = {"props", "slots", "apply-template", "infill", "completion",
+               "embedding", "lora-adapters", "reranking"}
+
+
+def _vllm_body(path: str, content, target: dict):
+    """Adapt a body for vLLM: its /tokenize and /detokenize want "prompt"
+    and "model" where llama-server takes "content" (the answers overlap:
+    both return "tokens"), and every named model must be the served id."""
+    if not content or content.lstrip()[:1] != b"{":
+        return content
+    try:
+        payload = json.loads(content)
+    except (ValueError, UnicodeDecodeError):
+        return content
+    if not isinstance(payload, dict):
+        return content
+    changed = False
+    if path.strip("/") == "tokenize" and "content" in payload \
+            and "prompt" not in payload:
+        payload["prompt"] = payload.pop("content")
+        changed = True
+    if path.strip("/") in ("tokenize", "detokenize") or "model" in payload:
+        changed = _vllm_model(payload, target) or changed
+    return json.dumps(payload).encode() if changed else content
 
 
 def _body_model(content: bytes) -> Optional[str]:
