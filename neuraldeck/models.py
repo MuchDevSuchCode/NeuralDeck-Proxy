@@ -282,6 +282,19 @@ def is_hf_folder(folder: Path) -> bool:
     return (folder / "config.json").is_file() and bool(_safetensors(folder))
 
 
+def hf_draft(folder: Path):
+    """A separate MTP/assistant head shipped inside an HF model folder, as
+    a subfolder of its own (e.g. `mtp/` holding Gemma 4's assistant model),
+    or None."""
+    try:
+        subs = sorted(p for p in folder.iterdir()
+                      if p.is_dir() and not p.is_symlink())
+    except OSError:
+        return None
+    return next((p for p in subs
+                 if DRAFT_RE.search(p.name) and is_hf_folder(p)), None)
+
+
 def _all_files(folder: Path) -> list:
     """Every file under a model folder — what deleting it removes. Links
     are listed, never followed."""
@@ -333,18 +346,20 @@ def _hf_info(folder: Path) -> dict:
 
 def _hf_entry(folder: Path, root: Path) -> dict:
     info = _hf_info(folder)
+    draft = hf_draft(folder)
+    weights = _safetensors(folder) + (_safetensors(draft) if draft else [])
     return {
         "name": folder.name,
         "format": "hf",
         "path": str(folder),
         "mmproj_path": None,
-        "draft_path": None,
+        "draft_path": str(draft) if draft else None,
         "source": _short(str(root)),
         "root": str(root),
         "files": _all_files(folder),
-        "vram_bytes": sum(_size(str(p)) for p in _safetensors(folder)),
+        "vram_bytes": sum(_size(str(p)) for p in weights),
         "vision": info["vision"],
-        "mtp": info["mtp"],
+        "mtp": info["mtp"] or draft is not None,
         "embed": "embed" in folder.name.lower(),
         "thinking": info["thinking"],
         "arch": info["arch"],

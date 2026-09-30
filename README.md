@@ -253,8 +253,10 @@ What NeuralDeck does for a vLLM launch:
   `--enable-prefix-caching`.
 * **Model-specific options are detected:** reasoning and tool-call parsers
   for Qwen-family models (`qwen3_xml` when the chat template writes
-  `<function=…>` calls, otherwise `hermes`), the model's own MTP layers as
-  `--speculative-config` when speculation is `auto`, and
+  `<function=…>` calls, otherwise `hermes`) and for Gemma 4 (`gemma4`),
+  the model's own MTP layers as `--speculative-config` when speculation is
+  `auto` — or a separate MTP head shipped as a subfolder of the model
+  (e.g. `mtp/` holding Gemma 4's assistant model), drafting 4 tokens — and
   `enable_thinking: false` as the default template argument when thinking
   is off. If a launch fails with speculation on, it's retried without it.
 * **VRAM is sized to what's free**, so vLLM can run beside llama-servers.

@@ -297,6 +297,8 @@ def _family(model: dict) -> str:
         return "qwen3"
     if "qwen" in arch:
         return "qwen"
+    if "gemma4" in arch or "gemma-4" in arch:
+        return "gemma4"
     return ""
 
 
@@ -329,11 +331,13 @@ def build_vllm_argv(model: dict, *, binary: str, port: int, ctx: int,
 
     # ── reasoning and tool calls ──────────────────────────────────────────
     family = _family(model)
-    if family == "qwen3" and model.get("thinking") and has("--reasoning-parser"):
-        argv += ["--reasoning-parser", "qwen3"]
-        notes.append("reasoning parser: qwen3")
+    if family in ("qwen3", "gemma4") and model.get("thinking") \
+            and has("--reasoning-parser"):
+        argv += ["--reasoning-parser", family]
+        notes.append(f"reasoning parser: {family}")
     if family:
-        parser = "qwen3_xml" if model.get("tool_xml") else "hermes"
+        parser = ("gemma4" if family == "gemma4"
+                  else "qwen3_xml" if model.get("tool_xml") else "hermes")
         if (has("--tool-call-parser") and has("--enable-auto-tool-choice")
                 and (not c["tool_parsers"] or parser in c["tool_parsers"])):
             argv += ["--enable-auto-tool-choice", "--tool-call-parser", parser]
@@ -359,7 +363,15 @@ def build_vllm_argv(model: dict, *, binary: str, port: int, ctx: int,
 
     # ── speculative decoding ──────────────────────────────────────────────
     if spec in ("auto", "mtp") and model.get("mtp"):
-        if has("--speculative-config"):
+        if has("--speculative-config") and model.get("draft_path"):
+            # A separate head (Gemma 4's assistant in mtp/): its publishers
+            # draft 4 tokens, and it is BF16 whatever the main model's quant
+            argv += ["--speculative-config", json.dumps(
+                {"method": "mtp", "model": model["draft_path"],
+                 "num_speculative_tokens": 4, "quantization": None})]
+            notes.append("spec: mtp (separate head "
+                         f"{os.path.basename(model['draft_path'])}/, 4 tokens)")
+        elif has("--speculative-config"):
             method = mtp_method(model)
             argv += ["--speculative-config", json.dumps(
                 {"method": method, "num_speculative_tokens": 2})]
