@@ -439,16 +439,18 @@ def build_argv(model: dict, *, binary: str, port: int, ctx: int, slots: int,
     if c["reasoning"]:
         argv += ["--reasoning", "off" if budget == 0 else "on"]
     if c["reasoning_budget"]:
-        if budget == 0:
+        if budget == 0 and not c["reasoning"]:
             argv += ["--reasoning-budget", "0"]
             # A budget of 0 alone does not render the template with
             # enable_thinking=false, and some templates then inject an
             # unclosed think tag into the system turn, which visibly
-            # degrades output. Say it explicitly — with --reasoning off
-            # where the build has it, the older kwargs route otherwise.
-            if not c["reasoning"] and c["chat_template_kwargs"]:
+            # degrades output. Say it explicitly through the kwargs route.
+            if c["chat_template_kwargs"]:
                 argv += ["--chat-template-kwargs",
                          json.dumps({"enable_thinking": False})]
+        # With --reasoning off the template already renders thinking
+        # closed (<think></think>); a budget of 0 on top of that forces a
+        # second </think> into the reply (Nemotron 3.5 Super, b11718).
         elif budget > 0:
             argv += ["--reasoning-budget", str(budget)]
         notes.append(f"thinking {thinking}"
