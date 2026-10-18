@@ -575,6 +575,11 @@
           <input type="checkbox" id="replace-chk" style="accent-color:var(--cyan)">
           replace running instances</label>
       </div>
+      <input id="model-q" class="pl-input" type="search" autocomplete="off" spellcheck="false"
+        placeholder="search models…   ( / )"
+        title="matches name, folder and features (vision, mtp, thinking, gguf, safetensors, running) · / focuses · Enter launches when one model matches · Esc clears"
+        aria-label="Search models" aria-controls="models"
+        oninput="renderModels()" onkeydown="modelSearchKey(event)" style="margin-bottom:4px">
       <div id="models"></div>
       <div class="advisory">👁 vision &nbsp;·&nbsp; 🎬 video (frames via proxy) &nbsp;·&nbsp; ⚡ MTP/NextN speculative &nbsp;·&nbsp; 💭 thinking (level set at launch) &nbsp;·&nbsp; 🧬 embedding &nbsp;·&nbsp; <span class="fmtb">safetensors</span> needs a vLLM backend &nbsp;·&nbsp; audio input works on every chat model via whisper</div>
       <div id="launch-status" role="status"></div>
@@ -1497,7 +1502,6 @@ async function loadModels(){
   catch(e){ if(!modelsCache.length) $("models").innerHTML=
     '<div class="advisory">could not list models — retrying on the next change</div>'; throw e; }
   modelsCache=d.models||[];
-  $("mm-count").textContent=modelsCache.length?modelsCache.length+" found":"";
   servingPorts={}; updateServing(lastSnap&&lastSnap.llama_instances);
   renderModels();
 }
@@ -1514,12 +1518,43 @@ function updateServing(instances){
   }
   if(JSON.stringify(map)!==JSON.stringify(servingPorts)){ servingPorts=map; renderModels(); }
 }
+/* Model search: every space-separated word must appear in the model's name,
+   folder, format/quant or feature words (vision, mtp, thinking, running…). */
+function modelHaystack(m){
+  return [m.name, m.source, m.format==="hf"?"safetensors vllm":"gguf", m.quant,
+    m.vision&&"vision video", m.mtp&&"mtp nextn spec", m.thinking&&"thinking reasoning",
+    m.embed&&"embedding", servingPorts[m.name]?"running serving :"+servingPorts[m.name]:"stopped"]
+    .filter(Boolean).join(" ").toLowerCase();
+}
+function modelMatches(){
+  const words=($("model-q").value||"").toLowerCase().split(/\s+/).filter(Boolean);
+  return modelsCache.filter(m=>{ const h=modelHaystack(m); return words.every(w=>h.includes(w)); });
+}
+function modelSearchKey(e){
+  if(e.key==="Escape"&&e.target.value){ e.preventDefault(); e.target.value=""; renderModels(); }
+  else if(e.key==="Enter"){
+    e.preventDefault();
+    const hits=modelMatches();
+    if(hits.length===1&&!launching) doLaunch(hits[0]);
+    else if(hits.length>1) toast(`${hits.length} models match — keep typing to narrow it to one`);
+  }
+}
+document.addEventListener("keydown",e=>{
+  if(e.key!=="/"||e.ctrlKey||e.metaKey||e.altKey||curView!=="dash")return;
+  if(e.target.closest("input,textarea,select,[contenteditable]")||document.querySelector("dialog[open]"))return;
+  e.preventDefault(); $("model-q").focus(); $("model-q").select();
+});
 function renderModels(){
   const host=$("models"); host.innerHTML="";
-  if(!modelsCache.length){ host.innerHTML='<div class="advisory">no models found in the model '
+  const q=$("model-q").value.trim();
+  if(!modelsCache.length){ $("mm-count").textContent=""; host.innerHTML='<div class="advisory">no models found in the model '
     +'directories — add a folder in Settings'+(CFG.hf_available?', or use ⬇ Get models':'')+'</div>'; return; }
+  const hits=q?modelMatches():modelsCache;
+  $("mm-count").textContent=q?`${hits.length} of ${modelsCache.length}`:`${modelsCache.length} found`;
+  if(!hits.length){ const e=document.createElement("div"); e.className="advisory";
+    e.textContent=`no models match “${q}” — Esc clears the search`; host.appendChild(e); return; }
   // models currently being served float to the top, rest keep discovery order
-  const ordered=[...modelsCache].sort((a,b)=>
+  const ordered=[...hits].sort((a,b)=>
     (servingPorts[b.name]?1:0)-(servingPorts[a.name]?1:0));
   let wasServing=null;
   for(const m of ordered){

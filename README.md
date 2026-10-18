@@ -360,8 +360,9 @@ The launch controls above the list apply to the next launch:
 | **slots** | parallel requests. llama.cpp splits the context across them; vLLM uses it as `--max-num-seqs` |
 | **ctx** | context size in tokens. The note beside it shows the per-request budget |
 | **spec** | `auto` uses the model's MTP head when it has one; `ngram` drafts from the context and needs no draft model; `off` disables speculation (useful for A/B timing) |
-| **thinking** | reasoning budget for models that support it: `off` (0), `low` (1024 tokens), `medium` (4096), `high` (unlimited) |
+| **thinking** | reasoning budget for models that support it: `off`, `low` (1024 tokens), `medium` (4096), `high` (unlimited). On llama.cpp builds with `--reasoning`, `off` is `--reasoning off` alone |
 | **replace running instances** | stop what's running first, instead of launching alongside it |
+| **search** | narrows the list: every word must match the name, folder or a feature (`vision`, `mtp`, `thinking`, `gguf`, `safetensors`, `running`). `/` focuses it, `Enter` launches when exactly one model matches, `Esc` clears it |
 
 Buttons on each model row:
 
