@@ -189,6 +189,7 @@ def collect_snapshot() -> dict:
                 "name": g.get("name"), "sclk": g.get("sclk"),
                 "mclk": g.get("mclk"), "fclk": g.get("fclk"),
                 "gtt_used_gb": gtt_used, "gtt_total_gb": gtt_total,
+                "unified_memory": bool(g.get("unified_memory")),
                 "peak_bw_gbs": config.PEAK_BW_GBS,
                 "sources": g.get("sources") or []},
         "npu": {"util": npu_util, "power": npu_pwr},

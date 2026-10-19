@@ -258,6 +258,12 @@ def vllm_budget(model: dict, force: bool = False) -> tuple:
     from . import sysinfo
     g = sysinfo.gpu()
     total, used = g.get("vram_total_bytes"), g.get("vram_used_bytes")
+    if g.get("unified_memory"):
+        # torch on ROCm reports only the GTT pool, not carve-out + GTT, and
+        # vLLM takes its fraction of that.
+        gtt_used, gtt_total = sysinfo.gtt()
+        if gtt_total:
+            total, used = int(gtt_total * 1024**3), int((gtt_used or 0) * 1024**3)
     cap = config.VLLM_GPU_FRAC_MAX
     if not total:
         return cap, f"VRAM unknown — --gpu-memory-utilization {cap}"

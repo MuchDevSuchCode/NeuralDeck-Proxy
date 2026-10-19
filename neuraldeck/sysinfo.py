@@ -371,6 +371,16 @@ def _gpu_amdgpu_sysfs():
             continue
         idx_m = re.search(r"card(\d+)", d)
         idx = int(idx_m.group(1)) if idx_m else 0
+        # An APU whose BIOS carve-out is smaller than its GTT window (e.g.
+        # 0.5 GiB UMA plus ttm.pages_limit raised to ~112 GiB) serves its
+        # models from GTT: ROCm allocates there once the carve-out is full.
+        # Count both as the GPU's memory, or every fit check sees 0.5 GiB.
+        gtt_used = _read_int(f"{d}/mem_info_gtt_used")
+        gtt_total = _read_int(f"{d}/mem_info_gtt_total")
+        unified = bool(total and gtt_total and gtt_total > total)
+        if unified:
+            used = (used or 0) + (gtt_used or 0)
+            total = total + gtt_total
         return {
             # deliberately nameless: amd-smi/rocm-smi know the marketing
             # name, and "AMD GPU (amdgpu)" would win the merge over it
@@ -381,6 +391,7 @@ def _gpu_amdgpu_sysfs():
             "power": _hwmon_power(d),
             "vram_used_bytes": used,
             "vram_total_bytes": total,
+            "unified_memory": unified,
             "sclk": dpm_clock("pp_dpm_sclk", d),
             "mclk": dpm_clock("pp_dpm_mclk", d),
             "fclk": dpm_clock("pp_dpm_fclk", d),
@@ -492,7 +503,8 @@ _PROBES = (
     ("windows-cim", _gpu_windows_name, 60.0, None),
 )
 _GPU_FIELDS = ("name", "vendor", "utilization", "temperature", "power",
-               "vram_used_bytes", "vram_total_bytes", "sclk", "mclk", "fclk",
+               "vram_used_bytes", "vram_total_bytes", "unified_memory",
+               "sclk", "mclk", "fclk",
                "fan_pct", "fan_rpm")
 # Per-probe memo: {"at": monotonic, "val": result}. A probe that costs a
 # subprocess refreshes on its own interval and is reused in between. One

@@ -1169,7 +1169,10 @@ function renderSnapshot(s){
   // "Unified" / "edge" are APU (amdgpu) notions — a discrete card has its
   // own VRAM and reports a single core temperature
   const apu=!!s.gpu.gtt_total_gb||(s.gpu.sources||[]).some(x=>/amdgpu/.test(x));
-  $("vram-lbl").textContent=apu&&s.gpu.gtt_total_gb?"VRAM (Unified)":"VRAM";
+  // unified_memory: small BIOS carve-out + a larger GTT window; the VRAM
+  // meter then counts both, and the GTT meter below is the shared part of it
+  $("vram-lbl").textContent=s.gpu.unified_memory?"GPU memory (carve-out + GTT)"
+    :apu&&s.gpu.gtt_total_gb?"VRAM (Unified)":"VRAM";
   $("g-temp").textContent=s.gpu.temp!=null?fmt(s.gpu.temp)+"°C"+(apu?" (edge)":""):"—";
   // a row with no counter behind it on this hardware is hidden, not left
   // showing a dash forever
