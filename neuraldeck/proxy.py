@@ -838,8 +838,13 @@ async def whisper_reachable(ttl: float = 10.0) -> bool:
 
 
 @app.get("/props")
-async def props():
+async def props(model: Optional[str] = None):
     """The default instance's /props, with modalities corrected for the stack.
+
+    Without ?model= the body says "role": "router", as llama-server's own
+    router does: that is what makes the llama.cpp web UI (served through
+    here at /) show its model picker. ?model=<id> answers for that model,
+    which is how the UI reads each model's context size and modalities.
 
     Clients treat `modalities` as authoritative, so audio is only true when
     a speech backend is actually reachable, and video is true when either
@@ -849,7 +854,7 @@ async def props():
     is synthesized from what /v1/models told discovery — the served name
     and max_model_len (as n_ctx) — marked "backend": "vllm".
     """
-    target = await pick_backend(None)
+    target = await pick_backend(model)
     if _is_vllm(target):
         vision = bool((target.get("modalities") or {}).get("vision"))
         body = {"backend": "vllm", "model_alias": target.get("alias"),
@@ -863,6 +868,7 @@ async def props():
             {"port": i["port"], "model": i["alias"],
              "modalities": i["modalities"], "kind": i.get("kind")}
             for i in await discover_instances()]
+        body["role"] = "model" if model else "router"
         return JSONResponse(content=body)
     try:
         resp = await _http().get(f"{target['base']}/props", timeout=CONNECT_TIMEOUT)
@@ -886,6 +892,7 @@ async def props():
         {"port": i["port"], "model": i["alias"], "modalities": i["modalities"],
          "kind": i.get("kind")}
         for i in await discover_instances()]
+    body["role"] = "model" if model else "router"
     return JSONResponse(content=body)
 
 
@@ -906,10 +913,24 @@ async def models_aggregate():
                     continue
                 seen.add(m.get("id"))
                 m["port"] = inst.get("port")
+                m.setdefault("status", {"value": "loaded"})   # router-mode UI
                 data.append(m)
         except (httpx.HTTPError, ValueError, AttributeError):
             continue
     return JSONResponse(content={"object": "list", "data": data})
+
+
+@app.get("/models/sse")
+async def models_sse():
+    """The router's model-status feed, for the web UI. Models here are
+    started and stopped from the deck, so it only keeps the stream open;
+    the UI rereads /v1/models when a chat names a model it has not seen."""
+    async def keepalive():
+        while True:
+            yield b": keepalive\n\n"
+            await asyncio.sleep(15)
+    return StreamingResponse(keepalive(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache"})
 
 
 async def rewrite_audio_parts(messages: list) -> int:
