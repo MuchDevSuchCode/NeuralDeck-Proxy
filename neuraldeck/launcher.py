@@ -8,7 +8,7 @@ more than a subprocess call:
     launcher reads `--help` once per binary and passes only flags that
     binary understands, so a stock build and a fork both work.
   * a model can ship an MTP head its runtime cannot consume. The head is an
-    optimisation, so a failure there retries without it rather than leaving
+    optimization, so a failure there retries without it rather than leaving
     you with nothing.
 
 A backend whose executable is `vllm` gets the same treatment: its flags are
@@ -764,7 +764,7 @@ class Launcher:
 
             ok, exited = await self._spawn_and_wait(argv, log_path, port, **wait)
             if not ok and exited and _has_spec(argv):
-                # The MTP/draft head is an optimisation; if the runtime could
+                # The MTP/draft head is an optimization; if the runtime could
                 # not load it, serve the model plainly rather than nothing.
                 # Only after the first attempt has really gone — a second
                 # copy beside a live one would fight it for the port.

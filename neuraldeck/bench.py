@@ -49,7 +49,7 @@ _pending: dict = {}   # (path, task) -> partial record
 # twice from the log a moment later.
 _client_posts: deque = deque(maxlen=30)
 # The sampler thread and API requests (also in threads) both write the file;
-# one lock serialises appends, rewrites and the client-post list.
+# one lock serializes appends, rewrites and the client-post list.
 _lock = threading.RLock()
 # Records kept. The file is compacted back to this many once it holds twice
 # as many, so it cannot grow forever and a read never has to parse years.

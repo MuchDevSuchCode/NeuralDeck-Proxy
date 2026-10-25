@@ -3,7 +3,7 @@
 Everything here goes through psutil rather than shelling out to pkill or
 lsof: those are absent on Windows, and a pattern-matching kill is a hazard
 anyway — `pkill -f llama` cheerfully matches the dashboard that ran it.
-Stopping something means signalling a pid we identified, never a pattern.
+Stopping something means signaling a pid we identified, never a pattern.
 """
 
 import json
@@ -87,7 +87,7 @@ def find_by_name(names: set):
 
 
 def metrics(proc) -> dict:
-    """pid / cpu% (normalised per core) / rss for a service row."""
+    """pid / cpu% (normalized per core) / rss for a service row."""
     if proc is None:
         return {}
     try:
@@ -277,7 +277,7 @@ def llama_instances() -> list:
 
 # ── vLLM instances ─────────────────────────────────────────────────────────
 # `vllm serve` is a Python script, so the process is python running it: the
-# instance is recognised by its command line, never by process name.
+# instance is recognized by its command line, never by process name.
 
 _VLLM_MODULES = {"vllm.entrypoints.openai.api_server"}
 

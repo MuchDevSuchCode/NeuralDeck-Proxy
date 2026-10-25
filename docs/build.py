@@ -67,7 +67,7 @@ def render(md: str) -> str:
     out = re.sub(r"<h([234])>(.*?)</h\1>", anchor, out, flags=re.S)
 
     # wide tables scroll inside their own box, never the page; each cell also
-    # carries its column name, so phones can show a row as a labelled card
+    # carries its column name, so phones can show a row as a labeled card
     def label_cells(m):
         table = m.group(0)
         heads = [re.sub(r"<[^>]+>", "", h).strip()
@@ -300,7 +300,7 @@ TEMPLATE = r"""<!DOCTYPE html>
     .hash { display: none; }
     .brand .full { display: none; }
   }
-  /* phones: each table row becomes a card, each cell labelled by its column */
+  /* phones: each table row becomes a card, each cell labeled by its column */
   @media (max-width: 640px) {
     .table-wrap { overflow: visible; border: 0; border-radius: 0; }
     .table-wrap table, .table-wrap tbody, .table-wrap tr, .table-wrap td { display: block; width: 100%; }
@@ -372,7 +372,7 @@ __BODY__
 
 <footer>
   <div class="inner">
-    <span>NeuralDeck-Proxy · MIT licence</span>
+    <span>NeuralDeck-Proxy · MIT license</span>
     <a href="__REPO__">Source on GitHub</a>
     <a href="__REPO__/issues">Issues</a>
     <span>Generated from README.md by docs/build.py</span>

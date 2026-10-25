@@ -1,9 +1,9 @@
 """The other processes the deck can see and control.
 
-Each service is described once: which port it answers on, how to recognise
+Each service is described once: which port it answers on, how to recognize
 it in the process table, where its log goes, and how to start it. Anything
 without a start command is still watched — it just cannot be started from
-the dashboard, which is the right behaviour for something installed
+the dashboard, which is the right behavior for something installed
 elsewhere on the machine.
 """
 

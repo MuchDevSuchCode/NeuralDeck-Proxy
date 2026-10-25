@@ -201,7 +201,7 @@ keep running throughout.
 
 ## Backends: llama.cpp and vLLM
 
-A **backend** is a labelled path to a model server executable, set in
+A **backend** is a labeled path to a model server executable, set in
 **Settings → llama-server builds**. The launch form picks one per launch,
 so you can keep several and switch between them.
 
@@ -326,8 +326,8 @@ Prompt Lab, Benchmarks and Settings.
 | Panel | Shows |
 | --- | --- |
 | **CPU** | model, frequency, temperature, core/thread count, load |
-| **Per-core utilisation** | load per logical core |
-| **GPU / Accelerator** | device, temperature, clocks, power, fan, utilisation, VRAM (plus the shared GTT pool on AMD APUs) |
+| **Per-core utilization** | load per logical core |
+| **GPU / Accelerator** | device, temperature, clocks, power, fan, utilization, VRAM (plus the shared GTT pool on AMD APUs) |
 | **Memory pressure** | a verdict (ok / watch / tight) from RAM, VRAM and swap, with advice |
 | **Roofline / Bottleneck** | an estimated decode ceiling from memory bandwidth ÷ weight bytes, and how close the live decode speed gets to it |
 | **Storage** | usage of each model folder's disk, and disk read/write |
@@ -367,7 +367,7 @@ The launch controls above the list apply to the next launch:
 
 | Control | Meaning |
 | --- | --- |
-| **backend** | which server build to use (vLLM backends are labelled) |
+| **backend** | which server build to use (vLLM backends are labeled) |
 | **slots** | parallel requests. llama.cpp splits the context across them; vLLM uses it as `--max-num-seqs` |
 | **ctx** | context size in tokens. The note beside it shows the per-request budget |
 | **spec** | `auto` uses the model's MTP head when it has one; `ngram` drafts from the context and needs no draft model; `off` disables speculation (useful for A/B timing) |
@@ -416,7 +416,7 @@ Press **⬇ Get models** in the Models panel.
   llama.cpp. vLLM mode lists safetensors repos and downloads the whole
   repo; it's available once a vLLM backend is configured.
 * Downloads **queue**, show progress next to the ⬇ Get models button even
-  with the dialog closed, can be cancelled, and refresh the model list when
+  with the dialog closed, can be canceled, and refresh the model list when
   they finish.
 
 **In GGUF mode, what to tick:**
@@ -547,7 +547,7 @@ clients that insist on one can send any value.
 
 ### Endpoints
 
-| Endpoint | Behaviour |
+| Endpoint | Behavior |
 | --- | --- |
 | `POST /v1/chat/completions` | routed by `model`. `input_audio` parts are transcribed; `video_url` parts become frames for vision models |
 | `POST /v1/messages` | the Anthropic Messages API, routed the same way (llama-server and vLLM both speak it) |
@@ -1133,6 +1133,6 @@ The dashboard, prompt lab and benchmark UI come from the NeuralDeck deck
 built for a Strix Halo box; this package is that work made standalone and
 cross-platform.
 
-## Licence
+## License
 
 MIT. See [LICENSE](LICENSE).

@@ -151,7 +151,7 @@
     .hash { display: none; }
     .brand .full { display: none; }
   }
-  /* phones: each table row becomes a card, each cell labelled by its column */
+  /* phones: each table row becomes a card, each cell labeled by its column */
   @media (max-width: 640px) {
     .table-wrap { overflow: visible; border: 0; border-radius: 0; }
     .table-wrap table, .table-wrap tbody, .table-wrap tr, .table-wrap td { display: block; width: 100%; }
@@ -206,6 +206,7 @@
     </div>
     <div class="cards">
 <div class="card"><h3>Dashboard</h3><p>live CPU/GPU/VRAM/thermal telemetry, every running model server with the flags it was launched with, KV-cache occupancy, a roofline estimate, per-service start/stop, logs, and model management: launch, relaunch, delete, and download from Hugging Face.</p></div>
+<div class="card"><h3>Chat</h3><p>a full port of the llama.cpp web UI, every setting included: conversations saved in the browser (search, rename, export/import), a model picker with capability icons (vision, audio, video, reasoning, tools, speculative decoding), streaming markdown with code, tables and math, reasoning effort, edit/regenerate/continue/stop, image, PDF, text, audio, video and voice attachments, all sampling and penalty parameters, and tool calling with permission prompts: llama-server built-ins, a sandboxed JavaScript tool and MCP servers (relayed through the deck to avoid CORS).</p></div>
 <div class="card"><h3>Prompt Lab</h3><p>send a prompt to any loaded model and watch it stream, with time-to-first-token, prefill/decode throughput and draft acceptance measured per run.</p></div>
 <div class="card"><h3>Benchmarks</h3><p>every request through the stack is recorded, from the Prompt Lab, from a standard prompt, or from any other client on your network. Compare models, backends and speculation settings on medians.</p></div>
 <div class="card"><h3>Settings</h3><p>point NeuralDeck at your model folders and server builds from the page itself, with a file picker, validation, and an honest account of which changes apply at once and which need a restart.</p></div>
@@ -217,7 +218,7 @@
 
 <div class="layout">
   <nav class="sidebar" id="sidebar" aria-label="Documentation sections">
-<ul class="toc"><li><a href="#quick-start">Quick start</a></li><li><a href="#how-it-fits-together">How it fits together</a></li><li><a href="#requirements">Requirements</a></li><li><a href="#install">Install</a><ul><li><a href="#with-the-installer-recommended">With the installer (recommended)</a></li><li><a href="#manually-or-into-an-existing-environment">Manually, or into an existing environment</a></li><li><a href="#updating">Updating</a></li></ul></li><li><a href="#backends-llamacpp-and-vllm">Backends: llama.cpp and vLLM</a><ul><li><a href="#llamacpp-builds">llama.cpp builds</a></li><li><a href="#vllm">vLLM</a></li></ul></li><li><a href="#the-dashboard">The dashboard</a><ul><li><a href="#dashboard-panels">Dashboard panels</a></li><li><a href="#launching-a-model">Launching a model</a></li><li><a href="#servers-and-logs">Servers and logs</a></li></ul></li><li><a href="#getting-models">Getting models</a><ul><li><a href="#the-hugging-face-downloader">The Hugging Face downloader</a></li><li><a href="#adding-models-by-hand">Adding models by hand</a></li><li><a href="#mmproj-files-which-and-when">mmproj files: which and when</a></li></ul></li><li><a href="#choosing-a-quantisation">Choosing a quantisation</a></li><li><a href="#prompt-lab">Prompt Lab</a></li><li><a href="#benchmarks">Benchmarks</a></li><li><a href="#using-the-proxy">Using the proxy</a><ul><li><a href="#endpoints">Endpoints</a></li><li><a href="#how-model-is-matched">How model is matched</a></li><li><a href="#examples">Examples</a></li></ul></li><li><a href="#how-to-recipes">How-to recipes</a></li><li><a href="#settings-reference">Settings reference</a><ul><li><a href="#models">Models</a></li><li><a href="#backends">Backends</a></li><li><a href="#launch-defaults">Launch defaults</a></li><li><a href="#vllm-1">vLLM</a></li><li><a href="#sampling">Sampling</a></li><li><a href="#ports">Ports</a></li><li><a href="#speech--video">Speech &amp; video</a></li><li><a href="#proxy">Proxy</a></li><li><a href="#dashboard">Dashboard</a></li><li><a href="#optional-services">Optional services</a></li><li><a href="#validation-and-safety">Validation and safety</a></li></ul></li><li><a href="#configuring-without-the-page">Configuring without the page</a><ul><li><a href="#settings-not-on-the-page">Settings not on the page</a></li></ul></li><li><a href="#command-line">Command line</a></li><li><a href="#where-things-are-stored">Where things are stored</a></li><li><a href="#dashboard-api">Dashboard API</a></li><li><a href="#troubleshooting">Troubleshooting</a><ul><li><a href="#starting-and-installing">Starting and installing</a></li><li><a href="#launching-models">Launching models</a></li><li><a href="#clients-and-the-proxy">Clients and the proxy</a></li><li><a href="#models-and-downloads">Models and downloads</a></li><li><a href="#vllm-2">vLLM</a></li><li><a href="#telemetry">Telemetry</a></li></ul></li><li><a href="#security">Security</a></li><li><a href="#uninstall">Uninstall</a></li><li><a href="#notes-on-portability">Notes on portability</a></li><li><a href="#documentation-site">Documentation site</a></li><li><a href="#credit">Credit</a></li><li><a href="#licence">Licence</a></li></ul>
+<ul class="toc"><li><a href="#quick-start">Quick start</a></li><li><a href="#how-it-fits-together">How it fits together</a></li><li><a href="#requirements">Requirements</a></li><li><a href="#install">Install</a><ul><li><a href="#with-the-installer-recommended">With the installer (recommended)</a></li><li><a href="#manually-or-into-an-existing-environment">Manually, or into an existing environment</a></li><li><a href="#updating">Updating</a></li></ul></li><li><a href="#backends-llamacpp-and-vllm">Backends: llama.cpp and vLLM</a><ul><li><a href="#llamacpp-builds">llama.cpp builds</a></li><li><a href="#vllm">vLLM</a></li></ul></li><li><a href="#the-dashboard">The dashboard</a><ul><li><a href="#dashboard-panels">Dashboard panels</a></li><li><a href="#launching-a-model">Launching a model</a></li><li><a href="#servers-and-logs">Servers and logs</a></li></ul></li><li><a href="#getting-models">Getting models</a><ul><li><a href="#the-hugging-face-downloader">The Hugging Face downloader</a></li><li><a href="#adding-models-by-hand">Adding models by hand</a></li><li><a href="#mmproj-files-which-and-when">mmproj files: which and when</a></li></ul></li><li><a href="#choosing-a-quantisation">Choosing a quantisation</a></li><li><a href="#prompt-lab">Prompt Lab</a></li><li><a href="#benchmarks">Benchmarks</a></li><li><a href="#using-the-proxy">Using the proxy</a><ul><li><a href="#endpoints">Endpoints</a></li><li><a href="#how-model-is-matched">How model is matched</a></li><li><a href="#examples">Examples</a></li></ul></li><li><a href="#how-to-recipes">How-to recipes</a></li><li><a href="#settings-reference">Settings reference</a><ul><li><a href="#models">Models</a></li><li><a href="#backends">Backends</a></li><li><a href="#launch-defaults">Launch defaults</a></li><li><a href="#vllm-1">vLLM</a></li><li><a href="#sampling">Sampling</a></li><li><a href="#ports">Ports</a></li><li><a href="#speech--video">Speech &amp; video</a></li><li><a href="#proxy">Proxy</a></li><li><a href="#dashboard">Dashboard</a></li><li><a href="#optional-services">Optional services</a></li><li><a href="#validation-and-safety">Validation and safety</a></li></ul></li><li><a href="#configuring-without-the-page">Configuring without the page</a><ul><li><a href="#settings-not-on-the-page">Settings not on the page</a></li></ul></li><li><a href="#command-line">Command line</a></li><li><a href="#where-things-are-stored">Where things are stored</a></li><li><a href="#dashboard-api">Dashboard API</a></li><li><a href="#troubleshooting">Troubleshooting</a><ul><li><a href="#starting-and-installing">Starting and installing</a></li><li><a href="#launching-models">Launching models</a></li><li><a href="#clients-and-the-proxy">Clients and the proxy</a></li><li><a href="#models-and-downloads">Models and downloads</a></li><li><a href="#vllm-2">vLLM</a></li><li><a href="#telemetry">Telemetry</a></li></ul></li><li><a href="#security">Security</a></li><li><a href="#uninstall">Uninstall</a></li><li><a href="#notes-on-portability">Notes on portability</a></li><li><a href="#documentation-site">Documentation site</a></li><li><a href="#credit">Credit</a></li><li><a href="#license">License</a></li></ul>
   </nav>
   <div class="scrim" id="scrim"></div>
   <main id="content">
@@ -354,7 +355,7 @@ it again, and restart the proxy from the <strong>Servers</strong> panel (<strong
 restarts, so it keeps the old code until you restart it. Model servers
 keep running throughout.</p>
 <h2 id="backends-llamacpp-and-vllm"><a class="hash" href="#backends-llamacpp-and-vllm" aria-label="Link to this section">#</a>Backends: llama.cpp and vLLM</h2>
-<p>A <strong>backend</strong> is a labelled path to a model server executable, set in
+<p>A <strong>backend</strong> is a labeled path to a model server executable, set in
 <strong>Settings → llama-server builds</strong>. The launch form picks one per launch,
 so you can keep several and switch between them.</p>
 <h3 id="llamacpp-builds"><a class="hash" href="#llamacpp-builds" aria-label="Link to this section">#</a>llama.cpp builds</h3>
@@ -418,8 +419,10 @@ and cached): <code>--served-model-name</code>, <code>--max-model-len</code> (you
 <code>--enable-prefix-caching</code>.</li>
 <li><strong>Model-specific options are detected:</strong> reasoning and tool-call parsers
 for Qwen-family models (<code>qwen3_xml</code> when the chat template writes
-<code>&lt;function=…&gt;</code> calls, otherwise <code>hermes</code>), the model's own MTP layers as
-<code>--speculative-config</code> when speculation is <code>auto</code>, and
+<code>&lt;function=…&gt;</code> calls, otherwise <code>hermes</code>) and for Gemma 4 (<code>gemma4</code>),
+the model's own MTP layers as <code>--speculative-config</code> when speculation is
+<code>auto</code> — or a separate MTP head shipped as a subfolder of the model
+(e.g. <code>mtp/</code> holding Gemma 4's assistant model), drafting 4 tokens — and
 <code>enable_thinking: false</code> as the default template argument when thinking
 is off. If a launch fails with speculation on, it's retried without it.</li>
 <li><strong>VRAM is sized to what's free</strong>, so vLLM can run beside llama-servers.
@@ -482,12 +485,12 @@ Prompt Lab, Benchmarks and Settings.</p>
 <td data-label="Shows"><span class="cell">model, frequency, temperature, core/thread count, load</span></td>
 </tr>
 <tr>
-<td data-label="Panel"><span class="cell"><strong>Per-core utilisation</strong></span></td>
+<td data-label="Panel"><span class="cell"><strong>Per-core utilization</strong></span></td>
 <td data-label="Shows"><span class="cell">load per logical core</span></td>
 </tr>
 <tr>
 <td data-label="Panel"><span class="cell"><strong>GPU / Accelerator</strong></span></td>
-<td data-label="Shows"><span class="cell">device, temperature, clocks, power, fan, utilisation, VRAM (plus the shared GTT pool on AMD APUs)</span></td>
+<td data-label="Shows"><span class="cell">device, temperature, clocks, power, fan, utilization, VRAM (plus the shared GTT pool on AMD APUs)</span></td>
 </tr>
 <tr>
 <td data-label="Panel"><span class="cell"><strong>Memory pressure</strong></span></td>
@@ -535,8 +538,10 @@ Prompt Lab, Benchmarks and Settings.</p>
 hover or keyboard focus; ↑/↓ move a focused panel). <strong>Reset layout</strong> in
 the header restores the default arrangement.</p>
 <p><strong>Themes:</strong> the header's theme picker offers <strong>NeuralDeck</strong> (the default
-cyberpunk look), <strong>Dark</strong> and <strong>Light</strong>. The choice is remembered per
-browser.</p>
+cyberpunk look), <strong>Dark</strong>, <strong>Light</strong>, <strong>System</strong> (Dark or Light, following
+the device), and <strong>llama.cpp</strong>: the llama.cpp web UI's own look, as
+<strong>llama.cpp Light</strong>, <strong>llama.cpp Dark</strong>, or plain <strong>llama.cpp</strong> to follow the
+device. The choice is remembered per browser.</p>
 <h3 id="launching-a-model"><a class="hash" href="#launching-a-model" aria-label="Link to this section">#</a>Launching a model</h3>
 <p>The Models panel lists every model found in your model directories. Icons
 show what each can do:</p>
@@ -585,7 +590,7 @@ show what each can do:</p>
 <tbody>
 <tr>
 <td data-label="Control"><span class="cell"><strong>backend</strong></span></td>
-<td data-label="Meaning"><span class="cell">which server build to use (vLLM backends are labelled)</span></td>
+<td data-label="Meaning"><span class="cell">which server build to use (vLLM backends are labeled)</span></td>
 </tr>
 <tr>
 <td data-label="Control"><span class="cell"><strong>slots</strong></span></td>
@@ -601,11 +606,15 @@ show what each can do:</p>
 </tr>
 <tr>
 <td data-label="Control"><span class="cell"><strong>thinking</strong></span></td>
-<td data-label="Meaning"><span class="cell">reasoning budget for models that support it: <code>off</code> (0), <code>low</code> (1024 tokens), <code>medium</code> (4096), <code>high</code> (unlimited)</span></td>
+<td data-label="Meaning"><span class="cell">reasoning budget for models that support it: <code>off</code>, <code>low</code> (1024 tokens), <code>medium</code> (4096), <code>high</code> (unlimited). On llama.cpp builds with <code>--reasoning</code>, <code>off</code> is <code>--reasoning off</code> alone</span></td>
 </tr>
 <tr>
 <td data-label="Control"><span class="cell"><strong>replace running instances</strong></span></td>
 <td data-label="Meaning"><span class="cell">stop what's running first, instead of launching alongside it</span></td>
+</tr>
+<tr>
+<td data-label="Control"><span class="cell"><strong>search</strong></span></td>
+<td data-label="Meaning"><span class="cell">narrows the list: every word must match the name, folder or a feature (<code>vision</code>, <code>mtp</code>, <code>thinking</code>, <code>gguf</code>, <code>safetensors</code>, <code>running</code>). <code>/</code> focuses it, <code>Enter</code> launches when exactly one model matches, <code>Esc</code> clears it</span></td>
 </tr>
 </tbody>
 </table></div>
@@ -645,7 +654,7 @@ description appears above its file list.</li>
 llama.cpp. vLLM mode lists safetensors repos and downloads the whole
 repo; it's available once a vLLM backend is configured.</li>
 <li>Downloads <strong>queue</strong>, show progress next to the ⬇ Get models button even
-with the dialog closed, can be cancelled, and refresh the model list when
+with the dialog closed, can be canceled, and refresh the model list when
 they finish.</li>
 </ul>
 <p><strong>In GGUF mode, what to tick:</strong></p>
@@ -823,45 +832,45 @@ clients that insist on one can send any value.</p>
 <thead>
 <tr>
 <th>Endpoint</th>
-<th>Behaviour</th>
+<th>Behavior</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td data-label="Endpoint"><span class="cell"><code>POST /v1/chat/completions</code></span></td>
-<td data-label="Behaviour"><span class="cell">routed by <code>model</code>. <code>input_audio</code> parts are transcribed; <code>video_url</code> parts become frames for vision models</span></td>
+<td data-label="Behavior"><span class="cell">routed by <code>model</code>. <code>input_audio</code> parts are transcribed; <code>video_url</code> parts become frames for vision models</span></td>
 </tr>
 <tr>
 <td data-label="Endpoint"><span class="cell"><code>POST /v1/messages</code></span></td>
-<td data-label="Behaviour"><span class="cell">the Anthropic Messages API, routed the same way (llama-server and vLLM both speak it)</span></td>
+<td data-label="Behavior"><span class="cell">the Anthropic Messages API, routed the same way (llama-server and vLLM both speak it)</span></td>
 </tr>
 <tr>
 <td data-label="Endpoint"><span class="cell"><code>POST /v1/messages/count_tokens</code></span></td>
-<td data-label="Behaviour"><span class="cell">Anthropic token counting</span></td>
+<td data-label="Behavior"><span class="cell">Anthropic token counting</span></td>
 </tr>
 <tr>
 <td data-label="Endpoint"><span class="cell"><code>POST /v1/completions</code>, <code>/v1/embeddings</code>, <code>/v1/responses</code>, <code>/v1/rerank</code> …</span></td>
-<td data-label="Behaviour"><span class="cell">routed by <code>model</code> when the body names one</span></td>
+<td data-label="Behavior"><span class="cell">routed by <code>model</code> when the body names one</span></td>
 </tr>
 <tr>
 <td data-label="Endpoint"><span class="cell"><code>POST /v1/multimodal</code></span></td>
-<td data-label="Behaviour"><span class="cell">one multipart form with <code>text</code>, <code>images</code>, <code>videos</code>, <code>audio</code>, <code>system</code>, <code>model</code> and <code>stream</code> fields</span></td>
+<td data-label="Behavior"><span class="cell">one multipart form with <code>text</code>, <code>images</code>, <code>videos</code>, <code>audio</code>, <code>system</code>, <code>model</code> and <code>stream</code> fields</span></td>
 </tr>
 <tr>
 <td data-label="Endpoint"><span class="cell"><code>POST /v1/audio/speech</code>, <code>GET /v1/audio/voices</code></span></td>
-<td data-label="Behaviour"><span class="cell">relayed to the TTS backend</span></td>
+<td data-label="Behavior"><span class="cell">relayed to the TTS backend</span></td>
 </tr>
 <tr>
 <td data-label="Endpoint"><span class="cell"><code>GET /v1/models</code></span></td>
-<td data-label="Behaviour"><span class="cell">every model being served, across all instances</span></td>
+<td data-label="Behavior"><span class="cell">every model being served, across all instances</span></td>
 </tr>
 <tr>
 <td data-label="Endpoint"><span class="cell"><code>GET /props</code>, <code>GET /health</code></span></td>
-<td data-label="Behaviour"><span class="cell">the default instance's properties; the proxy's health</span></td>
+<td data-label="Behavior"><span class="cell">the default instance's properties; the proxy's health</span></td>
 </tr>
 <tr>
 <td data-label="Endpoint"><span class="cell">anything else</span></td>
-<td data-label="Behaviour"><span class="cell">relayed to the default llama-server untouched</span></td>
+<td data-label="Behavior"><span class="cell">relayed to the default llama-server untouched</span></td>
 </tr>
 </tbody>
 </table></div>
@@ -1776,7 +1785,7 @@ generated, so edit the README and rebuild rather than editing the HTML:</p>
 <p>The dashboard, prompt lab and benchmark UI come from the NeuralDeck deck
 built for a Strix Halo box; this package is that work made standalone and
 cross-platform.</p>
-<h2 id="licence"><a class="hash" href="#licence" aria-label="Link to this section">#</a>Licence</h2>
+<h2 id="license"><a class="hash" href="#license" aria-label="Link to this section">#</a>License</h2>
 <p>MIT. See <a href="https://github.com/MuchDevSuchCode/NeuralDeck-Proxy/blob/main/LICENSE">LICENSE</a>.</p>
 
   </main>
@@ -1784,7 +1793,7 @@ cross-platform.</p>
 
 <footer>
   <div class="inner">
-    <span>NeuralDeck-Proxy · MIT licence</span>
+    <span>NeuralDeck-Proxy · MIT license</span>
     <a href="https://github.com/MuchDevSuchCode/NeuralDeck-Proxy">Source on GitHub</a>
     <a href="https://github.com/MuchDevSuchCode/NeuralDeck-Proxy/issues">Issues</a>
     <span>Generated from README.md by docs/build.py</span>

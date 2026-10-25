@@ -121,7 +121,7 @@ _HOP_HEADERS = {"connection", "keep-alive", "transfer-encoding", "upgrade",
                 "host", "content-length", "proxy-authenticate",
                 "proxy-authorization", "te", "trailer", "date", "server",
                 "expect"}
-# Also dropped when the proxy re-serialises the body itself: the type is
+# Also dropped when the proxy re-serializes the body itself: the type is
 # httpx's to set, and a client's accept-encoding could ask for a compression
 # httpx cannot decode.
 _REBODY_HEADERS = _HOP_HEADERS | {"content-type", "accept-encoding"}
@@ -184,7 +184,7 @@ def _norm_model(s: str) -> str:
 def _route_match(requested: str, instances: list) -> list:
     """Instances a requested name could mean.
 
-    An exact normalised match wins outright. Failing that, instances whose
+    An exact normalized match wins outright. Failing that, instances whose
     name extends the request at a '-' boundary (an HF repo id against a
     quant-suffixed filename) are candidates, and the caller routes only when
     there is exactly one: choosing between Bonsai-27B-PTQ1_0 and -PQ2_0 by

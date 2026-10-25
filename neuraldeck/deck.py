@@ -322,7 +322,7 @@ _server = None
 async def stream():
     async def gen():
         last_ts = None
-        # End on shutdown rather than wait to be cancelled: uvicorn waits for
+        # End on shutdown rather than wait to be canceled: uvicorn waits for
         # open responses, and a dashboard tab's stream never finishes on its
         # own — Ctrl+C would stall, then dump a traceback per open tab.
         while not (_server and _server.should_exit):
@@ -840,7 +840,7 @@ download_queue: deque = deque()
 download_recent: deque = deque(maxlen=12)
 download_state = {"proc": None, "buffer": deque(maxlen=200), "repo": None,
                   "target": None, "total_bytes": 0, "started": None,
-                  "id": None, "files": 0, "cancelled": False,
+                  "id": None, "files": 0, "canceled": False,
                   "snapshot": False}
 _dl_task = None
 
@@ -1167,8 +1167,8 @@ def _download_job(job: dict) -> int:
             f"snapshot: {len(wanted)} file(s), "
             f"{job['total_bytes'] / 1024**3:.1f} GiB")
         for name in job["files"]:
-            if download_state["cancelled"]:
-                download_state["buffer"].append("[cancelled]")
+            if download_state["canceled"]:
+                download_state["buffer"].append("[canceled]")
                 return 1
             download_state["buffer"].append(f"downloading {name}")
             hf_hub_download(repo_id=job["repo"], filename=name,
@@ -1177,8 +1177,8 @@ def _download_job(job: dict) -> int:
         return 0
     placed = set()
     for name in job["files"]:
-        if download_state["cancelled"]:
-            download_state["buffer"].append("[cancelled]")
+        if download_state["canceled"]:
+            download_state["buffer"].append("[canceled]")
             return 1
         download_state["buffer"].append(f"downloading {name}")
         local = hf_hub_download(repo_id=job["repo"], filename=name,
@@ -1227,7 +1227,7 @@ async def _dl_run_queue():
         job = download_queue.popleft()
         download_state.update(id=job["id"], repo=job["repo"], target=job["target"],
                               total_bytes=job["total_bytes"], files=len(job["files"]),
-                              started=time.time(), cancelled=False, proc="running",
+                              started=time.time(), canceled=False, proc="running",
                               snapshot=bool(job.get("snapshot")))
         download_state["buffer"].clear()
         download_state["buffer"].append(
@@ -1329,8 +1329,8 @@ async def hf_cancel(body: dict = None):
     # happens to be running now
     if job_id and job_id != download_state["id"]:
         raise HTTPException(404, f"no queued or running download '{job_id}'")
-    download_state["cancelled"] = True
-    return JSONResponse({"cancelling": True})
+    download_state["canceled"] = True
+    return JSONResponse({"canceling": True})
 
 
 def main():

@@ -158,7 +158,7 @@ SCHEMA = [
     _f("tts_default_voice", "Default Voice", "str", "Speech & Video",
        "Filled in when a client does not name one.", restart="proxy"),
 
-    # ── Proxy behaviour ───────────────────────────────────────────────────
+    # ── Proxy behavior ───────────────────────────────────────────────────
     _f("strict_model_routing", "Strict Model Routing", "bool", "Proxy",
        "On: a request naming a model nothing is serving is an error. Off: "
        "it is answered by the default instance, which misattributes "

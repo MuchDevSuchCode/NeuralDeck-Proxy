@@ -433,7 +433,7 @@ def fuzzy_eq(a: str, b: str) -> bool:
     """Match a llama alias against a discovery name.
 
     Instance logs report the .gguf filename; discovery reports the folder
-    name. Normalise both and accept a prefix match either way.
+    name. Normalize both and accept a prefix match either way.
     """
     norm = lambda s: re.sub(r"[._]", "-", re.sub(
         r"(\.gguf|-gguf)$", "", (s or "").split("/")[-1].lower()))

@@ -154,7 +154,7 @@ def cpu_metrics():
 # ── NPU (AMD XDNA) ─────────────────────────────────────────────────────────
 
 def npu_metrics():
-    """(utilisation, power) as display strings, "N/A" when there is no NPU."""
+    """(utilization, power) as display strings, "N/A" when there is no NPU."""
     util = power = "N/A"
     if _which("xrt-smi"):
         out = _run(["xrt-smi", "examine", "-r", "utilization"], timeout=1.0)
@@ -197,7 +197,7 @@ def _gpu_nvidia():
         return None
     # Several GPUs are reported as one pool — llama.cpp splits a model
     # across all of them, so the VRAM that matters is the sum. Power adds
-    # up too; temperature and fan take the hottest card, utilisation the
+    # up too; temperature and fan take the hottest card, utilization the
     # mean, and clocks come from the first card.
     def col(i):
         return [v for v in (_f(g[i]) for g in gpus) if v is not None]
@@ -230,7 +230,7 @@ def _gpu_nvidia():
 def _amd_smi_metrics():
     """amd-smi ships on Windows and current ROCm, and on an APU it is often
     the only source for VRAM size and edge temperature — while reporting
-    "N/A" for utilisation, which sysfs does have. Hence the merge in gpu():
+    "N/A" for utilization, which sysfs does have. Hence the merge in gpu():
     every probe contributes only the fields it actually knows."""
     if not _which("amd-smi"):
         return None
@@ -449,7 +449,7 @@ def _as_list(v):
 
 def _gpu_windows_name():
     """Last resort on Windows: the adapter's name and memory from CIM, with
-    no utilisation — better than an empty panel. With several adapters (an
+    no utilization — better than an empty panel. With several adapters (an
     iGPU beside a discrete card) the one with the most memory is shown."""
     if not IS_WINDOWS:
         return None
@@ -496,7 +496,7 @@ def _gpu_windows_name():
 
 
 # Probe order is merge order: the first probe to supply a field owns it.
-# sysfs comes before amd-smi because its utilisation counter is live and
+# sysfs comes before amd-smi because its utilization counter is live and
 # free, while amd-smi fills in the name, VRAM size and edge temperature an
 # APU does not expose through sysfs. The last column is the vendor a probe
 # can report: once one vendor has answered, only probes of that vendor are
