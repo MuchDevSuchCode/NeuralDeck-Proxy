@@ -344,8 +344,10 @@ hover or keyboard focus; ↑/↓ move a focused panel). **Reset layout** in
 the header restores the default arrangement.
 
 **Themes:** the header's theme picker offers **NeuralDeck** (the default
-cyberpunk look), **Dark** and **Light**. The choice is remembered per
-browser.
+cyberpunk look), **Dark**, **Light**, **System** (Dark or Light, following
+the device), and **llama.cpp**: the llama.cpp web UI's own look, as
+**llama.cpp Light**, **llama.cpp Dark**, or plain **llama.cpp** to follow the
+device. The choice is remembered per browser.
 
 ### Launching a model
 

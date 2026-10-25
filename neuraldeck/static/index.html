@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NeuralDeck</title>
-<script>try{let t=localStorage.getItem("nd-theme");
-  if(t==="system")t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";
-  if(t==="dark"||t==="light")document.documentElement.dataset.theme=t;}catch(e){}</script>
+<script>try{let t=localStorage.getItem("nd-theme");const L=matchMedia("(prefers-color-scheme: light)").matches;
+  if(t==="system")t=L?"light":"dark"; else if(t==="llama")t=L?"llama-light":"llama-dark";
+  if(["dark","light","llama-dark","llama-light"].includes(t))document.documentElement.dataset.theme=t;}catch(e){}</script>
 <style>
   :root {
     color-scheme: dark;
@@ -60,6 +60,30 @@
     --good:#1a7f37; --warning:#9a6700; --critical:#cf222e;
     --bar-grad: linear-gradient(90deg, #0969da, #54aeff);
     --well:rgba(31,35,40,.06); --scrim:rgba(31,35,40,.45); --stripe:rgba(31,35,40,.03);
+  }
+  /* llama.cpp: the llama.cpp web UI's look (its shadcn neutral tokens,
+     verbatim oklch), sans-serif type, rounded cards, solid primary buttons */
+  :root[data-theme="llama-light"] {
+    color-scheme: light;
+    --page:oklch(1 0 0); --surface:oklch(1 0 0); --surface2:oklch(0.97 0 0);
+    --ink:oklch(0.145 0 0); --ink-2:oklch(0.32 0 0); --muted:oklch(0.556 0 0);
+    --grid:oklch(0.922 0 0); --axis:oklch(0.708 0 0); --border:oklch(0.875 0 0); --border-dim:oklch(0.922 0 0);
+    --cyan:oklch(0.205 0 0); --green:oklch(0.527 0.154 150.069); --yellow:oklch(0.554 0.135 66.442); --pink:oklch(0.592 0.249 0.584);
+    --s1:oklch(0.646 0.222 41.116); --s2:oklch(0.6 0.118 184.704); --s3:oklch(0.398 0.07 227.392); --s4:#ad7400;
+    --good:oklch(0.527 0.154 150.069); --warning:oklch(0.554 0.135 66.442); --critical:oklch(0.577 0.245 27.325);
+    --bar-grad: linear-gradient(90deg, oklch(0.371 0 0), oklch(0.205 0 0));
+    --well:oklch(0.985 0 0); --scrim:oklch(0 0 0 / 50%); --stripe:oklch(0 0 0 / 3%);
+  }
+  :root[data-theme="llama-dark"] {
+    color-scheme: dark;
+    --page:oklch(0.16 0 0); --surface:oklch(0.205 0 0); --surface2:oklch(0.269 0 0);
+    --ink:oklch(0.985 0 0); --ink-2:oklch(0.87 0 0); --muted:oklch(0.708 0 0);
+    --grid:oklch(1 0 0 / 10%); --axis:oklch(1 0 0 / 25%); --border:oklch(1 0 0 / 30%); --border-dim:oklch(1 0 0 / 12%);
+    --cyan:oklch(0.922 0 0); --green:oklch(0.723 0.219 149.579); --yellow:oklch(0.795 0.184 86.047); --pink:oklch(0.656 0.241 354.308);
+    --s1:oklch(0.696 0.17 162.48); --s2:oklch(0.769 0.188 70.08); --s3:oklch(0.627 0.265 303.9); --s4:oklch(0.645 0.246 16.439);
+    --good:oklch(0.723 0.219 149.579); --warning:oklch(0.795 0.184 86.047); --critical:oklch(0.704 0.191 22.216);
+    --bar-grad: linear-gradient(90deg, oklch(0.708 0 0), oklch(0.922 0 0));
+    --well:oklch(0.225 0 0); --scrim:oklch(0 0 0 / 60%); --stripe:oklch(1 0 0 / 2.5%);
   }
   :root[data-theme] { --glow-cyan:none; --glow-pink:none; }
   :root[data-theme] body { background-image:none; }
@@ -558,6 +582,51 @@
     .cs-nav { flex-direction:row; flex-wrap:wrap; }
     #chat-effort { max-width:84px; }
   }
+  /* ── llama.cpp themes: type, shape and controls ── */
+  :root[data-theme^="llama"] body { font:14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji"; font-variant-numeric:tabular-nums; }
+  :root[data-theme^="llama"] :is(pre, code, kbd, .logbox, .codeblk pre) {
+    font-family:ui-monospace, SFMono-Regular, "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas, "Liberation Mono", Menlo, monospace; }
+  :root[data-theme^="llama"] header h1 { color:var(--ink); letter-spacing:0; text-transform:none; font-size:18px; font-weight:600; }
+  :root[data-theme^="llama"] .panel { border-radius:14px; border-color:var(--border-dim); padding:14px 16px; }
+  :root[data-theme^="llama"] .panel h2 { color:var(--ink); letter-spacing:0; text-transform:none; font-size:14px; font-weight:600;
+    border-bottom-color:var(--border-dim); }
+  :root[data-theme^="llama"] .panel h2::before { display:none; }
+  :root[data-theme^="llama"] .kv dd { color:var(--ink); }
+  :root[data-theme^="llama"] th { text-transform:none; letter-spacing:0; }
+  :root[data-theme^="llama"] button { text-transform:none; letter-spacing:0; font-size:13px; font-weight:500; border-radius:8px;
+    padding:4px 12px; background:var(--surface); color:var(--ink); border:1px solid var(--border-dim); }
+  :root[data-theme^="llama"] button:hover { background:var(--surface2); }
+  :root[data-theme^="llama"] button.primary { background:var(--cyan); color:var(--page); border-color:var(--cyan); }
+  :root[data-theme^="llama"] button.primary:hover { background:color-mix(in oklch, var(--cyan) 90%, var(--page)); }
+  :root[data-theme^="llama"] button.danger { background:transparent; color:var(--critical);
+    border-color:color-mix(in oklch, var(--critical) 45%, transparent); }
+  :root[data-theme^="llama"] button.danger:hover { background:color-mix(in oklch, var(--critical) 10%, transparent); }
+  :root[data-theme^="llama"] button:disabled { background:transparent; border-style:solid; }
+  :root[data-theme^="llama"] :is(.viewtabs, .tabs) button { background:transparent; border-color:transparent; color:var(--muted); }
+  :root[data-theme^="llama"] :is(.viewtabs, .tabs) button:hover { color:var(--ink); background:var(--surface2); }
+  :root[data-theme^="llama"] :is(.viewtabs, .tabs) button.active { background:var(--surface2); color:var(--ink); border-color:var(--border-dim); }
+  :root[data-theme^="llama"] :is(select, input, textarea, .pl-input) { border-radius:8px; border-color:var(--border-dim); }
+  :root[data-theme^="llama"] :is(.pl-input, select):focus-visible { outline:2px solid color-mix(in oklch, var(--ink) 35%, transparent); outline-offset:1px; }
+  :root[data-theme^="llama"] :is(.chat-side, .chat-main) { border-radius:14px; }
+  :root[data-theme^="llama"] .msg.user .msg-body { border-radius:18px; background:var(--surface2); border-color:transparent; }
+  :root[data-theme^="llama"] .cap { color:var(--ink-2); background:var(--surface2); }
+  :root[data-theme^="llama"] .chat .cv-group, :root[data-theme^="llama"] .cs-nav button { text-transform:none; letter-spacing:0; }
+  :root[data-theme^="llama"] .cs-nav button.active { background:var(--surface2); }
+  /* the web UI's chat sits on the page itself, with the composer as a rounded card */
+  :root[data-theme^="llama"] .chat-main { background:var(--page); border-color:transparent; }
+  :root[data-theme^="llama"] .chat-top { border-bottom-color:transparent; }
+  :root[data-theme^="llama"] .chat-compose { border:1px solid var(--border-dim); border-radius:24px; background:var(--surface);
+    margin:0 auto 12px; width:calc(100% - 24px); max-width:900px; padding:10px 12px; }
+  :root[data-theme="llama-dark"] .chat-compose { background:oklch(0.205 0 0); border-color:oklch(1 0 0 / 30%); }
+  :root[data-theme^="llama"] #chat-in { border-color:transparent; background:transparent; padding:6px 4px; }
+  :root[data-theme^="llama"] #chat-in:focus-visible { outline:none; }
+  :root[data-theme^="llama"] .chat-row > button { border-radius:999px; min-width:34px; height:34px; padding:0 12px; }
+  :root[data-theme^="llama"] .chat-row > button:first-child { padding:0; width:34px; background:var(--surface2); border-color:transparent; }
+  :root[data-theme^="llama"] #chat-effort { border-radius:999px; }
+  :root[data-theme^="llama"] .chat button.ghost { background:transparent; border-color:transparent; padding:0 6px;
+    font-size:12px; color:var(--muted); border-radius:6px; }
+  :root[data-theme^="llama"] .chat button.ghost:hover { color:var(--ink); background:var(--surface2); }
 </style>
 </head>
 <body>
@@ -578,7 +647,10 @@
       <option value="neuraldeck">theme: NeuralDeck</option>
       <option value="dark">theme: Dark</option>
       <option value="light">theme: Light</option>
-      <option value="system">theme: System</option></select>
+      <option value="system">theme: System</option>
+      <option value="llama">theme: llama.cpp</option>
+      <option value="llama-light">theme: llama.cpp Light</option>
+      <option value="llama-dark">theme: llama.cpp Dark</option></select>
     <button onclick="resetLayout()" id="reset-layout"
       title="put the dashboard panels back in their default order" style="font-size:11px;padding:1px 8px">Reset layout</button></span>
 </header>
@@ -1339,15 +1411,17 @@ function launchOptsSync(){
 /* ---------- helpers ---------- */
 // "system" follows the device's light/dark preference, live
 const themeMQ=matchMedia("(prefers-color-scheme: light)");
+// "llama" is the llama.cpp look, following the device like "system" does
+const THEMES=["dark","light","llama-dark","llama-light"];
 function setTheme(t){
-  const shown=t==="system"?(themeMQ.matches?"light":"dark"):t;
-  if(shown==="dark"||shown==="light") document.documentElement.dataset.theme=shown;
+  const shown=t==="system"?(themeMQ.matches?"light":"dark"):t==="llama"?(themeMQ.matches?"llama-light":"llama-dark"):t;
+  if(THEMES.includes(shown)) document.documentElement.dataset.theme=shown;
   else { delete document.documentElement.dataset.theme; t="neuraldeck"; }
   try{localStorage.setItem("nd-theme",t);}catch(e){}
   if(typeof CS==="object") CS.theme=t;
 }
-themeMQ.addEventListener("change",()=>{ try{ if(localStorage.getItem("nd-theme")==="system") setTheme("system"); }catch(e){} });
-$("theme-sel").value=(()=>{ try{ const t=localStorage.getItem("nd-theme"); if(t==="system")return t; }catch(e){}
+themeMQ.addEventListener("change",()=>{ try{ const t=localStorage.getItem("nd-theme"); if(t==="system"||t==="llama") setTheme(t); }catch(e){} });
+$("theme-sel").value=(()=>{ try{ const t=localStorage.getItem("nd-theme"); if(t==="system"||t==="llama")return t; }catch(e){}
   return document.documentElement.dataset.theme||"neuraldeck"; })();
 async function api(url,method="GET",body,{quiet=false}={}){
   let r;
@@ -3305,8 +3379,9 @@ const csIn=(key,label,help,def,o={})=>({key,label,help,type:"input",def,...o});
 const csNum=(key,label,help,o={})=>({key,label,help,type:"input",def:undefined,num:true,param:key,...o});
 const CS_SECTIONS=[
   {slug:"general", title:"General", fields:[
-    {key:"theme",label:"Theme",help:"Choose the color theme. System follows your device; NeuralDeck is the deck's own look. This is the same setting as the header's theme picker.",
-      type:"select",def:"neuraldeck",options:[["system","System"],["light","Light"],["dark","Dark"],["neuraldeck","NeuralDeck"]]},
+    {key:"theme",label:"Theme",help:"Choose the color theme. System follows your device; NeuralDeck is the deck's own look; llama.cpp is the llama.cpp web UI's. This is the same setting as the header's theme picker.",
+      type:"select",def:"neuraldeck",options:[["system","System"],["light","Light"],["dark","Dark"],["neuraldeck","NeuralDeck"],
+      ["llama","llama.cpp (follows device)"],["llama-light","llama.cpp Light"],["llama-dark","llama.cpp Dark"]]},
     csIn("apiKey","API Key","Set the API Key if you are using <code>--api-key</code> option for the server.",""),
     {key:"systemMessage",label:"System Message",help:"The starting message that defines how model should behave.",type:"textarea",def:""},
     csIn("pasteLongTextToFileLen","Paste long text to file length","On pasting long text, it will be converted to a file. You can control the file length by setting the value of this parameter. Value 0 means disable.",2500,{num:true}),
