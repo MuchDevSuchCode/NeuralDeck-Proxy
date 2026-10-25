@@ -557,7 +557,18 @@
   .chat-chip .ghost { position:absolute; top:1px; right:1px; }
   .chat-row { display:flex; gap:8px; align-items:flex-end; }
   #chat-in { resize:none; min-height:38px; max-height:240px; font:14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  #chat-effort { max-width:140px; }
+  #chat-effort { max-width:140px; height:38px; }
+  /* composer buttons: squares the height of the message box, icon only */
+  .chat-row .cbtn { flex:none; width:38px; height:38px; min-width:38px; padding:0; display:inline-flex; align-items:center;
+    justify-content:center; line-height:1; }
+  .chat-row .cbtn .ico { width:18px; height:18px; vertical-align:0; }
+  .chat-row .cbtn.dim { opacity:.45; }
+  #chat-send { background:var(--cyan); color:var(--page); border-color:var(--cyan); }
+  #chat-send:hover { background:color-mix(in srgb, var(--cyan) 85%, #fff); text-shadow:none; }
+  #chat-send .ico { stroke-width:2.5; }
+  #chat-stop { background:var(--critical); color:#fff; border-color:var(--critical); }
+  #chat-stop:hover { background:color-mix(in srgb, var(--critical) 85%, #fff); text-shadow:none; box-shadow:none; }
+  #chat-stop .ico { fill:currentColor; width:14px; height:14px; }
   #chat-mic.rec { color:var(--critical); border-color:var(--critical); }
   #chat-build { position:absolute; right:10px; bottom:2px; font-size:10px; color:var(--muted); pointer-events:none; }
   /* settings dialog */
@@ -644,9 +655,12 @@
   :root[data-theme="llama-dark"] .chat-compose { background:oklch(0.205 0 0); border-color:oklch(1 0 0 / 30%); }
   :root[data-theme^="llama"] #chat-in { border-color:transparent; background:transparent; padding:6px 4px; }
   :root[data-theme^="llama"] #chat-in:focus-visible { outline:none; }
-  :root[data-theme^="llama"] .chat-row > button { border-radius:999px; min-width:34px; height:34px; padding:0 12px; }
+  :root[data-theme^="llama"] .chat-row .cbtn { border-radius:999px; width:34px; min-width:34px; height:34px; padding:0; margin-bottom:2px; }
+  :root[data-theme^="llama"] #chat-effort { height:34px; margin-bottom:2px; }
+  :root[data-theme^="llama"] #chat-send:hover { background:color-mix(in oklch, var(--cyan) 90%, var(--page)); }
+  :root[data-theme^="llama"] #chat-stop { background:var(--critical); color:#fff; border-color:var(--critical); }
   @media (max-width:760px){ :root[data-theme^="llama"] .chat-compose { width:calc(100% - 12px); border-radius:18px; } }
-  :root[data-theme^="llama"] .chat-row > button:first-child { padding:0; width:34px; background:var(--surface2); border-color:transparent; }
+  :root[data-theme^="llama"] .chat-row > .cbtn:first-child { background:var(--surface2); border-color:transparent; }
   :root[data-theme^="llama"] #chat-effort { border-radius:999px; }
   :root[data-theme^="llama"] .chat button.ghost { background:transparent; border-color:transparent; padding:0 6px;
     font-size:12px; color:var(--muted); border-radius:6px; }
@@ -916,15 +930,15 @@
     <div class="chat-compose" id="chat-compose">
       <div id="chat-atts"></div>
       <div class="chat-row">
-        <button onclick="$('chat-file').click()" title="attach images, PDFs, text files, audio or video" aria-label="Attach files">+</button>
+        <button class="cbtn" onclick="$('chat-file').click()" title="attach images, PDFs, text files, audio or video" aria-label="Attach files"></button>
         <input id="chat-file" type="file" multiple hidden onchange="chatAddFiles(this.files); this.value=''">
         <textarea id="chat-in" class="pl-input" rows="1" aria-label="Message"></textarea>
         <select id="chat-effort" aria-label="Reasoning effort" title="reasoning effort" onchange="csSet('reasoningEffort',this.value)">
           <option value="">Think: Default</option><option value="off">Think: Off</option><option value="low">Think: Low</option>
           <option value="medium">Think: Medium</option><option value="high">Think: High</option><option value="max">Think: Max</option></select>
-        <button id="chat-mic" onclick="chatMic()" title="record a voice message" aria-label="Record a voice message" style="display:none"></button>
-        <button id="chat-send" class="primary" onclick="chatSend()">Send</button>
-        <button id="chat-stop" class="danger" onclick="chatStop()" style="display:none">Stop</button>
+        <button id="chat-mic" class="cbtn" onclick="chatMic()" title="record a voice message" aria-label="Record a voice message" style="display:none"></button>
+        <button id="chat-send" class="cbtn" onclick="chatSend()" title="Send" aria-label="Send message"></button>
+        <button id="chat-stop" class="cbtn" onclick="chatStop()" title="Stop generating" aria-label="Stop generating" style="display:none"></button>
       </div>
     </div>
     <div id="chat-build"></div>
@@ -3641,6 +3655,8 @@ const ICON={
   zap:'<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
   file:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
   square:'<rect x="5" y="5" width="14" height="14" rx="2"/>',
+  up:'<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
+  plus:'<path d="M5 12h14"/><path d="M12 5v14"/>',
   chev:'<path d="m6 9 6 6 6-6"/>',
 };
 const svgI=(n,cls="ico")=>`<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[n]}</svg>`;
@@ -4800,8 +4816,11 @@ function chatComposerSync(){
   mic.innerHTML=svgI(micRec?"square":"mic"); mic.classList.toggle("rec",!!micRec);
   mic.setAttribute("aria-label",micRec?"Stop recording":"Record a voice message");
   $("chat-send").style.display=busy||(CS.autoMicOnEmpty&&micOK&&empty)||micRec?"none":"";
+  $("chat-send").classList.toggle("dim",empty);
   $("chat-stop").style.display=busy?"":"none";
 }
+$("chat-send").innerHTML=svgI("up"); $("chat-stop").innerHTML=svgI("square");
+document.querySelector(".chat-row .cbtn").innerHTML=svgI("plus");
 function chatGrow(){ const t=$("chat-in"); t.style.height="auto"; t.style.height=Math.min(240,t.scrollHeight+2)+"px"; }
 $("chat-in").addEventListener("input",()=>{ chatGrow(); chatComposerSync(); });
 $("chat-in").addEventListener("keydown",e=>{
