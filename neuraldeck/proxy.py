@@ -1292,6 +1292,9 @@ async def passthrough(request: Request, path: str):
     if request.method in ("POST", "PUT", "PATCH"):
         content = await request.body()
         model = _body_model(content)
+        # the deck's chat names a model on /tools calls only to route them
+        if model and path.strip("/") == "tools":
+            content = _drop_model(content)
     target = await pick_backend(model)
     if model:
         print(f"[route] /{path} requested={model!r} -> :{target.get('port')} "
@@ -1334,6 +1337,17 @@ def _vllm_body(path: str, content, target: dict):
     if path.strip("/") in ("tokenize", "detokenize") or "model" in payload:
         changed = _vllm_model(payload, target) or changed
     return json.dumps(payload).encode() if changed else content
+
+
+def _drop_model(content: bytes) -> bytes:
+    try:
+        payload = json.loads(content)
+    except (ValueError, UnicodeDecodeError):
+        return content
+    if isinstance(payload, dict):
+        payload.pop("model", None)
+        return json.dumps(payload).encode()
+    return content
 
 
 def _body_model(content: bytes) -> Optional[str]:

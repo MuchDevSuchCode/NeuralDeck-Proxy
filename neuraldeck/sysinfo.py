@@ -375,9 +375,16 @@ def _gpu_amdgpu_sysfs():
         # 0.5 GiB UMA plus ttm.pages_limit raised to ~112 GiB) serves its
         # models from GTT: ROCm allocates there once the carve-out is full.
         # Count both as the GPU's memory, or every fit check sees 0.5 GiB.
+        # Only on an APU, though: a discrete card's GTT window (half of
+        # system RAM by default) is bigger than a small VRAM too, and is
+        # not where its models go. amdgpu exposes the carve-out knob
+        # (uma/) on APUs; older kernels get the all-visible small-VRAM test.
         gtt_used = _read_int(f"{d}/mem_info_gtt_used")
         gtt_total = _read_int(f"{d}/mem_info_gtt_total")
-        unified = bool(total and gtt_total and gtt_total > total)
+        vis_total = _read_int(f"{d}/mem_info_vis_vram_total")
+        apu = os.path.isdir(f"{d}/uma") or bool(
+            total and vis_total == total and total <= 8 * 1024**3)
+        unified = bool(apu and total and gtt_total and gtt_total > total)
         if unified:
             used = (used or 0) + (gtt_used or 0)
             total = total + gtt_total

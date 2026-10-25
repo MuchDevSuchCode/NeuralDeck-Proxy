@@ -49,68 +49,68 @@ def _f(key, label, type_, group, help_="", restart=False, choices=None,
 # type: str | int | float | bool | choice | dir | file | dirlist | strlist | map
 SCHEMA = [
     # ── Models ────────────────────────────────────────────────────────────
-    _f("model_dirs", "Model directories", "dirlist", "Models",
+    _f("model_dirs", "Model Directories", "dirlist", "Models",
        "Folders scanned for models. A model is a subfolder holding a "
        ".gguf (plus any mmproj or draft head beside it), or a Hugging Face "
        "safetensors folder (config.json + *.safetensors) for vLLM."),
-    _f("download_dir", "Download directory", "dir", "Models",
+    _f("download_dir", "Download Directory", "dir", "Models",
        "Where the Hugging Face downloader puts new models. Usually the "
        "first model directory."),
 
     # ── Backends ──────────────────────────────────────────────────────────
-    _f("backends", "llama-server builds", "map", "Backends",
+    _f("backends", "llama-server Builds", "map", "Backends",
        "Label → path to a llama-server binary. Add several to A/B a fork "
        "against upstream from the launch form. A vLLM executable (the "
        "`vllm` script in its environment's bin folder) works too, and "
        "serves safetensors models."),
-    _f("default_backend", "Default build", "str", "Backends",
+    _f("default_backend", "Default Build", "str", "Backends",
        "Which label the launch form starts on."),
-    _f("llama_port_range", "llama port range", "str", "Backends",
+    _f("llama_port_range", "Llama Port Range", "str", "Backends",
        "Ports the deck launches into and the proxy discovers, e.g. 8081-8089 "
        f"(at most {config.MAX_LLAMA_PORTS}). Saving restarts the proxy; "
        "running instances keep their ports.",
        restart="proxy", placeholder="8081-8089"),
-    _f("llama_host", "llama bind address", "str", "Backends",
+    _f("llama_host", "Llama Bind Address", "str", "Backends",
        "What launched instances bind to. 127.0.0.1 keeps them off the "
        "network. Applies to the next launch.",
        placeholder="0.0.0.0"),
 
     # ── Launch defaults ───────────────────────────────────────────────────
-    _f("ctx", "Context size", "int", "Launch defaults",
+    _f("ctx", "Context Size", "int", "Launch Defaults",
        "Total KV budget for a launch. llama.cpp splits this across slots.",
        min_=1024, max_=1048576),
-    _f("slots", "Slots", "int", "Launch defaults",
+    _f("slots", "Slots", "int", "Launch Defaults",
        "Parallel requests. Each slot gets ctx ÷ slots tokens.", min_=1, max_=64),
-    _f("spec", "Speculation", "choice", "Launch defaults",
+    _f("spec", "Speculation", "choice", "Launch Defaults",
        "auto uses a model's MTP head when it has one; ngram drafts from "
        "context and needs no draft model.", choices=SPEC_CHOICES),
-    _f("thinking", "Thinking", "choice", "Launch defaults",
+    _f("thinking", "Thinking", "choice", "Launch Defaults",
        "Reasoning budget for models whose template supports it.",
        choices=THINK_CHOICES),
-    _f("kv_cache_type", "KV cache type", "str", "Launch defaults",
+    _f("kv_cache_type", "KV Cache Type", "str", "Launch Defaults",
        "-ctk/-ctv value, e.g. f16, q8_0, q4_0. Smaller trades quality for "
        "context length.", placeholder="q8_0"),
-    _f("flash_attn", "Flash attention", "choice", "Launch defaults",
+    _f("flash_attn", "Flash Attention", "choice", "Launch Defaults",
        "Passed as -fa on builds that take a value.",
        choices=["on", "off", "auto"]),
-    _f("n_gpu_layers", "GPU layers", "int", "Launch defaults",
+    _f("n_gpu_layers", "GPU Layers", "int", "Launch Defaults",
        "-ngl. 999 offloads everything that fits.", min_=0, max_=999),
-    _f("threads", "CPU threads", "int", "Launch defaults",
+    _f("threads", "CPU Threads", "int", "Launch Defaults",
        "0 uses the physical core count.", min_=0, max_=512),
     _f("extra_llama_args", "Extra llama-server args", "strlist",
        "Launch defaults",
        "Appended to every launch, one argument per entry."),
 
     # ── vLLM ──────────────────────────────────────────────────────────────
-    _f("vllm_kv_cache_dtype", "vLLM KV cache dtype", "choice", "vLLM",
+    _f("vllm_kv_cache_dtype", "vLLM KV Cache Dtype", "choice", "vLLM",
        "--kv-cache-dtype for vLLM launches. auto keeps the model's dtype; "
        "fp8 halves KV memory at a small quality cost.",
        choices=VLLM_KV_CHOICES),
-    _f("vllm_gpu_frac_max", "vLLM max GPU memory fraction", "float", "vLLM",
+    _f("vllm_gpu_frac_max", "vLLM Max GPU Memory Fraction", "float", "vLLM",
        "Ceiling for --gpu-memory-utilization. Each launch is sized to the "
        "VRAM actually free (so vLLM can run beside llama-servers), never "
        "above this.", min_=0.5, max_=0.98),
-    _f("vllm_extra_args", "Extra vLLM args", "strlist", "vLLM",
+    _f("vllm_extra_args", "Extra vLLM Args", "strlist", "vLLM",
        "Appended to every `vllm serve`, one argument per entry, e.g. "
        "--max-num-batched-tokens then 2048."),
 
@@ -119,83 +119,83 @@ SCHEMA = [
        "Launch-time default; a request can still override it.", min_=0, max_=5),
     _f("top_p", "Top-p", "float", "Sampling", "", min_=0, max_=1),
     _f("min_p", "Min-p", "float", "Sampling", "", min_=0, max_=1),
-    _f("repeat_penalty", "Repeat penalty", "float", "Sampling", "", min_=0, max_=5),
+    _f("repeat_penalty", "Repeat Penalty", "float", "Sampling", "", min_=0, max_=5),
 
     # ── Ports ─────────────────────────────────────────────────────────────
-    _f("deck_port", "Dashboard port", "int", "Ports",
+    _f("deck_port", "Dashboard Port", "int", "Ports",
        "This page. Changing it needs a restart.", restart=True,
        min_=1, max_=65535),
-    _f("deck_host", "Dashboard bind address", "str", "Ports",
+    _f("deck_host", "Dashboard Bind Address", "str", "Ports",
        "0.0.0.0 serves the whole network with no authentication; "
        "127.0.0.1 keeps it on this machine. Changing it needs a restart.",
        restart=True),
-    _f("proxy_port", "Proxy port", "int", "Ports",
+    _f("proxy_port", "Proxy Port", "int", "Ports",
        "The client-facing endpoint your apps point at. Saving restarts the "
        "proxy on the new port.", restart="proxy", min_=1, max_=65535),
-    _f("proxy_host", "Proxy bind address", "str", "Ports",
+    _f("proxy_host", "Proxy Bind Address", "str", "Ports",
        "Saving restarts the proxy.", restart="proxy"),
 
     # ── Speech, vision and video ──────────────────────────────────────────
-    _f("whisper_bin", "whisper-server binary", "file", "Speech & video",
+    _f("whisper_bin", "whisper-server Binary", "file", "Speech & Video",
        "whisper.cpp's server, for speech input. Optional. Used the next "
        "time whisper-server is started."),
-    _f("whisper_model", "Whisper model", "file", "Speech & video",
+    _f("whisper_model", "Whisper Model", "file", "Speech & Video",
        "A ggml-*.bin model file. Used the next time whisper-server is "
        "started."),
-    _f("whisper_port", "Whisper port", "int", "Speech & video",
+    _f("whisper_port", "Whisper Port", "int", "Speech & Video",
        "Saving restarts the proxy; restart whisper-server from the "
        "dashboard to move it.", restart="proxy", min_=1, max_=65535),
-    _f("ffmpeg", "ffmpeg", "file", "Speech & video",
+    _f("ffmpeg", "ffmpeg", "file", "Speech & Video",
        "Needed only for video input. Without it, video requests fail and "
        "everything else works. Read by the proxy.", restart="proxy"),
-    _f("video_fps", "Video frame rate", "float", "Speech & video",
+    _f("video_fps", "Video Frame Rate", "float", "Speech & Video",
        "Frames per second extracted from video for vision models.",
        restart="proxy", min_=0.1, max_=30),
-    _f("max_frames", "Max frames per video", "int", "Speech & video", "",
+    _f("max_frames", "Max Frames per Video", "int", "Speech & Video", "",
        restart="proxy", min_=1, max_=500),
-    _f("tts_endpoint", "TTS endpoint", "str", "Speech & video",
+    _f("tts_endpoint", "TTS Endpoint", "str", "Speech & Video",
        "An OpenAI-compatible /v1/audio/speech backend.", restart="proxy"),
-    _f("tts_default_voice", "Default voice", "str", "Speech & video",
+    _f("tts_default_voice", "Default Voice", "str", "Speech & Video",
        "Filled in when a client does not name one.", restart="proxy"),
 
     # ── Proxy behaviour ───────────────────────────────────────────────────
-    _f("strict_model_routing", "Strict model routing", "bool", "Proxy",
+    _f("strict_model_routing", "Strict Model Routing", "bool", "Proxy",
        "On: a request naming a model nothing is serving is an error. Off: "
        "it is answered by the default instance, which misattributes "
        "benchmarks.", restart="proxy"),
-    _f("llama_timeout", "LLM timeout (s)", "float", "Proxy", "",
+    _f("llama_timeout", "LLM Timeout (s)", "float", "Proxy", "",
        restart="proxy", min_=1, max_=7200),
-    _f("whisper_timeout", "Whisper timeout (s)", "float", "Proxy", "",
+    _f("whisper_timeout", "Whisper Timeout (s)", "float", "Proxy", "",
        restart="proxy", min_=1, max_=7200),
 
     # ── Dashboard ─────────────────────────────────────────────────────────
-    _f("peak_bw_gbs", "Peak memory bandwidth (GB/s)", "float", "Dashboard",
+    _f("peak_bw_gbs", "Peak Memory Bandwidth (GB/s)", "float", "Dashboard",
        "Used by the roofline panel to estimate a decode ceiling. The "
        "default (89.6) is a dual-channel DDR5 figure: set it to your GPU's "
        "or APU's real memory bandwidth or the panel means nothing.",
        min_=1, max_=100000),
-    _f("vram_total_gb", "VRAM total override (GiB)", "float", "Dashboard",
+    _f("vram_total_gb", "VRAM Total Override (GiB)", "float", "Dashboard",
        "Only used when no driver reports a total. 0 leaves it unknown.",
        min_=0, max_=100000),
-    _f("history_len", "History length (samples)", "int", "Dashboard",
+    _f("history_len", "History Length (samples)", "int", "Dashboard",
        "Points kept in the charts, one per sample interval. Changing it "
        "needs a restart.", restart=True,
        min_=60, max_=86400),
-    _f("sample_interval", "Sample interval (s)", "float", "Dashboard",
+    _f("sample_interval", "Sample Interval (s)", "float", "Dashboard",
        "How often telemetry is collected. Takes effect immediately.",
        min_=0.2, max_=60),
 
     # ── Optional services ─────────────────────────────────────────────────
-    _f("tts_cmd", "TTS start command", "strlist", "Optional services",
+    _f("tts_cmd", "TTS Start Command", "strlist", "Optional Services",
        "Command to start a TTS server, one argument per entry. Leave empty "
        "if you start it yourself. Used the next time it is started."),
-    _f("tts_port", "TTS port", "int", "Optional services",
+    _f("tts_port", "TTS Port", "int", "Optional Services",
        "Where the dashboard looks for the TTS server, and the proxy's TTS "
        "endpoint unless one is set. Saving restarts the proxy.",
        restart="proxy", min_=1, max_=65535),
-    _f("comfy_cmd", "ComfyUI start command", "strlist", "Optional services",
+    _f("comfy_cmd", "ComfyUI Start Command", "strlist", "Optional Services",
        "One argument per entry. Used the next time it is started."),
-    _f("comfy_port", "ComfyUI port", "int", "Optional services", "",
+    _f("comfy_port", "ComfyUI Port", "int", "Optional Services", "",
        min_=1, max_=65535),
 ]
 

@@ -117,6 +117,7 @@
     background:var(--surface2); color:var(--ink); border:1px solid var(--border-dim);
     padding:6px 10px; font:inherit; width:100%;
   }
+  input.pl-input { height:28px; padding:0 10px; }
   #pl-out { white-space:pre-wrap; }
   .codeblk { margin:8px 0; border:1px solid var(--border-dim); background:var(--well);
              white-space:normal; }
@@ -129,6 +130,9 @@
   code.ic { background:var(--surface2); border:1px solid var(--grid); padding:0 4px;
             color:var(--cyan); font-size:12px; }
   .tblwrap { overflow-x:auto; position:relative; }   /* contains .vh headers */
+  #bn-runs-wrap { max-height:60vh; overflow-y:auto; }
+  #bn-runs-wrap thead th { position:sticky; top:0; background:var(--surface); z-index:1; }
+  #models { max-height:72vh; overflow-y:auto; }
   .tblwrap td { white-space:nowrap; }   /* scroll sideways rather than wrap names into towers */
   .grpsep { color:var(--muted); font-size:10.5px; letter-spacing:1.5px;
             text-transform:uppercase; margin:9px 0 3px; padding-top:6px;
@@ -216,7 +220,7 @@
   button:disabled:hover { background:transparent; }
   select {
     background:var(--surface2); color:var(--ink-2); border:1px solid var(--border-dim);
-    padding:4px 8px; font:inherit; font-size:12px;
+    padding:4px 8px; font:inherit; font-size:12px; height:28px;
     clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
   }
 
@@ -406,8 +410,9 @@
     body { padding:10px 8px; }
     header { gap:8px; align-items:center; }
     header h1 { font-size:15px; letter-spacing:3px; }
-    .viewtabs { margin-left:0; flex-wrap:wrap; gap:4px; width:100%; order:3; }
-    .viewtabs button { padding:3px 8px; flex:1 1 auto; }
+    .viewtabs { margin-left:0; flex-wrap:nowrap; gap:4px; width:100%; order:1; overflow-x:auto; scrollbar-width:none; }
+    .viewtabs button { padding:3px 10px; flex:none; }
+    header .right { order:2; width:100%; }
     #hw-line { display:none; }
     header .right { margin-left:auto; font-size:11px; }
     .uptime-lbl { display:none; }
@@ -526,7 +531,7 @@
   .msg-stats { color:var(--muted); font-size:11px; }
   .msg-acts { display:flex; gap:2px; opacity:0; transition:opacity .15s; }
   .msg:hover .msg-acts, .msg:focus-within .msg-acts, .msg.last .msg-acts { opacity:1; }
-  @media (hover:none){ .msg-acts { opacity:1; } }
+  @media (hover:none){ .msg-acts { opacity:1; } .cv button { visibility:visible !important; } }
   .msg-edit { width:min(100%,720px); }
   .msg-edit textarea { min-height:80px; }
   .typing::after { content:"▍"; color:var(--cyan); animation:blink 1.1s steps(1) infinite; }
@@ -574,13 +579,19 @@
     .chat, .chat.side-hidden { grid-template-columns:minmax(0,1fr); position:relative; }
     .chat-side, .chat.side-hidden .chat-side { display:none; position:absolute; z-index:15; width:min(280px,80vw); height:100%; }
     .chat.side-open .chat-side { display:flex; }
+    .chat.side-open::before { content:""; position:absolute; inset:0; z-index:14; background:var(--scrim); }
     .chat.side-pinned #chat-side-tgl { display:inline-block; }
+    /* composer: the message box takes the row, the controls sit under it */
+    .chat-row { flex-wrap:wrap; }
+    #chat-in { flex:1 1 100%; order:-1; }
+    #chat-effort { flex:1; max-width:none; }
+    #chat-send, #chat-stop { margin-left:auto; }
     #mp-btn { max-width:52vw; }
     #chat-ctx, .chat-top .caps { display:none; }
     .msg.user .msg-body { max-width:95%; }
     .cs-wrap { grid-template-columns:1fr; }
-    .cs-nav { flex-direction:row; flex-wrap:wrap; }
-    #chat-effort { max-width:84px; }
+    .cs-nav { flex-direction:row; flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; padding-bottom:4px; }
+    .cs-nav button { flex:none; }
   }
   /* ── llama.cpp themes: type, shape and controls ── */
   :root[data-theme^="llama"] body { font:14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif,
@@ -622,6 +633,7 @@
   :root[data-theme^="llama"] #chat-in { border-color:transparent; background:transparent; padding:6px 4px; }
   :root[data-theme^="llama"] #chat-in:focus-visible { outline:none; }
   :root[data-theme^="llama"] .chat-row > button { border-radius:999px; min-width:34px; height:34px; padding:0 12px; }
+  @media (max-width:760px){ :root[data-theme^="llama"] .chat-compose { width:calc(100% - 12px); border-radius:18px; } }
   :root[data-theme^="llama"] .chat-row > button:first-child { padding:0; width:34px; background:var(--surface2); border-color:transparent; }
   :root[data-theme^="llama"] #chat-effort { border-radius:999px; }
   :root[data-theme^="llama"] .chat button.ghost { background:transparent; border-color:transparent; padding:0 6px;
@@ -640,19 +652,20 @@
     <button id="vt-settings" onclick="setView('settings')">Settings</button>
   </nav>
   <span class="sub" id="hw-line">—</span>
-  <span class="right"><span id="conn" class="pill">connecting…</span>
-    <span title="time since this machine booted"><span class="uptime-lbl">system uptime </span><span id="uptime" style="color:var(--green)">—</span></span>
-    <select id="theme-sel" onchange="setTheme(this.value)" title="colour theme" aria-label="Colour theme"
-      style="font-size:11px;padding:1px 6px">
-      <option value="neuraldeck">theme: NeuralDeck</option>
-      <option value="dark">theme: Dark</option>
-      <option value="light">theme: Light</option>
-      <option value="system">theme: System</option>
-      <option value="llama">theme: llama.cpp</option>
-      <option value="llama-light">theme: llama.cpp Light</option>
-      <option value="llama-dark">theme: llama.cpp Dark</option></select>
+  <span class="right"><span id="conn" class="pill">CONNECTING…</span>
+    <span title="time since this machine booted"><span class="uptime-lbl">System Uptime </span><span id="uptime" style="color:var(--green)">—</span></span>
+    <label class="sub" for="theme-sel" style="display:inline-flex;align-items:center;gap:4px">Theme
+    <select id="theme-sel" onchange="setTheme(this.value)" title="colour theme"
+      style="font-size:11px;padding:1px 6px;height:auto">
+      <option value="neuraldeck">NeuralDeck</option>
+      <option value="dark">Dark</option>
+      <option value="light">Light</option>
+      <option value="system">System</option>
+      <option value="llama">llama.cpp</option>
+      <option value="llama-light">llama.cpp Light</option>
+      <option value="llama-dark">llama.cpp Dark</option></select></label>
     <button onclick="resetLayout()" id="reset-layout"
-      title="put the dashboard panels back in their default order" style="font-size:11px;padding:1px 8px">Reset layout</button></span>
+      title="put the dashboard panels back in their default order" style="font-size:11px;padding:1px 8px">Reset Layout</button></span>
 </header>
 
 <div id="view-dash">
@@ -672,7 +685,7 @@
     </div>
 
     <div class="panel">
-      <h2>Per-core utilisation <span class="meta" id="core-count"></span></h2>
+      <h2>Per-Core Utilisation <span class="meta" id="core-count"></span></h2>
       <div class="coregrid" id="coregrid"></div>
     </div>
 
@@ -682,8 +695,8 @@
         <dt>Device</dt><dd class="plain" id="g-name">—</dd>
         <dt>Temperature</dt><dd id="g-temp">—</dd>
         <dt id="g-sclk-l">Clock (sclk)</dt><dd id="g-sclk">—</dd>
-        <dt id="g-mclk-l">Mem clock</dt><dd id="g-mclk">—</dd>
-        <dt id="g-fclk-l">Fabric clock</dt><dd id="g-fclk">—</dd>
+        <dt id="g-mclk-l">Mem Clock</dt><dd id="g-mclk">—</dd>
+        <dt id="g-fclk-l">Fabric Clock</dt><dd id="g-fclk">—</dd>
         <dt id="g-power-l">Power</dt><dd id="g-power">—</dd>
         <dt id="g-fan-l">Fan</dt><dd id="g-fan">—</dd>
         <dt id="g-npu-l">NPU</dt><dd id="g-npu">—</dd>
@@ -698,13 +711,13 @@
     </div>
 
     <div class="panel">
-      <h2>Memory pressure <span class="meta" id="mp-pct"></span></h2>
+      <h2>Memory Pressure <span class="meta" id="mp-pct"></span></h2>
       <dl class="kv">
         <dt>Verdict</dt><dd><span class="verdict" id="mp-verdict">—</span></dd>
         <dt>System RAM</dt><dd id="mp-ram">—</dd>
-        <dt>Swap used</dt><dd id="mp-swap">—</dd>
-        <dt>GFX activity</dt><dd id="mp-gfx">—</dd>
-        <dt>Active requests</dt><dd id="mp-reqs">—</dd>
+        <dt>Swap Used</dt><dd id="mp-swap">—</dd>
+        <dt>GFX Activity</dt><dd id="mp-gfx">—</dd>
+        <dt>Active Requests</dt><dd id="mp-reqs">—</dd>
       </dl>
       <div class="barwrap" style="margin-top:8px"><div class="bar"><i id="b-press"></i></div>
         <span class="barpct" id="p-press">—</span></div>
@@ -715,9 +728,9 @@
       <h2>Roofline / Bottleneck <span class="meta" id="rl-peak"></span></h2>
       <dl class="kv">
         <dt>Bottleneck</dt><dd id="rl-verdict" class="plain">—</dd>
-        <dt>Model weights</dt><dd id="rl-model">—</dd>
-        <dt>Decode ceiling</dt><dd id="rl-ceiling">—</dd>
-        <dt>Decode now</dt><dd id="rl-now">—</dd>
+        <dt>Model Weights</dt><dd id="rl-model">—</dd>
+        <dt>Decode Ceiling</dt><dd id="rl-ceiling">—</dd>
+        <dt>Decode Now</dt><dd id="rl-now">—</dd>
       </dl>
       <div class="barwrap" style="margin-top:8px"><div class="bar"><i id="b-roof"></i></div>
         <span class="barpct" id="p-roof">—</span></div>
@@ -739,7 +752,7 @@
         <dt>Net ↑/↓</dt><dd id="io-net">—</dd>
         <dt>Threads</dt><dd id="io-threads">—</dd>
       </dl>
-      <table style="margin-top:8px"><thead><tr><th>process</th><th class="num">cpu</th><th class="num">mem</th></tr></thead>
+      <table style="margin-top:8px"><thead><tr><th>Process</th><th class="num">CPU</th><th class="num">Mem</th></tr></thead>
         <tbody id="procs"></tbody></table>
     </div>
 
@@ -768,17 +781,17 @@
   <div class="col">
     <div class="panel">
       <h2>Models
-        <button id="hf-open" onclick="openHF()" style="margin-left:10px; display:none">⬇ Get models</button>
+        <button id="hf-open" onclick="openHF()" style="margin-left:10px; display:none">⬇ Get Models</button>
         <span id="hf-mini" role="status"></span>
         <span class="meta" id="mm-count"></span></h2>
       <div style="display:flex; gap:8px; margin-bottom:6px; flex-wrap:wrap; align-items:center;">
         <select id="backend-sel" title="which backend (llama-server build or vLLM) to launch with" aria-label="Backend"
           onchange="launchOptsSync()"></select>
         <select id="slots-sel" onchange="ctxPerSlot()" aria-label="Parallel slots">
-          <option value="1">1 slot</option><option value="2">2 slots</option>
-          <option value="4">4 slots</option><option value="8">8 slots</option>
+          <option value="1">1 Slot</option><option value="2">2 Slots</option>
+          <option value="4">4 Slots</option><option value="8">8 Slots</option>
         </select>
-        <label class="sub" id="ctx-lbl" title="total context budget in tokens — divided across slots">ctx
+        <label class="sub" id="ctx-lbl" title="total context budget in tokens — divided across slots">Context
           <input id="ctx-in" class="pl-input" type="number" list="ctx-presets"
             step="1024" min="1024" max="1048576" value="64000" style="width:104px"
             oninput="ctxPerSlot()"></label>
@@ -788,19 +801,19 @@
           <option value="64000"><option value="131072"><option value="262144">
         </datalist>
         <select id="spec-sel" title="speculative decoding: use the model's MTP/NextN head when it has one" aria-label="Speculative decoding">
-          <option value="auto">spec: auto (MTP if available)</option>
-          <option value="ngram">spec: ngram (no draft model)</option>
-          <option value="off">spec: off</option>
+          <option value="auto">Spec: Auto (MTP if available)</option>
+          <option value="ngram">Spec: N-gram (no draft model)</option>
+          <option value="off">Spec: Off</option>
         </select>
         <select id="think-sel" title="reasoning budget for models that support thinking" aria-label="Thinking budget">
-          <option value="off">thinking: off</option>
-          <option value="low">thinking: low (1k tok)</option>
-          <option value="medium">thinking: medium (4k tok)</option>
-          <option value="high">thinking: high (unlimited)</option>
+          <option value="off">Thinking: Off</option>
+          <option value="low">Thinking: Low (1k tok)</option>
+          <option value="medium">Thinking: Medium (4k tok)</option>
+          <option value="high">Thinking: High (unlimited)</option>
         </select>
         <label style="display:flex;align-items:center;gap:5px;color:var(--muted);cursor:pointer">
           <input type="checkbox" id="replace-chk" style="accent-color:var(--cyan)">
-          replace running instances</label>
+          Replace Running Instances</label>
       </div>
       <input id="model-q" class="pl-input" type="search" autocomplete="off" spellcheck="false"
         placeholder="search models…   ( / )"
@@ -819,14 +832,14 @@
     </div>
 
     <div class="panel">
-      <h2>Multimodal stack <span class="meta" id="mm-proxy">proxy</span></h2>
+      <h2>Multimodal Stack <span class="meta" id="mm-proxy">proxy</span></h2>
       <dl class="kv">
-        <dt>Whisper model</dt><dd class="plain" id="w-model">—</dd>
+        <dt>Whisper Model</dt><dd class="plain" id="w-model">—</dd>
         <dt>Transcriptions</dt><dd id="w-reqs">—</dd>
-        <dt>Audio processed</dt><dd id="w-audio">—</dd>
-        <dt>Proxy requests</dt><dd id="x-reqs">—</dd>
-        <dt>Proxy errors</dt><dd id="x-errs">—</dd>
-        <dt>Last request</dt><dd class="plain" id="x-last">—</dd>
+        <dt>Audio Processed</dt><dd id="w-audio">—</dd>
+        <dt>Proxy Requests</dt><dd id="x-reqs">—</dd>
+        <dt>Proxy Errors</dt><dd id="x-errs">—</dd>
+        <dt>Last Request</dt><dd class="plain" id="x-last">—</dd>
       </dl>
       <div style="margin-top:9px; display:flex; gap:8px; flex-wrap:wrap;" id="mm-links"></div>
     </div>
@@ -838,8 +851,8 @@
         <dt>Health</dt><dd id="inf-health">—</dd>
         <dt>Status</dt><dd id="inf-status" class="plain">—</dd>
         <dt>Model</dt><dd class="plain" id="inf-model">—</dd>
-        <dt>Requests served</dt><dd id="inf-reqs">—</dd>
-        <dt>Spec decode</dt><dd id="inf-spec">—</dd>
+        <dt>Requests Served</dt><dd id="inf-reqs">—</dd>
+        <dt>Spec Decode</dt><dd id="inf-spec">—</dd>
       </dl>
       <div class="meter"><div class="row"><b>Prefill t/s</b><span id="inf-pf">—</span></div>
         <div class="barwrap"><div class="bar"><i id="b-pf"></i></div><span class="barpct" id="p-pf"></span></div></div>
@@ -864,7 +877,7 @@
 <div id="view-chat" style="display:none">
 <div class="chat" id="chat">
   <aside class="chat-side" aria-label="Conversations">
-    <button class="primary" onclick="chatNew()">+ New chat</button>
+    <button class="primary" onclick="chatNew()">+ New Chat</button>
     <input id="chat-q" class="pl-input" type="search" placeholder="search chats…" aria-label="Search chats"
       oninput="chatRenderList()">
     <div id="chat-convs" role="list"></div>
@@ -883,7 +896,7 @@
       </div>
       <span class="caps" id="chat-caps"></span>
       <span id="chat-ctx" title="context used by this conversation, of the model's per-request window"></span>
-      <button onclick="csOpen()" title="all chat settings" aria-label="Chat settings">⚙ Settings</button>
+      <button onclick="csOpen()" title="all chat settings" aria-label="Chat Settings">⚙ Chat Settings</button>
     </div>
     <div id="chat-log" aria-live="polite"></div>
     <div class="chat-compose" id="chat-compose">
@@ -893,8 +906,8 @@
         <input id="chat-file" type="file" multiple hidden onchange="chatAddFiles(this.files); this.value=''">
         <textarea id="chat-in" class="pl-input" rows="1" aria-label="Message"></textarea>
         <select id="chat-effort" aria-label="Reasoning effort" title="reasoning effort" onchange="csSet('reasoningEffort',this.value)">
-          <option value="">think: default</option><option value="off">think: off</option><option value="low">think: low</option>
-          <option value="medium">think: medium</option><option value="high">think: high</option><option value="max">think: max</option></select>
+          <option value="">Think: Default</option><option value="off">Think: Off</option><option value="low">Think: Low</option>
+          <option value="medium">Think: Medium</option><option value="high">Think: High</option><option value="max">Think: Max</option></select>
         <button id="chat-mic" onclick="chatMic()" title="record a voice message" aria-label="Record a voice message" style="display:none"></button>
         <button id="chat-send" class="primary" onclick="chatSend()">Send</button>
         <button id="chat-stop" class="danger" onclick="chatStop()" style="display:none">Stop</button>
@@ -908,12 +921,12 @@
 <!-- ═══════════ PROMPT LAB view ═══════════ -->
 <div id="view-prompt" style="display:none">
   <div class="panel">
-    <h2>Prompt Lab <span class="meta" id="pl-status">idle</span></h2>
+    <h2>Prompt Lab <span class="meta" id="pl-status">IDLE</span></h2>
     <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px; align-items:center;">
       <select id="pl-model" style="max-width:100%" aria-label="Model"></select>
-      <label class="sub">temp <input id="pl-temp" class="pl-input" type="number" step="0.1" min="0" max="2"
+      <label class="sub">Temperature <input id="pl-temp" class="pl-input" type="number" step="0.1" min="0" max="2"
         value="0.7" style="width:70px"></label>
-      <label class="sub">max tok <input id="pl-max" class="pl-input" type="number" step="64" min="1"
+      <label class="sub">Max Tokens <input id="pl-max" class="pl-input" type="number" step="64" min="1"
         value="512" style="width:88px"></label>
     </div>
     <input id="pl-sys" class="pl-input" placeholder="system prompt (optional)" aria-label="System prompt" style="margin-bottom:8px" autocomplete="off">
@@ -930,8 +943,9 @@
         <div class="logbox" id="pl-out" style="max-height:440px; min-height:220px"></div>
       </div>
       <div>
-        <div class="legend" style="margin-bottom:6px"><span style="color:var(--cyan);letter-spacing:1.5px">BENCHMARK</span></div>
+        <div class="legend" id="pl-bench-hd" style="margin-bottom:6px; display:none"><span style="color:var(--cyan);letter-spacing:1.5px">BENCHMARK</span></div>
         <dl class="kv" id="pl-bench" style="grid-template-columns:auto 1fr"></dl>
+        <div class="advisory" id="pl-bench-empty">Timings appear here after a run.</div>
       </div>
     </div>
   </div>
@@ -946,17 +960,17 @@
       <button class="primary" id="bn-run" onclick="benchRun()" disabled
         title="Sends one fixed prompt (a ~250-word lithium-ion battery explanation) at temperature 0 with max 320 tokens, so runs are comparable across models and builds">Run standard bench ▸</button>
       <label class="sub" style="cursor:pointer"><input type="checkbox" id="bn-std"
-        style="accent-color:var(--cyan)" onchange="renderBench()"> standard runs only</label>
+        style="accent-color:var(--cyan)" onchange="renderBench()"> Standard Runs Only</label>
       <span style="flex:1"></span>
-      <button class="danger" onclick="benchClearAll()">Clear all</button>
+      <button class="danger" onclick="benchClearAll()">Clear All</button>
     </div>
     <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
       <input id="bn-search" class="pl-input" placeholder="search models…" aria-label="Search models"
         style="width:200px" oninput="renderBench()" autocomplete="off">
       <span id="bn-backends" style="display:flex; gap:5px; flex-wrap:wrap;" role="group" aria-label="Backend filter"></span>
       <span style="flex:1"></span>
-      <button onclick="benchSelectAll(true)">all</button>
-      <button onclick="benchSelectAll(false)">none</button>
+      <button onclick="benchSelectAll(true)">All</button>
+      <button onclick="benchSelectAll(false)">None</button>
     </div>
     <div id="bn-models"></div>
     <div class="legend" style="margin-bottom:4px">
@@ -965,15 +979,15 @@
     </div>
     <div id="bn-chart" style="margin-bottom:12px"></div>
     <div class="tblwrap" style="margin-bottom:16px"><table id="bn-agg"><thead><tr>
-      <th>model</th><th>backend</th><th>spec</th><th class="num">accept</th><th class="num">runs</th><th class="num">ttft med</th>
-      <th class="num">prefill med (tok/s)</th><th class="num">decode med (tok/s)</th><th class="num">decode best (tok/s)</th>
+      <th>Model</th><th>Backend</th><th>Spec</th><th class="num">Accept</th><th class="num">Runs</th><th class="num">TTFT Med</th>
+      <th class="num">Prefill Med (tok/s)</th><th class="num">Decode Med (tok/s)</th><th class="num">Decode Best (tok/s)</th>
     </tr></thead><tbody></tbody></table></div>
     <div class="legend"><span style="color:var(--cyan);letter-spacing:1.5px">RUNS</span>
       <span class="sub" id="bn-count">· newest first</span></div>
-    <div class="tblwrap"><table id="bn-runs"><thead><tr>
-      <th>time</th><th>kind</th><th>model</th><th>backend</th><th>spec</th>
-      <th class="num">prompt tokens</th><th class="num">gen tokens</th><th class="num">prefill (tok/s)</th>
-      <th class="num">decode (tok/s)</th><th class="num">ttft</th><th class="num">wall</th><th><span class="vh">delete</span></th>
+    <div class="tblwrap" id="bn-runs-wrap"><table id="bn-runs"><thead><tr>
+      <th>Time</th><th>Kind</th><th>Model</th><th>Backend</th><th>Spec</th>
+      <th class="num">Prompt Tokens</th><th class="num">Gen Tokens</th><th class="num">Prefill (tok/s)</th>
+      <th class="num">Decode (tok/s)</th><th class="num">TTFT</th><th class="num">Wall</th><th><span class="vh">Delete</span></th>
     </tr></thead><tbody></tbody></table></div>
   </div>
 </div>
@@ -984,8 +998,8 @@
     <h2>Settings <span class="meta" id="st-where"></span></h2>
     <div id="st-notes"></div>
     <div id="st-body"><div class="advisory">loading…</div></div>
-    <div class="stbar">
-      <button class="primary" id="st-save" onclick="stSave()" disabled>Save changes</button>
+    <div class="stbar" style="position:sticky; bottom:0; background:var(--surface); padding:8px 0; z-index:2">
+      <button class="primary" id="st-save" onclick="stSave()" disabled>Save Changes</button>
       <button id="st-revert" onclick="stDiscard()" disabled>Discard</button>
       <span class="sub" id="st-dirty" role="status"></span>
       <span style="flex:1"></span>
@@ -998,9 +1012,9 @@
 <!-- ═══════════ chat settings modal ═══════════ -->
 <dialog id="cs-dialog" class="modal" aria-labelledby="cs-title" onclick="if(event.target===this)this.close()">
   <div class="panel">
-    <h2><span id="cs-title">Chat settings</span> <span class="meta">
-      <button onclick="csReset()" title="put every setting in this section back to its default">Reset section</button>
-      <button onclick="$('cs-dialog').close()" aria-label="Close">✕ close</button></span></h2>
+    <h2><span id="cs-title">Chat Settings</span> <span class="meta">
+      <button onclick="csReset()" title="put every setting in this section back to its default">Reset Section</button>
+      <button onclick="$('cs-dialog').close()" aria-label="Close">✕ Close</button></span></h2>
     <div class="cs-wrap">
       <nav class="cs-nav" id="cs-nav" aria-label="Settings sections"></nav>
       <div id="cs-body"></div>
@@ -1010,17 +1024,17 @@
 
 <dialog id="fp-dialog" class="modal" aria-labelledby="fp-title" onclick="if(event.target===this)fpClose()">
   <div class="panel">
-    <h2><span id="fp-title">Choose a folder</span> <span class="meta"><button onclick="fpClose()" aria-label="Close">✕ close</button></span></h2>
+    <h2><span id="fp-title">Choose a Folder</span> <span class="meta"><button onclick="fpClose()" aria-label="Close">✕ Close</button></span></h2>
     <div style="display:flex; gap:6px; margin-bottom:8px; flex-wrap:wrap;">
       <input id="fp-path" class="pl-input" style="flex:1 1 200px; min-width:0" autocomplete="off" aria-label="Path"
         onkeydown="if(event.key==='Enter'){event.preventDefault();fpGo($('fp-path').value);}">
       <button onclick="fpGo($('fp-path').value)">Go</button>
-      <button onclick="fpUp()">↑ up</button>
+      <button onclick="fpUp()">↑ Up</button>
     </div>
     <div id="fp-roots" style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;"></div>
     <div id="fp-list"></div>
     <div style="margin-top:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-      <button class="primary" id="fp-use" onclick="fpPick()">Use this folder</button>
+      <button class="primary" id="fp-use" onclick="fpPick()">Use This Folder</button>
       <span class="sub" id="fp-here"></span>
     </div>
   </div>
@@ -1033,8 +1047,8 @@
   <!-- outside .panel: the panel's clip-path would cut the tip off -->
   <div class="tooltip hf-tip" id="hf-tip" role="tooltip"></div>
   <div class="panel">
-    <h2><span id="hf-title">Hugging Face — model downloader</span>
-      <span class="meta"><button onclick="closeHF()" aria-label="Close">✕ close</button></span></h2>
+    <h2><span id="hf-title">Hugging Face — Model Downloader</span>
+      <span class="meta"><button onclick="closeHF()" aria-label="Close">✕ Close</button></span></h2>
     <div style="display:flex; gap:8px; margin-bottom:8px;">
       <input id="hf-q" placeholder="search GGUF repos… (empty = browse the hub)" aria-label="Search Hugging Face"
         style="flex:1; min-width:0; background:var(--surface2); color:var(--ink); border:1px solid var(--border-dim);
@@ -1043,9 +1057,9 @@
       <button class="primary" onclick="hfSearch()">Search</button>
     </div>
     <div class="tabs" style="margin-bottom:8px; flex-wrap:wrap;">
-      <button id="hfs-trending" onclick="hfSetSort('trending')">🔥 trending</button>
-      <button id="hfs-downloads" onclick="hfSetSort('downloads')">⬇ top downloads</button>
-      <button id="hfs-likes" onclick="hfSetSort('likes')">♥ most liked</button>
+      <button id="hfs-trending" onclick="hfSetSort('trending')">🔥 Trending</button>
+      <button id="hfs-downloads" onclick="hfSetSort('downloads')">⬇ Top Downloads</button>
+      <button id="hfs-likes" onclick="hfSetSort('likes')">♥ Most Liked</button>
       <span class="hf-fmt" role="group" aria-label="Model format">
         <button id="hff-gguf" onclick="hfSetFormat('gguf')" title="GGUF files for llama.cpp">GGUF</button>
         <button id="hff-hf" onclick="hfSetFormat('hf')" title="safetensors repos for vLLM — downloaded whole">vLLM (safetensors)</button>
@@ -1054,13 +1068,13 @@
     <div id="hf-results"></div>
     <div id="hf-files" style="display:none">
       <div style="display:flex; align-items:center; gap:10px; margin:10px 0 6px; flex-wrap:wrap;">
-        <button onclick="hfBack()">‹ back</button>
+        <button onclick="hfBack()">‹ Back</button>
         <span class="name" id="hf-repo-name" style="color:var(--cyan); font-weight:700; overflow-wrap:anywhere; min-width:0"></span>
       </div>
       <p id="hf-repo-desc"></p>
       <div id="hf-filelist"></div>
       <div style="margin-top:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-        <button class="primary" id="hf-dl" onclick="hfDownload()" disabled>⬇ Queue download</button>
+        <button class="primary" id="hf-dl" onclick="hfDownload()" disabled>⬇ Queue Download</button>
         <span class="sub" id="hf-selinfo"></span>
       </div>
     </div>
@@ -1069,7 +1083,7 @@
         <div class="barwrap"><div class="bar"><i id="hf-prog-bar"></i></div><span class="barpct" id="hf-prog-pct"></span></div></div>
       <div id="hf-queue"></div>
       <pre class="logbox" id="hf-log"></pre>
-      <button class="danger" id="hf-cancel" onclick="hfCancelCurrent()">Cancel current</button>
+      <button class="danger" id="hf-cancel" onclick="hfCancelCurrent()">Cancel Current</button>
     </div>
   </div>
 </dialog>
@@ -1316,7 +1330,7 @@ function applyConfig(cfg){
   // backend picker: keep the user's current pick across a re-apply
   const bs=$("backend-sel"), bcur=first?null:bs.value;
   bs.innerHTML=(CFG.backends||[]).map(b=>
-    `<option value="${escA(b)}"${b===(bcur||CFG.default_backend)?" selected":""}>backend: ${escH(b)}${bkKind(b)==="vllm"?" (vLLM)":""}</option>`).join("")
+    `<option value="${escA(b)}"${b===(bcur||CFG.default_backend)?" selected":""}>Backend: ${escH(b)}${bkKind(b)==="vllm"?" (vLLM)":""}</option>`).join("")
     || '<option value="">no backend configured</option>';
   // launch defaults: only on the first apply — a settings save must not
   // reset what the user has typed into the launch form
@@ -1330,7 +1344,7 @@ function applyConfig(cfg){
   launchOptsSync();
   hfFormatSync();
   // multimodal panel
-  $("mm-proxy").textContent="proxy :"+CFG.proxy_port;
+  $("mm-proxy").textContent="Proxy :"+CFG.proxy_port;
   $("mm-links").innerHTML=(CFG.links||[]).map(l=>
     `<button onclick="window.open('http://'+location.hostname+':${parseInt(l.port)||0}/','_blank')">`
     +`Open ${escH(l.label)} ↗</button>`).join("");
@@ -1451,7 +1465,7 @@ function renderSnapshot(s){
   setBar("b-cpu","p-cpu",s.cpu.util); $("cpu-load-pct").textContent=fmt(s.cpu.util)+"%";
 
   // cores text grid
-  $("core-count").textContent=s.cpu.cores.length+" logical";
+  $("core-count").textContent=s.cpu.cores.length+" Logical";
   $("coregrid").innerHTML=s.cpu.cores.map((c,i)=>{
     const col=c>=85?"var(--critical)":c>=60?"var(--yellow)":"var(--green)";
     return `<span><b>C${i}</b> <span style="color:${col}">${c.toFixed(1)}%</span></span>`;
@@ -1667,7 +1681,7 @@ function serverRow(host,{key,port,upState,label,detail,stop,start}){
   const d=document.createElement("div"); d.className="srow";
   const top=document.createElement("div"); top.className="srow-top";
   top.innerHTML=`<span class="port">:${escH(port)}</span>
-    <span class="${upState?"state-up":"state-down"}">${upState?"running":"stopped"}</span>
+    <span class="${upState?"state-up":"state-down"}">${upState?"RUNNING":"STOPPED"}</span>
     <span class="meta" style="overflow-wrap:anywhere;min-width:0">${escH(label)}</span>
     <span class="spacer"></span>`;
   const pend=svcPending[key];
@@ -1770,7 +1784,7 @@ function renderServers(s){
     srvSig=sig; host.innerHTML="";
     rows.forEach((r,n)=>{
       if(n===sepAt&&(down.length||!inst.length)){ const d=document.createElement("div");
-        d.className="grpsep"; d.textContent="not running"; host.appendChild(d); }
+        d.className="grpsep"; d.textContent="NOT RUNNING"; host.appendChild(d); }
       serverRow(host,r);
     });
   } else {
@@ -1845,9 +1859,9 @@ function renderModels(){
   const host=$("models"); host.innerHTML="";
   const q=$("model-q").value.trim();
   if(!modelsCache.length){ $("mm-count").textContent=""; host.innerHTML='<div class="advisory">no models found in the model '
-    +'directories — add a folder in Settings'+(CFG.hf_available?', or use ⬇ Get models':'')+'</div>'; return; }
+    +'directories — add a folder in Settings'+(CFG.hf_available?', or use ⬇ Get Models':'')+'</div>'; return; }
   const hits=q?modelMatches():modelsCache;
-  $("mm-count").textContent=q?`${hits.length} of ${modelsCache.length}`:`${modelsCache.length} found`;
+  $("mm-count").textContent=q?`${hits.length} of ${modelsCache.length}`:`${modelsCache.length} Found`;
   if(!hits.length){ const e=document.createElement("div"); e.className="advisory";
     e.textContent=`no models match “${q}” — Esc clears the search`; host.appendChild(e); return; }
   // models currently being served float to the top, rest keep discovery order
@@ -1858,7 +1872,7 @@ function renderModels(){
     const port=servingPorts[m.name];
     if(wasServing===true&&!port){
       const sp=document.createElement("div");
-      sp.className="grpsep"; sp.textContent="not running"; host.appendChild(sp);
+      sp.className="grpsep"; sp.textContent="NOT RUNNING"; host.appendChild(sp);
     }
     wasServing=!!port;
     const g=m.vram_bytes!=null?(m.vram_bytes/1073741824).toFixed(1)+" GiB":"size ?";
@@ -1877,7 +1891,7 @@ function renderModels(){
         <span class="name">${escH(m.name)}</span>
         <span class="micons">${icons}</span>
         <span class="btns"></span></div>
-      <div class="meta">${port?`<span class="serving">serving on :${escH(port)}</span> · `:""}${fmtB}${g}${m.source?" · "+escH(m.source):""}</div>`;
+      <div class="meta">${port?`<span class="serving">Serving on :${escH(port)}</span> · `:""}${fmtB}${g}${m.source?" · "+escH(m.source):""}</div>`;
     const btn=document.createElement("button");
     btn.textContent=port?"Relaunch":"Launch"; if(port)btn.className="primary";
     btn.disabled=launching;
@@ -1922,7 +1936,7 @@ function launchStatus(txt,kind){
   if(!txt)return;
   const s=document.createElement("span"); s.textContent=txt; s.style.flex="1";
   if(kind)s.style.color=kind==="err"?"var(--critical)":kind==="ok"?"var(--green)":"";
-  const b=document.createElement("button"); b.textContent="✕ close"; b.style.cssText="padding:0 8px;font-size:11px";
+  const b=document.createElement("button"); b.textContent="✕ Close"; b.style.cssText="padding:0 8px;font-size:11px";
   b.setAttribute("aria-label","Close launch log");
   b.disabled=launching;
   b.onclick=()=>{ $("launch-log").style.display="none"; h.innerHTML=""; };
@@ -2174,7 +2188,7 @@ async function hfShowFiles(repo){
   const seq=++hfFilesSeq;
   hfRepo=repo; hfFilesData=[]; hfFilesFmt=hfFmt(); hfSnap=null;
   const snap=hfFilesFmt==="hf";
-  $("hf-dl").textContent=snap?"⬇ Download whole repo":"⬇ Queue download";
+  $("hf-dl").textContent=snap?"⬇ Download Whole Repo":"⬇ Queue Download";
   $("hf-repo-name").innerHTML=escH(repo)+' <span class="micons" id="hf-repo-icons"></span>';
   $("hf-repo-desc").innerHTML='<span class="sub">loading model card…</span>';
   hfCard(repo).then(c=>{
@@ -2407,6 +2421,7 @@ function setView(v){
     $("vt-"+x).classList.toggle("active",x===v);
     if(x===v)$("vt-"+x).setAttribute("aria-current","page"); else $("vt-"+x).removeAttribute("aria-current");
   }
+  $("reset-layout").style.display=v==="dash"?"":"none";
   const was=curView; curView=v;
   if(v==="bench")benchLoad();
   // unsaved edits survive a trip to another tab: only (re)load settings
@@ -2617,13 +2632,13 @@ function plUpdateModels(instances){
   plModelNames=names;
   const opt=(n,cur)=>`<option value="${escA(n)}"${n===cur?" selected":""}>${escH(n)}</option>`;
   const sel=$("pl-model"), cur=sel.value;
-  sel.innerHTML='<option value="">'+(names.length?"model: auto (default instance)":"model: none running")+'</option>'+
+  sel.innerHTML='<option value="">'+(names.length?"Auto (default instance)":"No model running")+'</option>'+
     names.map(n=>opt(n,cur)).join("");
   // keep the user's pick while it's still running; with only one model
   // there's nothing to choose, so select it rather than make them
   const bsel=$("bn-model");
   const bcur=names.includes(bsel.value)?bsel.value:(names.length===1?names[0]:"");
-  bsel.innerHTML='<option value="">'+(names.length?"bench which model?":"no model running")+'</option>'+
+  bsel.innerHTML='<option value="">'+(names.length?"Choose a model…":"No model running")+'</option>'+
     names.map(n=>opt(n,bcur)).join("");
   bnValid();
   // refresh the empty-state hint unless there is output worth keeping
@@ -2632,7 +2647,8 @@ function plUpdateModels(instances){
 function plClear(){
   plPlaceholder(); $("pl-think").textContent="";
   $("pl-think").style.display="none"; $("pl-bench").innerHTML="";
-  $("pl-status").textContent="idle"; $("pl-status").style.color="";
+  $("pl-bench-hd").style.display="none"; $("pl-bench-empty").style.display="";
+  $("pl-status").textContent="IDLE"; $("pl-status").style.color="";
 }
 function plBench(t0,tFirst,tm,charCount,wall){
   const rows=[];
@@ -2640,9 +2656,9 @@ function plBench(t0,tFirst,tm,charCount,wall){
   if(tm){
     if(tm.prompt_per_second!=null) rows.push(["Prefill",tm.prompt_per_second.toFixed(1)+" tok/s"]);
     if(tm.predicted_per_second!=null) rows.push(["Decode",tm.predicted_per_second.toFixed(1)+" tok/s"]);
-    if(tm.prompt_n!=null) rows.push(["Prompt tokens",tm.prompt_n.toLocaleString()]);
+    if(tm.prompt_n!=null) rows.push(["Prompt Tokens",tm.prompt_n.toLocaleString()]);
     if(tm.predicted_n!=null) rows.push(["Generated",tm.predicted_n.toLocaleString()]);
-    if(tm.draft_n) rows.push(["Draft accept",
+    if(tm.draft_n) rows.push(["Draft Accept",
       ((tm.draft_n_accepted||0)/tm.draft_n*100).toFixed(0)+"% ("+(tm.draft_n_accepted||0)+"/"+tm.draft_n+")"]);
     if(tm.est) rows.push(["Measured","client-side"+(tm.fromUsage?" (usage counts)":" (tokens ≈ deltas)")]);
   }
@@ -2650,9 +2666,10 @@ function plBench(t0,tFirst,tm,charCount,wall){
     const gs=((wall!=null?t0+wall*1000:performance.now())-tFirst)/1000;
     if(gs>0.2) rows.push(["Chars/sec",(charCount/gs).toFixed(0)]);
   }
-  if(wall!=null) rows.push(["Wall time",wall.toFixed(2)+" s"]);
+  if(wall!=null) rows.push(["Wall Time",wall.toFixed(2)+" s"]);
   const html=rows.map(([k,v])=>`<dt>${escH(k)}</dt><dd>${escH(v)}</dd>`).join("");
   if($("pl-bench").innerHTML!==html) $("pl-bench").innerHTML=html;
+  $("pl-bench-hd").style.display=rows.length?"":"none"; $("pl-bench-empty").style.display=rows.length?"none":"";
 }
 async function plSend(){
   if(plAbort)return;
@@ -2679,7 +2696,7 @@ async function plSend(){
         const stick=th.scrollHeight-th.scrollTop-th.clientHeight<48;
         th.style.display=""; th.textContent=t;
         if(stick)th.scrollTop=th.scrollHeight;},
-      onText:t=>{plOutSet(t); st.textContent="generating…";},
+      onText:t=>{plOutSet(t); st.textContent="GENERATING…";},
       onTick:s=>plBench(s.t0,s.tFirst,s.timings||s.est,s.acc.length,null),
     },plAbort.signal);
     if(res.err){ errMsg=res.err; plOutSet((res.text?res.text+"\n\n":"")+"[error] "+res.err); }
@@ -2728,7 +2745,7 @@ async function benchRun(){
   try{
     const res=await streamChat(body,{
       onProgress:p=>$("bn-status").textContent="prefill "+(p*100).toFixed(0)+"%",
-      onTick:s=>{if(s.tFirst)$("bn-status").textContent="generating… "+s.acc.length+" chars";},
+      onTick:s=>{if(s.tFirst)$("bn-status").textContent="GENERATING… "+s.acc.length+" chars";},
     });
     if(res.err)throw new Error(res.err);
     // no llama timings (vLLM): fall back to what the stream itself shows
@@ -3025,8 +3042,8 @@ function stRender(){
   host.appendChild(info);
 }
 const RESTART_BADGE={
-  true:["restart","read at startup — changing it needs a NeuralDeck restart"],
-  proxy:["proxy restart","the proxy reads it at startup — saving restarts a running proxy"],
+  true:["RESTART","read at startup — changing it needs a NeuralDeck restart"],
+  proxy:["PROXY RESTART","the proxy reads it at startup — saving restarts a running proxy"],
   both:["restart + proxy","needs a NeuralDeck restart, and saving restarts a running proxy"],
 };
 function stRow(f){
@@ -3159,7 +3176,7 @@ function stControl(f){
       path.setAttribute("aria-label","New entry path");
       const br=document.createElement("button"); br.textContent="browse…";
       br.onclick=()=>fpOpen(path.value,picked=>{path.value=picked; ok();},
-        {mode:"file",title:hint[0]||"Choose a file",hint:hint[1],ext:hint[2]});
+        {mode:"file",title:hint[0]||"Choose a File",hint:hint[1],ext:hint[2]});
       const add=document.createElement("button"); add.textContent="+ add"; add.disabled=true;
       // enabled once both halves are filled, instead of an alert after the fact
       const ok=()=>add.disabled=!(name.value.trim()&&path.value.trim());
@@ -3182,7 +3199,7 @@ function stControl(f){
         const b=document.createElement("button"); b.textContent="browse…";
         b.setAttribute("aria-label",`Browse for ${f.label}`);
         b.onclick=()=>fpOpen(inp.value,picked=>{inp.value=picked;stMark(f.key,picked);},
-          {mode:f.type,title:hint[0]||(f.type==="file"?"Choose a file":"Choose a folder"),
+          {mode:f.type,title:hint[0]||(f.type==="file"?"Choose a File":"Choose a Folder"),
            hint:hint[1],ext:hint[2]});
         r.appendChild(b);
       }
@@ -3233,7 +3250,7 @@ async function stSave(){
   toast(summary,warn.length?"warn":"ok",{ms:warn.length?10000:5000});
   await stLoad(true);
   stStatus(Object.keys(stDirty).length?`saved · ${Object.keys(stDirty).length} change(s) still pending`
-    :(warn.length?"saved · "+warn.join(" · "):"saved ✓"),warn.length?"warn":"ok");
+    :(warn.length?"saved · "+warn.join(" · "):"SAVED ✓"),warn.length?"warn":"ok");
   // the rest of the page reads its ports, backends and defaults from the
   // deck, so pick the new ones up without a reload
   try{ applyConfig(await api("/api/config","GET",undefined,{quiet:true})); }catch(e){}
@@ -3290,8 +3307,8 @@ let fpCb=null, fpPath="", fpParent=null, fpOpts={}, fpSel=null, fpSeq=0;
 function fpOpen(start,cb,opts={}){
   fpCb=cb; fpOpts=opts; fpSel=null;
   const file=opts.mode==="file";
-  $("fp-title").textContent=opts.title||(file?"Choose a file":"Choose a folder");
-  $("fp-use").textContent=file?"Use this file":"Use this folder";
+  $("fp-title").textContent=opts.title||(file?"Choose a File":"Choose a Folder");
+  $("fp-use").textContent=file?"Use This File":"Use This Folder";
   const dl=$("fp-dialog"); if(!dl.open)dl.showModal();
   fpGo(start||"");
 }
@@ -3488,7 +3505,7 @@ function csApply(key){
   if(!st){ st=document.createElement("style"); st.id="chat-custom-css"; document.head.appendChild(st); }
   if(st.textContent!==(CS.customCss||"")) st.textContent=CS.customCss||"";
   $("chat-effort").value=CS.reasoningEffort||"";
-  $("chat-in").placeholder=CS.sendOnEnter?"Message…  (Enter sends, Shift+Enter for a new line)":"Message…  (Ctrl+Enter sends)";
+  $("chat-in").placeholder=innerWidth<=760?"Message…":CS.sendOnEnter?"Message…  (Enter sends, Shift+Enter for a new line)":"Message…  (Ctrl+Enter sends)";
   if(!chatReady)return;
   if(key==="jsSandboxEnabled"||key==="mcpServers") chatToolsRefresh();
   if(["showRawModelNames","showModelQuantization","showModelTags"].includes(key)){ chatModelSig=""; chatUpdateModels(chatInsts); }
@@ -3622,12 +3639,16 @@ const chatCaps={}; let chatCapsPending=new Set();
 function chatHeaders(){ return CS.apiKey?{Authorization:"Bearer "+CS.apiKey}:{}; }
 async function chatFetchCaps(inst){
   const key=inst.alias+"|"+inst.port+"|"+inst.pid;
-  if(chatCaps[inst.alias]&&chatCaps[inst.alias].key===key||chatCapsPending.has(key))return;
+  if(chatCaps[inst.alias]&&chatCaps[inst.alias].key===key||chatCapsPending.has(key)||chatCapsPending.has(key+"!"))return;
   chatCapsPending.add(key);
   const c={key, kind:instKind(inst), spec:!!(inst.spec||inst.draft_model), ctx:inst.ctx_per_req||inst.ctx_total};
   try{
     const r=await fetch("/api/px/props?model="+encodeURIComponent(inst.alias),{headers:chatHeaders()});
-    const p=r.ok?await r.json():{};
+    if(!r.ok){   // still loading (strict routing says 404): ask again on a later snapshot
+      chatCapsPending.delete(key); setTimeout(()=>chatCapsPending.delete(key+"!"),5000); chatCapsPending.add(key+"!");
+      return;
+    }
+    const p=await r.json();
     const mod=p.modalities||{}, caps=p.chat_template_caps||{};
     Object.assign(c,{vision:!!mod.vision, audio:!!mod.audio, video:!!mod.video,
       tools:!!(caps.supports_tools||caps.supports_tool_calls),
@@ -3662,7 +3683,7 @@ function chatUpdateModels(instances){
 }
 function mpRender(){
   const cur=mpCurrent(), running=!!chatInst(cur);
-  $("mp-btn").innerHTML=cur?modelNameHTML(cur)+(running?"":`<span class="qbadge" style="color:var(--critical)">not running</span>`)+svgI("chev","ico chev")
+  $("mp-btn").innerHTML=cur?modelNameHTML(cur)+(running?"":`<span class="qbadge" style="color:var(--critical)">NOT RUNNING</span>`)+svgI("chev","ico chev")
     :`<span class="nm">no model running</span>`+svgI("chev","ico chev");
   $("chat-caps").innerHTML=CS.showModelTags?capsHTML(chatCaps[cur]):"";
   if(!$("mp-list").hidden) mpRenderList();
@@ -3671,14 +3692,15 @@ function mpRenderList(){
   const cur=mpCurrent(), names=chatInsts.map(i=>i.alias);
   if(cur&&!names.includes(cur)) names.unshift(cur);
   $("mp-list").innerHTML=names.length?names.map((n,i)=>`<div class="mp-opt${chatInst(n)?"":" off"}${i===mpKb?" kb":""}" role="option" id="mp-o${i}" data-m="${escA(n)}" aria-selected="${n===cur}">`+
-      `${modelNameHTML(n)}${chatInst(n)?"":'<span class="qbadge">not running</span>'}<span class="caps">${CS.showModelTags?capsHTML(chatCaps[n]):""}</span></div>`).join("")
+      `${modelNameHTML(n)}${chatInst(n)?"":'<span class="qbadge">NOT RUNNING</span>'}<span class="caps">${CS.showModelTags?capsHTML(chatCaps[n]):""}</span></div>`).join("")
     :`<div class="sub" style="padding:8px">No model is running — launch one from the Dashboard.</div>`;
   $("mp-list").setAttribute("aria-activedescendant",mpKb>=0?"mp-o"+mpKb:"");
 }
 function mpToggle(open){
   const l=$("mp-list"), show=open??l.hidden;
   l.hidden=!show; $("mp-btn").setAttribute("aria-expanded",String(show));
-  if(show){ const names=chatInsts.map(i=>i.alias); mpKb=Math.max(0,names.indexOf(mpCurrent())); mpRenderList(); l.focus(); }
+  if(show){ const cur=mpCurrent(), names=chatInsts.map(i=>i.alias); if(cur&&!names.includes(cur)) names.unshift(cur);
+    mpKb=Math.max(0,names.indexOf(cur)); mpRenderList(); l.focus(); }
 }
 function mpPick(name){
   mpToggle(false); $("mp-btn").focus();
@@ -3696,14 +3718,20 @@ $("mp-list").addEventListener("keydown",e=>{
   else if(e.key==="Enter"||e.key===" "){ e.preventDefault(); if(opts[mpKb]) mpPick(opts[mpKb].dataset.m); }
   else if(e.key==="Escape"){ e.preventDefault(); mpToggle(false); $("mp-btn").focus(); }
 });
-document.addEventListener("click",e=>{ if(!$("mp-list").hidden&&!e.target.closest("#chat-mp")) mpToggle(false); });
+document.addEventListener("click",e=>{
+  if(!$("mp-list").hidden&&!e.target.closest("#chat-mp")) mpToggle(false);
+  // the mobile conversation drawer closes on a tap outside it
+  const ch=$("chat");
+  if(ch.classList.contains("side-open")&&!e.target.closest(".chat-side,#chat-side-tgl")) ch.classList.remove("side-open");
+});
 function chatCtxGauge(){
   const el=$("chat-ctx"), c=chatCaps[mpCurrent()], inst=chatInst(mpCurrent()),
         max=(inst&&(inst.ctx_per_req||inst.ctx_total))||(c&&c.ctx), used=chatCur&&chatCur.ctxUsed;
-  if(!max||!used){ el.innerHTML=""; return; }
+  if(!max||!used){ if(el.innerHTML) el.innerHTML=""; return; }
   const pct=Math.min(100,used/max*100), k=v=>v>=1000?(v/1000).toFixed(v>=10000?0:1)+"k":String(v);
-  el.innerHTML=`ctx ${k(used)} / ${k(max)}<span class="bar"><i style="width:${pct.toFixed(1)}%;${
+  const html=`ctx ${k(used)} / ${k(max)}<span class="bar"><i style="width:${pct.toFixed(1)}%;${
     pct>85?"background:var(--critical)":""}"></i></span>`;
+  if(el.innerHTML!==html) el.innerHTML=html;
 }
 function chatBuildLine(){
   const c=chatCaps[mpCurrent()];
@@ -3747,7 +3775,7 @@ function chatFit(){
   const el=$("chat"); if(curView!=="chat")return;
   el.style.height=Math.max(360, innerHeight-el.getBoundingClientRect().top-16)+"px";
 }
-window.addEventListener("resize",chatFit);
+window.addEventListener("resize",()=>{ chatFit(); if(chatReady) csApply(); });
 function chatNew(){
   if(chatAbort) chatStop();
   chatCur={id:chatId(), title:"", created:Date.now(), updated:Date.now(),
@@ -3774,8 +3802,8 @@ async function chatSave(c=chatCur){
 function chatRenderList(){
   const q=$("chat-q").value.trim().toLowerCase(), now=new Date(),
         day0=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
-  const groups=[["Today",day0],["Yesterday",day0-864e5],["Previous 7 days",day0-7*864e5],
-                ["Previous 30 days",day0-30*864e5],["Older",-Infinity]];
+  const groups=[["Today",day0],["Yesterday",day0-864e5],["Previous 7 Days",day0-7*864e5],
+                ["Previous 30 Days",day0-30*864e5],["Older",-Infinity]];
   const hit=c=>!q||(c.title||"").toLowerCase().includes(q)
     ||c.messages.some(m=>(m.content||"").toLowerCase().includes(q));
   let html="", g=-1;
@@ -3860,14 +3888,14 @@ async function chatDeleteAll(){
 function csImportExportHTML(){
   return `<div class="cs-f"><label><span>Export conversations</span></label>
       <div class="help">Download all ${chatConvs.length} saved chat${chatConvs.length===1?"":"s"} as one JSON file.</div>
-      <div style="margin-top:6px"><button onclick="chatExportAll()">Export all</button>
-        <button onclick="chatExport()">Export current</button></div></div>
+      <div style="margin-top:6px"><button onclick="chatExportAll()">Export All</button>
+        <button onclick="chatExport()">Export Current</button></div></div>
     <div class="cs-f"><label><span>Import conversations</span></label>
       <div class="help">Load a JSON file exported from here (one chat or many). Imported chats are added; nothing is replaced.</div>
       <div style="margin-top:6px"><button onclick="$('chat-import').click()">Import…</button></div></div>
     <div class="cs-f"><label><span>Delete all conversations</span></label>
       <div class="help">Removes every saved chat from this browser.</div>
-      <div style="margin-top:6px"><button class="danger" onclick="chatDeleteAll()">Delete all</button></div></div>`;
+      <div style="margin-top:6px"><button class="danger" onclick="chatDeleteAll()">Delete All</button></div></div>`;
 }
 
 /* ── markdown: a safe subset — everything is escaped first, and links
@@ -4024,10 +4052,10 @@ function chatStatsText(st){
   if(st.tps!=null) b.push(st.tps.toFixed(1)+" tok/s");
   if(st.n!=null) b.push(st.n.toLocaleString()+" tokens");
   if(st.ttft!=null) b.push("TTFT "+st.ttft.toFixed(2)+" s");
-  if(st.ptps!=null) b.push("prefill "+Math.round(st.ptps).toLocaleString()+" tok/s");
-  if(st.draft) b.push("draft "+st.draft+"%");
+  if(st.ptps!=null) b.push("Prefill "+Math.round(st.ptps).toLocaleString()+" tok/s");
+  if(st.draft) b.push("Draft "+st.draft+"%");
   if(st.secs!=null) b.push(st.secs.toFixed(1)+" s");
-  if(st.stopped) b.push("stopped");
+  if(st.stopped) b.push("STOPPED");
   return b.join(" · ");
 }
 function chatStats(t0,tFirst,tm,tEnd){
@@ -4046,7 +4074,7 @@ function chatAttsHTML(atts){
     :`<span class="msg-file">${a.kind==="audio"?svgI("mic"):a.kind==="video"?svgI("video"):svgI("file")} ${escH(a.name)}${
       a.kind==="pdf"?` · ${a.pages?a.pages.length+" pages":""}`:""}</span>`).join("")}</div>`;
 }
-const TOOL_ST={pending:"queued",asking:"waiting for your OK",running:"running…",done:"done",error:"error",denied:"denied"};
+const TOOL_ST={pending:"QUEUED",asking:"WAITING FOR YOUR OK",running:"RUNNING…",done:"DONE",error:"ERROR",denied:"DENIED"};
 function chatToolHTML(t){
   let args=t.args||"";
   try{ args=JSON.stringify(JSON.parse(args||"{}"),null,2); }catch(e){}
@@ -4057,20 +4085,20 @@ function chatToolHTML(t){
     `<div class="tbody"><div class="tlabel">arguments</div><pre>${escH(args)}</pre>`+
     (t.result!=null?`<div class="tlabel">result</div><pre>${escH(t.result)}</pre>`:"")+
     (t.status==="asking"?`<div class="tool-ask">Run this tool?
-      <button class="primary" data-perm="once">Allow once</button><button data-perm="always">Always allow</button>
+      <button class="primary" data-perm="once">Allow Once</button><button data-perm="always">Always Allow</button>
       <button class="danger" data-perm="deny">Deny</button></div>`:"")+`</div></details>`;
 }
 function chatMsgHTML(m,i,last,live){
   const acts=[], raw=!!m.raw&&CS.showRawOutputSwitch;
   if(!live){
-    acts.push(`<button class="ghost" data-act="copy" title="copy">copy</button>`);
-    if(m.role==="user") acts.push(`<button class="ghost" data-act="edit" title="edit and resend">edit</button>`);
+    acts.push(`<button class="ghost" data-act="copy" title="copy">Copy</button>`);
+    if(m.role==="user") acts.push(`<button class="ghost" data-act="edit" title="edit and resend">Edit</button>`);
     if(m.role==="assistant"&&last){
-      acts.push(`<button class="ghost" data-act="regen" title="generate a new reply">regenerate</button>`);
-      if(CS.enableContinueGeneration&&!(m.toolCalls&&m.toolCalls.length)) acts.push(`<button class="ghost" data-act="cont" title="carry on from where this reply stops">continue</button>`);
+      acts.push(`<button class="ghost" data-act="regen" title="generate a new reply">Regenerate</button>`);
+      if(CS.enableContinueGeneration&&!(m.toolCalls&&m.toolCalls.length)) acts.push(`<button class="ghost" data-act="cont" title="carry on from where this reply stops">Continue</button>`);
     }
-    if(CS.showRawOutputSwitch) acts.push(`<button class="ghost" data-act="raw" title="toggle plain text / formatted">${raw?"formatted":"raw"}</button>`);
-    acts.push(`<button class="ghost" data-act="del" title="delete this message">delete</button>`);
+    if(CS.showRawOutputSwitch) acts.push(`<button class="ghost" data-act="raw" title="toggle plain text / formatted">${raw?"Formatted":"Raw"}</button>`);
+    acts.push(`<button class="ghost" data-act="del" title="delete this message">Delete</button>`);
   }
   if(m.role==="user"){
     const md=CS.renderUserContentAsMarkdown&&!raw;
@@ -4145,7 +4173,7 @@ $("chat-log").addEventListener("click",async e=>{
     if(m.role==="user"&&CS.copyTextAttachmentsAsPlainText)
       for(const a of m.atts||[]) if(a.kind==="text"||a.kind==="pdf") text+=`\n\n${a.name}:\n${a.kind==="pdf"?a.text:a.data}`;
     const ok=await copyText(text);
-    b.textContent=ok?"copied":"copy failed"; setTimeout(()=>b.textContent="copy",1500);
+    b.textContent=ok?"Copied":"Copy failed"; setTimeout(()=>b.textContent="Copy",1500);
   }else if(act==="raw"){ m.raw=!m.raw; chatPaint(m); }
   else if(chatAbort) return;
   else if(act==="del"){
@@ -4333,7 +4361,8 @@ async function chatRun(opts={}){
       cont=null;
     }
   }finally{
-    chatAbort=null; chatComposerSync();
+    if(chatAbort&&chatAbort.signal===sig) chatAbort=null;
+    chatComposerSync();
   }
   if(chatCur===c){ chatRenderLog(); chatCtxGauge(); }
   if(CS.titleGenerationUseLLM&&(opts.first||opts.retitle)) chatLLMTitle(c,model);
@@ -4343,8 +4372,8 @@ function chatStop(){ if(chatAbort) chatAbort.abort(); }
 async function chatLLMTitle(c,model){
   const u=c.messages.find(m=>m.role==="user"), a=c.messages.find(m=>m.role==="assistant"&&chatSplitThink(m.content||"").content);
   if(!u||!a)return;
-  const prompt=(CS.titleGenerationPrompt||CS_TITLE_PROMPT).replace("{{USER}}",(u.content||"").slice(0,2000))
-    .replace("{{ASSISTANT}}",chatSplitThink(a.content).content.slice(0,2000));
+  const ut=(u.content||"").slice(0,2000), at=chatSplitThink(a.content).content.slice(0,2000);
+  const prompt=(CS.titleGenerationPrompt||CS_TITLE_PROMPT).replace("{{USER}}",()=>ut).replace("{{ASSISTANT}}",()=>at);
   try{
     const r=await streamChat({model,messages:[{role:"user",content:prompt}],stream:true,max_tokens:48,
       chat_template_kwargs:{enable_thinking:false}},{},undefined,chatHeaders());
@@ -4355,7 +4384,8 @@ async function chatLLMTitle(c,model){
 // re-send the conversation with n_predict 0 so the server has it in the KV
 // cache before the next message
 function chatPreEncode(c,model){
-  const body=chatBuildBody(model,c.messages);
+  const body=chatBuildBody(model,c.messages), tools=chatToolDefs(model);
+  if(tools.length) body.tools=tools;
   Object.assign(body,{stream:false,n_predict:0}); delete body.stream_options; delete body.return_progress; delete body.timings_per_token;
   chatPreAbort=new AbortController();
   fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json",...chatHeaders()},
@@ -4388,10 +4418,15 @@ function chatToolGroups(){
   }
   return g;
 }
+let chatToolClash=new Set();
 function chatToolsIndex(){
-  chatToolIndex=new Map();
-  for(const g of chatToolGroups()) for(const t of g.tools)
-    if(!CS.toolsDisabled[t.key]) chatToolIndex.set(t.def.function.name,{...t,source:g.label});
+  chatToolIndex=new Map(); chatToolClash=new Set();
+  for(const g of chatToolGroups()) for(const t of g.tools){
+    if(CS.toolsDisabled[t.key])continue;
+    const name=t.def.function.name;
+    if(chatToolIndex.has(name)){ chatToolClash.add(t.key); continue; }
+    chatToolIndex.set(name,{...t,source:g.label});
+  }
   if($("cs-dialog").open&&csSection==="tools") csRenderBody();
 }
 function chatToolDefs(model){
@@ -4405,6 +4440,7 @@ async function chatExecTool(t,m,sig){
   try{ args=JSON.parse(t.args||"{}"); }catch(e){ t.status="error"; t.result="the arguments aren't valid JSON: "+e.message; return; }
   if(!CS.toolsAllowed[tool.key]){
     t.status="asking"; chatPaint(m);
+    setTimeout(()=>{ const b=$("chat-log").querySelector(".tool-ask button"); if(b&&!$("chat-in").value) b.focus(); },60);
     const ans=await new Promise(r=>{ chatPermWait.set(t.id,r); sig.addEventListener("abort",()=>r("deny"),{once:true}); });
     chatPermWait.delete(t.id);
     if(ans==="always"){ CS.toolsAllowed[tool.key]=true; csSave(); }
@@ -4460,8 +4496,19 @@ function chatRunSandbox(params,sig){
 /* ── MCP: Streamable HTTP, JSON-RPC over POST (replies as JSON or SSE) ── */
 const mcpConn={}; let mcpSeq=0;
 const mcpName=s=>(mcpConn[s.id]&&mcpConn[s.id].info&&mcpConn[s.id].info.name)||s.name||(()=>{ try{ return new URL(s.url).host; }catch(e){ return s.url; } })();
+// the deck's relay is closed: it serves the URLs registered here, and only
+// to requests carrying X-NeuralDeck (so a page on another site cannot use it)
+let mcpRegistered="";
+async function mcpRegister(force){
+  const urls=CS.mcpServers.filter(s=>s.enabled&&s.useProxy!==false).map(s=>s.url), sig=urls.join("\n");
+  if(sig===mcpRegistered&&!force)return;
+  const r=await fetch("/api/mcp/servers",{method:"POST",headers:{"Content-Type":"application/json","X-NeuralDeck":"chat"},
+    body:JSON.stringify({urls})});
+  if(r.ok) mcpRegistered=sig;
+}
 function mcpFetch(s,payload,sig){
-  const headers={"content-type":"application/json","accept":"application/json, text/event-stream","mcp-protocol-version":"2025-06-18"};
+  const headers={"content-type":"application/json","accept":"application/json, text/event-stream","mcp-protocol-version":"2025-06-18",
+                 "x-neuraldeck":"chat"};
   const c=mcpConn[s.id]; if(c&&c.sid) headers["mcp-session-id"]=c.sid;
   let extra={};
   if((s.headers||"").trim()){ try{ extra=JSON.parse(s.headers); }catch(e){ throw new Error("the server's headers aren't valid JSON"); } }
@@ -4473,7 +4520,12 @@ function mcpFetch(s,payload,sig){
   return fetch(url,{method:"POST",headers,body:JSON.stringify(payload),signal:sig});
 }
 async function mcpRpc(s,method,params,sig,retried){
-  const id=++mcpSeq, r=await mcpFetch(s,{jsonrpc:"2.0",id,method,params},sig);
+  if(s.useProxy!==false) await mcpRegister(false).catch(()=>{});
+  const id=++mcpSeq;
+  let r=await mcpFetch(s,{jsonrpc:"2.0",id,method,params},sig);
+  if(r.status===403&&s.useProxy!==false&&!retried){   // the deck restarted and lost the list
+    await mcpRegister(true).catch(()=>{}); r=await mcpFetch(s,{jsonrpc:"2.0",id,method,params},sig);
+  }
   const sid=r.headers.get("mcp-session-id"); if(sid&&mcpConn[s.id]) mcpConn[s.id].sid=sid;
   if(r.status===404&&mcpConn[s.id]&&mcpConn[s.id].sid&&!retried&&method!=="initialize"){
     await mcpConnect(s,true); return mcpRpc(s,method,params,sig,true);   // the session expired
@@ -4516,8 +4568,11 @@ async function mcpConnect(s,quiet){
   chatToolsIndex();
 }
 async function mcpCall(s,name,args,sig){
-  const to=AbortSignal.timeout((CS.mcpRequestTimeoutSeconds||300)*1000);
-  const r=await mcpRpc(s,"tools/call",{name,arguments:args},AbortSignal.any?AbortSignal.any([sig,to]):sig);
+  const ac=new AbortController(), ms=(CS.mcpRequestTimeoutSeconds||300)*1000;
+  const timer=setTimeout(()=>ac.abort(new DOMException("MCP call timed out after "+ms/1000+" s","TimeoutError")),ms);
+  if(sig) sig.addEventListener("abort",()=>ac.abort(sig.reason),{once:true});
+  let r;
+  try{ r=await mcpRpc(s,"tools/call",{name,arguments:args},ac.signal); }finally{ clearTimeout(timer); }
   const parts=(r.content||[]).map(p=>p.type==="text"?p.text:p.type==="resource"?(p.resource&&p.resource.text||JSON.stringify(p.resource))
     :`[${p.type}${p.mimeType?" "+p.mimeType:""}]`);
   if(!parts.length&&r.structuredContent) parts.push(JSON.stringify(r.structuredContent));
@@ -4525,25 +4580,26 @@ async function mcpCall(s,name,args,sig){
 }
 function csToolsHTML(){
   const st=s=>{ const c=mcpConn[s.id];
-    if(!s.enabled) return '<span class="sub">off</span>';
-    if(!c||c.status==="connecting") return '<span class="sub">connecting…</span>';
-    if(c.status==="error") return `<span class="tool-st err" title="${escA(c.error)}">error: ${escH(String(c.error).slice(0,90))}</span>`;
-    return `<span class="tool-st ok">connected · ${c.tools.length} tool${c.tools.length===1?"":"s"}</span>`; };
+    if(!s.enabled) return '<span class="sub">OFF</span>';
+    if(!c||c.status==="connecting") return '<span class="sub">CONNECTING…</span>';
+    if(c.status==="error") return `<span class="tool-st err" title="${escA(c.error)}">ERROR: ${escH(String(c.error).slice(0,90))}</span>`;
+    return `<span class="tool-st ok">CONNECTED · ${c.tools.length} tool${c.tools.length===1?"":"s"}</span>`; };
   const servers=CS.mcpServers.map(s=>`<div class="cs-card" data-sid="${escA(s.id)}">
       <div class="row"><input type="checkbox" data-mcp="enabled" ${s.enabled?"checked":""} aria-label="Enabled">
         <b>${escH(mcpName(s))}</b><span class="url sub" title="${escA(s.url)}">${escH(s.url)}</span>${st(s)}</div>
       <div class="row" style="margin-top:6px">
         <label class="sub"><input type="checkbox" data-mcp="useProxy" ${s.useProxy!==false?"checked":""}> through the deck (avoids CORS)</label>
-        <button class="ghost" data-mcp="reconnect">reconnect</button><button class="ghost" data-mcp="remove">remove</button></div>
-      <details style="margin-top:4px"><summary class="sub">headers</summary>
+        <button class="ghost" data-mcp="reconnect">Reconnect</button><button class="ghost" data-mcp="remove">Remove</button></div>
+      <details style="margin-top:4px"><summary class="sub">Headers</summary>
         <textarea class="pl-input" data-mcp="headers" rows="2" placeholder='{"Authorization": "Bearer …"}'>${escH(s.headers||"")}</textarea></details>
     </div>`).join("");
   const model=mpCurrent(), noTools=chatCaps[model]&&chatCaps[model].tools===false;
   const groups=chatToolGroups();
   const tools=groups.length?groups.map(g=>`<div class="cs-tools"><div class="tlabel" style="color:var(--ink);margin-top:10px">${escH(g.label)}
       <span class="sub">· ${g.tools.length} tool${g.tools.length===1?"":"s"}</span></div>
-      <table><thead><tr><th>Tool</th><th class="c">Enabled</th><th class="c">Always allow</th></tr></thead><tbody>${
-      g.tools.map(t=>`<tr><td title="${escA(t.def.function.description||"")}">${escH(t.def.function.name)}</td>
+      <table><thead><tr><th>Tool</th><th class="c">Enabled</th><th class="c">Always Allow</th></tr></thead><tbody>${
+      g.tools.map(t=>`<tr><td title="${escA(t.def.function.description||"")}">${escH(t.def.function.name)}${
+        chatToolClash.has(t.key)?' <span class="tool-st err" title="another enabled tool has this name; this one is not offered to the model">NAME CLASH</span>':""}</td>
         <td class="c"><input type="checkbox" data-ten="${escA(t.key)}" ${CS.toolsDisabled[t.key]?"":"checked"} aria-label="Enable ${escA(t.def.function.name)}"></td>
         <td class="c"><input type="checkbox" data-tal="${escA(t.key)}" ${CS.toolsAllowed[t.key]?"checked":""} aria-label="Always allow ${escA(t.def.function.name)}"></td></tr>`).join("")
       }</tbody></table></div>`).join("")
@@ -4552,7 +4608,7 @@ function csToolsHTML(){
       <div class="help">Model Context Protocol servers (Streamable HTTP) whose tools the model may call. Each call asks first unless you tick “Always allow”.</div>
       ${servers}
       <div class="cs-card"><div class="row"><input id="mcp-url" class="pl-input" style="flex:1;min-width:200px;margin:0" placeholder="https://example.com/mcp" aria-label="MCP server URL">
-        <button class="primary" onclick="mcpAdd()">Add server</button></div></div></div>
+        <button class="primary" onclick="mcpAdd()">Add Server</button></div></div></div>
     <div class="cs-f"><label><span>Tools</span></label>${noTools?'<div class="help" style="color:var(--yellow)">The selected model\'s chat template has no tool support, so tools are not sent to it.</div>':""}${tools}</div>`;
 }
 function mcpAdd(){
@@ -4570,6 +4626,7 @@ $("cs-body").addEventListener("change",e=>{
   if(k==="enabled"){ s.enabled=el.checked; csSave(); if(s.enabled) mcpConnect(s); else { delete mcpConn[s.id]; chatToolsIndex(); } }
   else if(k==="useProxy"){ s.useProxy=el.checked; csSave(); if(s.enabled) mcpConnect(s); }
   else if(k==="headers"){ s.headers=el.value; csSave(); if(s.enabled) mcpConnect(s); }
+  mcpRegistered="";   // the list changed; register again before the next call
 });
 $("cs-body").addEventListener("click",e=>{
   const b=e.target.closest("button[data-mcp]"); if(!b)return;
@@ -4587,6 +4644,7 @@ async function chatImage(f){
   const url=await readAs(f,"data");
   const img=new Image(); img.src=url; await img.decode();
   const w=img.naturalWidth, h=img.naturalHeight, mp=+CS.maxImageMPixels||0;
+  if(!(w>0&&h>0)) throw new Error("the browser can't decode this image");
   const s=mp>0&&w*h>mp*1e6?Math.sqrt(mp*1e6/(w*h)):1;
   if(s===1&&/^image\/(png|jpeg|webp|gif)$/.test(f.type)) return url;
   const cv=document.createElement("canvas");
@@ -4716,7 +4774,9 @@ $("chat-in").addEventListener("paste",e=>{
     if(e.dataTransfer.files.length){ e.preventDefault(); chatAddFiles(e.dataTransfer.files); } });
 }
 document.addEventListener("keydown",e=>{
-  if(e.key==="Escape"&&curView==="chat"&&chatAbort&&!document.querySelector("dialog[open]")) chatStop();
+  if(e.key!=="Escape"||curView!=="chat"||document.querySelector("dialog[open]"))return;
+  if($("chat").classList.contains("side-open")) $("chat").classList.remove("side-open");
+  else if(chatAbort) chatStop();
 });
 csLoad(); csApply();
 
@@ -4738,8 +4798,8 @@ csLoad(); csApply();
   setLog(curLog);
   if(CFG.hf_available) hfPollStatus(5000);   // pick up a download already running
   const es=new EventSource("/api/stream");
-  es.onopen=()=>{$("conn").textContent="live";$("conn").className="pill gen";};
-  es.onerror=()=>{$("conn").textContent="reconnecting…";$("conn").className="pill warn";};
+  es.onopen=()=>{$("conn").textContent="LIVE";$("conn").className="pill gen";};
+  es.onerror=()=>{$("conn").textContent="RECONNECTING…";$("conn").className="pill warn";};
   es.onmessage=ev=>{
     let s; try{ s=JSON.parse(ev.data); }catch(e){ return; }
     const ll=s.llama||{};

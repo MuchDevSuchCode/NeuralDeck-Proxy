@@ -713,6 +713,8 @@ async def chat_relay(request: Request):
 # The chat tab reads per-model /props (capabilities, server defaults) and
 # llama-server's built-in /tools through the proxy, which routes by model.
 _PX_PATHS = {"props", "tools"}
+# built-in web tools can take a while; one client, like /api/chat's
+_px_client = httpx.AsyncClient(timeout=httpx.Timeout(600.0, connect=5.0))
 
 
 @app.api_route("/api/px/{path}", methods=["GET", "POST"])
@@ -721,12 +723,11 @@ async def proxy_passthrough(path: str, request: Request):
         raise HTTPException(404, f"/api/px/{path} is not relayed")
     base = config.PROXY_CHAT.split("/v1/")[0]
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=5.0)) as c:
-            r = await c.request(request.method, f"{base}/{path}",
-                                params=dict(request.query_params),
-                                content=await request.body() or None,
-                                headers={"Content-Type": "application/json",
-                                         **_auth_header(request)})
+        r = await _px_client.request(request.method, f"{base}/{path}",
+                                     params=dict(request.query_params),
+                                     content=await request.body() or None,
+                                     headers={"Content-Type": "application/json",
+                                              **_auth_header(request)})
     except httpx.HTTPError:
         raise HTTPException(502, f"proxy unreachable on :{config.PROXY_PORT}")
     return Response(r.content, status_code=r.status_code,
@@ -736,14 +737,46 @@ async def proxy_passthrough(path: str, request: Request):
 # MCP servers rarely send CORS headers, so the chat tab reaches them through
 # here, as the llama.cpp web UI does through llama-server's /cors-proxy.
 # Headers named x-mcp-h-<name> are sent upstream as <name>.
+#
+# This is not an open relay: the chat first registers its server list
+# (POST /api/mcp/servers), and only those URLs are reachable. Both calls
+# need the X-NeuralDeck header, so a page on another site cannot make them
+# (the header forces a CORS preflight, which the deck does not answer).
 _MCP_FWD = ("content-type", "accept", "authorization", "mcp-session-id",
             "mcp-protocol-version", "last-event-id")
+_mcp_allowed: set = set()
+
+
+def _mcp_guard(request: Request) -> None:
+    if request.headers.get("x-neuraldeck") != "chat":
+        raise HTTPException(403, "missing X-NeuralDeck header")
+
+
+@app.post("/api/mcp/servers")
+async def mcp_register(body: dict, request: Request):
+    """The chat's current MCP server URLs; the relay serves only these."""
+    _mcp_guard(request)
+    urls = body.get("urls")
+    if not isinstance(urls, list) or len(urls) > 64:
+        raise HTTPException(400, "urls must be a list")
+    ok = []
+    for u in urls:
+        if not isinstance(u, str) or not re.match(r"https?://[^\s/]+", u):
+            continue
+        host = re.sub(r"^https?://(?:[^@/]*@)?", "", u).split("/")[0].split(":")[0].lower()
+        if host.startswith("169.254.") or host in ("metadata.google.internal",):
+            continue                              # cloud metadata endpoints
+        ok.append(u)
+    _mcp_allowed.clear()
+    _mcp_allowed.update(ok)
+    return JSONResponse({"registered": len(ok)})
 
 
 @app.api_route("/api/mcp", methods=["GET", "POST", "DELETE"])
 async def mcp_relay(url: str, request: Request):
-    if not re.match(r"https?://", url):
-        raise HTTPException(400, "url must be http(s)")
+    _mcp_guard(request)
+    if url not in _mcp_allowed:
+        raise HTTPException(403, "that URL is not a registered MCP server")
     hdrs = {k: v for k, v in request.headers.items() if k in _MCP_FWD}
     hdrs.update({k[8:]: v for k, v in request.headers.items() if k.startswith("x-mcp-h-")})
     hdrs["accept-encoding"] = "identity"   # the body is relayed raw
