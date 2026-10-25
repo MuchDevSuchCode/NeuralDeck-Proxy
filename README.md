@@ -8,6 +8,15 @@ runs on **Linux and Windows** (macOS for everything but GPU telemetry).
   model server with the flags it was launched with, KV-cache occupancy, a
   roofline estimate, per-service start/stop, logs, and model management:
   launch, relaunch, delete, and download from Hugging Face.
+* **Chat**: a full port of the llama.cpp web UI, every setting included:
+  conversations saved in the browser (search, rename, export/import), a
+  model picker with capability icons (vision, audio, video, reasoning,
+  tools, speculative decoding), streaming markdown with code, tables and
+  math, reasoning effort, edit/regenerate/continue/stop, image, PDF, text,
+  audio, video and voice attachments, all sampling and penalty parameters,
+  and tool calling with permission prompts: llama-server built-ins, a
+  sandboxed JavaScript tool and MCP servers (relayed through the deck to
+  avoid CORS).
 * **Prompt Lab**: send a prompt to any loaded model and watch it stream,
   with time-to-first-token, prefill/decode throughput and draft acceptance
   measured per run.

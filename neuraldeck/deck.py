@@ -38,9 +38,10 @@ from typing import Optional
 import httpx
 import psutil
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from starlette.background import BackgroundTask
 
+from . import __version__
 from . import (bench, config, gguf, launcher, llama_log, models, procs,
                services, settings, sysinfo)
 
@@ -271,6 +272,7 @@ async def ui_config():
         "kv_chart_ports": config.KV_CHART_PORTS,
         "proxy_port": config.PROXY_PORT,
         "deck_port": config.DECK_PORT,
+        "version": __version__,
         # what the charts hold: the history buffers are sized at startup,
         # so report their real length rather than the configured one
         "history_len": history["ts"].maxlen
@@ -675,12 +677,18 @@ async def llama_stop(port: int):
 # (the proxy sends no CORS headers, so the browser cannot call it directly)
 # ---------------------------------------------------------------------------
 
+def _auth_header(request: Request) -> dict:
+    """The chat tab's API key, for a stack started with --api-key."""
+    a = request.headers.get("authorization")
+    return {"Authorization": a} if a else {}
+
+
 @app.post("/api/chat")
 async def chat_relay(request: Request):
     client = httpx.AsyncClient(timeout=httpx.Timeout(600.0, connect=5.0))
     upstream = client.build_request(
         "POST", config.PROXY_CHAT, content=await request.body(),
-        headers={"Content-Type": "application/json"})
+        headers={"Content-Type": "application/json", **_auth_header(request)})
     try:
         resp = await client.send(upstream, stream=True)
     except httpx.ConnectError:
@@ -700,6 +708,63 @@ async def chat_relay(request: Request):
         media_type=resp.headers.get("content-type", "text/event-stream"),
         headers={"Cache-Control": "no-cache"},
         background=BackgroundTask(cleanup))
+
+
+# The chat tab reads per-model /props (capabilities, server defaults) and
+# llama-server's built-in /tools through the proxy, which routes by model.
+_PX_PATHS = {"props", "tools"}
+
+
+@app.api_route("/api/px/{path}", methods=["GET", "POST"])
+async def proxy_passthrough(path: str, request: Request):
+    if path not in _PX_PATHS:
+        raise HTTPException(404, f"/api/px/{path} is not relayed")
+    base = config.PROXY_CHAT.split("/v1/")[0]
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=5.0)) as c:
+            r = await c.request(request.method, f"{base}/{path}",
+                                params=dict(request.query_params),
+                                content=await request.body() or None,
+                                headers={"Content-Type": "application/json",
+                                         **_auth_header(request)})
+    except httpx.HTTPError:
+        raise HTTPException(502, f"proxy unreachable on :{config.PROXY_PORT}")
+    return Response(r.content, status_code=r.status_code,
+                    media_type=r.headers.get("content-type", "application/json"))
+
+
+# MCP servers rarely send CORS headers, so the chat tab reaches them through
+# here, as the llama.cpp web UI does through llama-server's /cors-proxy.
+# Headers named x-mcp-h-<name> are sent upstream as <name>.
+_MCP_FWD = ("content-type", "accept", "authorization", "mcp-session-id",
+            "mcp-protocol-version", "last-event-id")
+
+
+@app.api_route("/api/mcp", methods=["GET", "POST", "DELETE"])
+async def mcp_relay(url: str, request: Request):
+    if not re.match(r"https?://", url):
+        raise HTTPException(400, "url must be http(s)")
+    hdrs = {k: v for k, v in request.headers.items() if k in _MCP_FWD}
+    hdrs.update({k[8:]: v for k, v in request.headers.items() if k.startswith("x-mcp-h-")})
+    hdrs["accept-encoding"] = "identity"   # the body is relayed raw
+    client = httpx.AsyncClient(timeout=httpx.Timeout(900.0, connect=10.0))
+    try:
+        resp = await client.send(client.build_request(
+            request.method, url, content=await request.body() or None, headers=hdrs), stream=True)
+    except httpx.HTTPError as e:
+        await client.aclose()
+        raise HTTPException(502, f"MCP server unreachable: {e}")
+
+    async def cleanup():
+        await resp.aclose()
+        await client.aclose()
+
+    out = {"Cache-Control": "no-cache"}
+    if resp.headers.get("mcp-session-id"):
+        out["mcp-session-id"] = resp.headers["mcp-session-id"]
+    return StreamingResponse(resp.aiter_raw(), status_code=resp.status_code,
+                             media_type=resp.headers.get("content-type", "application/json"),
+                             headers=out, background=BackgroundTask(cleanup))
 
 
 # ---------------------------------------------------------------------------
