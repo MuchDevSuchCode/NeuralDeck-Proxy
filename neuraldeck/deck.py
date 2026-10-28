@@ -43,7 +43,7 @@ from starlette.background import BackgroundTask
 
 from . import __version__
 from . import (bench, config, gguf, launcher, llama_log, models, procs,
-               services, settings, sysinfo)
+               services, settings, sysinfo, tokens)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -678,9 +678,53 @@ async def llama_stop(port: int):
 # ---------------------------------------------------------------------------
 
 def _auth_header(request: Request) -> dict:
-    """The chat tab's API key, for a stack started with --api-key."""
+    """What the relay sends the proxy: the browser's own Authorization if
+    it set one (a stack started with --api-key), else, once the proxy
+    demands tokens, the dashboard's internal key — so the Chat tab and
+    Prompt Lab keep working without the user pasting a token into them."""
     a = request.headers.get("authorization")
-    return {"Authorization": a} if a else {}
+    if a:
+        return {"Authorization": a}
+    if tokens.required():
+        return {"Authorization": f"Bearer {tokens.internal_key()}"}
+    return {}
+
+
+# ---------------------------------------------------------------------------
+# Proxy auth tokens (Settings → Proxy Auth Tokens)
+# ---------------------------------------------------------------------------
+
+def _tokens_payload() -> dict:
+    return {"required": tokens.required(), "tokens": tokens.list_tokens(),
+            "file": str(tokens.FILE), "proxy_port": config.PROXY_PORT}
+
+
+@app.get("/api/tokens")
+async def tokens_list():
+    return _tokens_payload()
+
+
+@app.post("/api/tokens")
+async def tokens_create(body: dict):
+    name = str(body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "give the token a name (what will use it)")
+    try:
+        row, secret = await asyncio.to_thread(tokens.create, name)
+    except OSError as e:
+        raise HTTPException(500, f"could not write {tokens.FILE}: {e}")
+    return {**_tokens_payload(), "created": row, "token": secret}
+
+
+@app.delete("/api/tokens/{token_id}")
+async def tokens_revoke(token_id: str):
+    try:
+        ok = await asyncio.to_thread(tokens.revoke, token_id)
+    except OSError as e:
+        raise HTTPException(500, f"could not write {tokens.FILE}: {e}")
+    if not ok:
+        raise HTTPException(404, "no such token")
+    return _tokens_payload()
 
 
 @app.post("/api/chat")

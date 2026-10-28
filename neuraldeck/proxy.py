@@ -45,7 +45,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from starlette.background import BackgroundTask
 
-from . import config
+from . import config, tokens
 
 LLAMA_ENDPOINT = config.LLAMA_ENDPOINT
 WHISPER_ENDPOINT = config.WHISPER_ENDPOINT
@@ -377,6 +377,7 @@ async def lifespan(app: FastAPI):
   TTS endpoint          : {TTS_ENDPOINT}  [{state(tts_ok)}]
   Video frame rate      : {VIDEO_FPS} fps (max {MAX_FRAMES} frames/video)
   ffmpeg                : {ff or 'NOT FOUND — video input disabled'}
+  Authentication        : {("required (" + str(len(tokens.list_tokens())) + " tokens)") if tokens.required() else "OPEN — no tokens yet (Settings → Proxy Auth Tokens)"}
 =========================================================
 """, flush=True)
     try:
@@ -444,6 +445,50 @@ class BodyLimit:
 
 
 app.add_middleware(BodyLimit)
+
+
+# ---------------------------------------------------------------------------
+# Authentication: bearer tokens made on the dashboard's Settings page.
+# Open until the first token exists; from then on every request needs one.
+# ---------------------------------------------------------------------------
+
+# Answered without a token: the health probe, and the web UI's own page
+# (it sends the token itself, from its API Key setting, once loaded).
+_AUTH_FREE_GET = {"", "index.html", "favicon.ico"}
+
+
+def _bearer(request: Request):
+    a = request.headers.get("authorization", "")
+    if a[:7].lower() == "bearer ":
+        return a[7:].strip()
+    return request.headers.get("x-api-key", "").strip() or None
+
+
+def _unauthorized(path: str) -> Response:
+    msg = ("a NeuralDeck proxy token is required: send it as "
+           "'Authorization: Bearer <token>' (or x-api-key). Tokens are made "
+           "under Settings → Proxy Auth Tokens on the dashboard.")
+    if path.startswith("/v1/messages"):
+        resp = _anthropic_error(401, msg)
+    else:
+        resp = JSONResponse(status_code=401, content={"error": {
+            "message": msg, "type": "authentication_error", "code": "invalid_api_key"}})
+    resp.headers["WWW-Authenticate"] = 'Bearer realm="neuraldeck"'
+    return resp
+
+
+@app.middleware("http")
+async def require_token(request: Request, call_next):
+    path = request.url.path
+    if (request.method == "OPTIONS" or path == "/health"
+            or (request.method in ("GET", "HEAD") and path.strip("/") in _AUTH_FREE_GET)
+            or not tokens.required()):
+        return await call_next(request)
+    row = tokens.verify(_bearer(request))
+    if row is None:
+        return _unauthorized(path)
+    tokens.touch(row["id"])
+    return await call_next(request)
 
 
 # ---------------------------------------------------------------------------

@@ -282,6 +282,18 @@
 
   /* settings */
   .stgroup { margin-bottom:12px; }
+  /* proxy auth tokens */
+  #tok-state.open { color:var(--yellow); }
+  #tok-state.on { color:var(--green); }
+  .tok-reveal { border:1px solid color-mix(in srgb, var(--green) 50%, transparent);
+    background:color-mix(in srgb, var(--green) 7%, transparent); border-radius:6px; padding:10px 12px; margin-bottom:10px; }
+  .tok-reveal-h { font-size:12.5px; margin-bottom:6px; }
+  .tok-reveal-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:6px; }
+  .tok-reveal-row code { flex:1; min-width:200px; user-select:all; font-size:13px; padding:6px 8px;
+    background:var(--surface2); border:1px solid var(--border-dim); border-radius:4px; word-break:break-all; }
+  #tok-table td:last-child { text-align:right; }
+  .tok-new { display:flex; gap:8px; margin-top:10px; align-items:center; }
+  .tok-new .pl-input { flex:1; max-width:360px; }
   .strow { display:grid; grid-template-columns:230px minmax(0,1fr); gap:4px 14px;
            padding:8px 2px; border-bottom:1px solid var(--grid); align-items:start; }
   .strow:last-child { border-bottom:none; }
@@ -1032,6 +1044,35 @@
       <span class="sub" id="st-dirty" role="status"></span>
       <span style="flex:1"></span>
       <button id="st-restart" onclick="stRestart()" style="display:none">↻ Restart NeuralDeck</button>
+    </div>
+  </div>
+  <div class="panel" id="tok-panel" style="margin-top:12px">
+    <h2>Proxy Auth Tokens <span class="meta" id="tok-state"></span></h2>
+    <div class="advisory" style="margin:0 0 10px">
+      Bearer tokens for the proxy on port <span id="tok-port" style="color:var(--ink-2)"></span>. The proxy is open until the
+      first token exists; after that every request must send one as <code>Authorization: Bearer …</code>
+      (or <code>x-api-key</code>). A token is shown once, when made; only its hash is kept. The Chat tab and Prompt Lab
+      keep working without one. Changes apply at once, no restart.
+    </div>
+    <div id="tok-reveal" class="tok-reveal" hidden>
+      <div class="tok-reveal-h">New token <b id="tok-reveal-name"></b> — copy it now; it will not be shown again.</div>
+      <div class="tok-reveal-row">
+        <code id="tok-secret"></code>
+        <button class="primary" onclick="tokCopy()">Copy</button>
+        <button onclick="$('tok-reveal').hidden=true">✕ Close</button>
+      </div>
+      <div class="sub">OpenAI clients: <code>OPENAI_API_KEY=&lt;token&gt;</code> · Claude Code: <code>ANTHROPIC_AUTH_TOKEN=&lt;token&gt;</code>
+        · curl: <code>-H "Authorization: Bearer &lt;token&gt;"</code></div>
+    </div>
+    <div class="tblwrap" id="tok-tblwrap" hidden>
+      <table id="tok-table"><thead><tr><th>Name</th><th>Token</th><th>Created</th><th>Last Used</th><th></th></tr></thead>
+      <tbody id="tok-rows"></tbody></table>
+    </div>
+    <div id="tok-empty" class="advisory" style="margin:0"></div>
+    <div class="tok-new">
+      <input id="tok-name" class="pl-input" placeholder="Name, e.g. laptop or Claude Code" aria-label="Token name" maxlength="64"
+        onkeydown="if(event.key==='Enter')tokCreate()">
+      <button class="primary" onclick="tokCreate()">Generate Token</button>
     </div>
   </div>
 </div>
@@ -2455,6 +2496,7 @@ function setView(v){
   // unsaved edits survive a trip to another tab: only (re)load settings
   // when there is nothing pending
   if(v==="settings"&&(was!=="settings")&&(!stSchema||!Object.keys(stDirty).length))stLoad();
+  if(v==="settings"&&was!=="settings")tokLoad();
   if(v==="dash")refreshLog();
   if(v==="chat")chatShow();
 }
@@ -3048,6 +3090,42 @@ function stDiscard(){
   const n=Object.keys(stDirty).length;
   if(n&&!confirm(`Discard ${n} unsaved change${n===1?"":"s"}?`))return;
   stLoad();
+}
+/* ---------- proxy auth tokens ---------- */
+let tokData=null;
+async function tokLoad(){
+  try{ tokData=await api("/api/tokens","GET",undefined,{quiet:true}); }
+  catch(e){ $("tok-state").textContent="UNAVAILABLE"; $("tok-state").className="meta"; return; }
+  tokRender();
+}
+const tokWhen=ts=>ts?new Date(ts*1000).toLocaleString([],{dateStyle:"medium",timeStyle:"short"}):"never";
+function tokRender(){
+  const d=tokData, n=d.tokens.length, st=$("tok-state");
+  $("tok-port").textContent=d.proxy_port;
+  st.textContent=n?`REQUIRED · ${n} token${n===1?"":"s"}`:"OPEN · no tokens"; st.className="meta "+(n?"on":"open");
+  $("tok-rows").innerHTML=d.tokens.map(t=>`<tr><td>${escH(t.name)||"—"}</td><td><code>${escH(t.prefix)}…</code></td>`
+    +`<td>${tokWhen(t.created)}</td><td>${tokWhen(t.last_used)}</td>`
+    +`<td><button class="danger" onclick="tokRevoke('${escA(t.id)}','${escA(t.name)}')">Revoke</button></td></tr>`).join("");
+  $("tok-tblwrap").hidden=!n;
+  $("tok-empty").textContent=n?"":"No tokens: the proxy answers any request. Generate one to require it.";
+}
+async function tokCreate(){
+  const inp=$("tok-name"), name=inp.value.trim();
+  if(!name){ toast("give the token a name — what will use it","err"); inp.focus(); return; }
+  let r; try{ r=await api("/api/tokens","POST",{name}); }catch(e){ return; }
+  tokData=r; inp.value=""; tokRender();
+  $("tok-reveal-name").textContent=r.created.name; $("tok-secret").textContent=r.token; $("tok-reveal").hidden=false;
+  if(r.tokens.length===1) toast("the proxy now requires a token on every request","ok",{ms:8000});
+}
+async function tokCopy(){
+  const ok=await copyText($("tok-secret").textContent);
+  toast(ok?"token copied":"copy failed — select it and copy by hand",ok?"ok":"err");
+}
+async function tokRevoke(id,name){
+  if(!confirm(`Revoke token "${name}"?\nAnything using it stops working at once.`))return;
+  let r; try{ r=await api(`/api/tokens/${id}`,"DELETE"); }catch(e){ return; }
+  tokData=r; $("tok-reveal").hidden=true; tokRender();
+  if(!r.required) toast("no tokens left — the proxy is open again","warn",{ms:8000});
 }
 // an unsaved edit survives a tab switch; closing the page asks first
 addEventListener("beforeunload",e=>{

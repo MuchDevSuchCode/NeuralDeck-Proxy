@@ -31,8 +31,9 @@ runs on **Linux and Windows** (macOS for everything but GPU telemetry).
   transcribes audio through whisper.cpp, turns video into frames for vision
   models, and relays speech synthesis.
 
-> **No authentication, by design.** Run it on a network you trust, or bind
-> it to `127.0.0.1` (see [Security](#security)).
+> **The dashboard has no authentication.** Run it on a network you trust, or
+> bind it to `127.0.0.1`. The proxy is open too until you generate a token
+> for it under **Settings → Proxy Auth Tokens** (see [Security](#security)).
 
 ---
 
@@ -542,8 +543,10 @@ newest 5,000 runs.
 ## Using the proxy
 
 Point any OpenAI-compatible client at **`http://localhost:8080/v1`** (or
-the machine's address from elsewhere on your network). There's no API key;
-clients that insist on one can send any value.
+the machine's address from elsewhere on your network). Until you generate a
+token there's no API key, and clients that insist on one can send any value.
+Once a token exists (see [Proxy auth tokens](#proxy-auth-tokens)) every
+request must carry one, as `Authorization: Bearer <token>` or `x-api-key`.
 
 ### Endpoints
 
@@ -607,7 +610,7 @@ print(reply.choices[0].message.content)
 
 ```bash
 export ANTHROPIC_BASE_URL=http://localhost:8080
-export ANTHROPIC_AUTH_TOKEN=none
+export ANTHROPIC_AUTH_TOKEN=none        # or a proxy token, once you have made one
 export ANTHROPIC_MODEL=OrcaSAQ-2-27B                  # a served model name
 export ANTHROPIC_DEFAULT_HAIKU_MODEL=OrcaSAQ-2-27B    # background tasks too
 claude
@@ -752,6 +755,34 @@ Launch-time defaults; a request can always override them.
 | `llama_timeout` | `600` | proxy | Seconds to wait on a model server (1–7200) |
 | `whisper_timeout` | `300` | proxy | Seconds to wait on whisper-server (1–7200) |
 
+### Proxy auth tokens
+
+Not a config.json setting but a panel of its own at the bottom of the
+Settings page. The proxy accepts any request until the first token is
+generated; from then on every request (except `GET /health` and the web
+UI's page) must send one, as `Authorization: Bearer <token>` or as
+`x-api-key`. Requests without a valid token get a 401 in the client's own
+error shape (OpenAI or Anthropic).
+
+* **Generate Token** makes one under the name you give it (what will use
+  it: a laptop, Claude Code, a script). The token is shown once, with a
+  Copy button; only its SHA-256 is stored, in `proxy_tokens.json` in the
+  data directory, so a lost token is replaced, not recovered.
+* The table shows each token's name, its first characters, when it was
+  made and when it was last used. **Revoke** deletes it; whatever used it
+  fails on its next request.
+* Revoking the last token makes the proxy open again.
+* Changes take effect at once: the proxy re-reads the file when it changes.
+* The Chat tab and Prompt Lab keep working without a token. They reach the
+  proxy through the dashboard, which signs its own requests with a key the
+  two processes share (`proxy_internal.key`, readable only by your user).
+  Anyone who can open the dashboard can therefore use the models, which
+  was already so: the dashboard itself has no authentication.
+
+Running instances started with llama-server's `--api-key` are unaffected:
+the proxy still passes the client's `Authorization` header through to
+them.
+
 ### Dashboard
 
 | Key | Default | Applies | Meaning |
@@ -867,6 +898,8 @@ Windows, or wherever `NEURALDECK_HOME` points. The Settings tab and
 ```
 neuraldeck/
 ├── config.json            ← your settings
+├── proxy_tokens.json      ← proxy auth tokens (hashes only); mode 0600
+├── proxy_internal.key     ← the dashboard's own key for the proxy; mode 0600
 ├── bench.jsonl            ← benchmark history (newest 5,000 runs)
 ├── last-model.txt         ← the last model launched
 ├── logs/
@@ -881,7 +914,7 @@ neuraldeck/
 ## Dashboard API
 
 The dashboard is driven by a JSON API on its own port, which you can
-script against too. There's no authentication.
+script against too. There's no authentication on it.
 
 | Method and path | Purpose |
 | --- | --- |
@@ -896,9 +929,10 @@ script against too. There's no authentication.
 | `POST /api/service/{name}/start`, `…/stop` | start or stop `proxy`, `whisper`, `tts`, `comfy` |
 | `GET /api/logs/{service}?lines=N` | the tail of a log (1–2000 lines) |
 | `GET /api/settings`, `POST /api/settings` | read or save settings |
+| `GET /api/tokens`, `POST /api/tokens`, `DELETE /api/tokens/{id}` | proxy auth tokens: list, generate (`{"name": …}`; the reply's `token` is shown once), revoke |
 | `GET /api/browse?path=&mode=dir\|file&ext=` | directory listing for the file picker |
 | `POST /api/restart` | restart the dashboard |
-| `POST /api/chat` | same-origin relay to the proxy (used by the Prompt Lab) |
+| `POST /api/chat` | same-origin relay to the proxy (used by the Chat tab and Prompt Lab); signs with the dashboard's internal key once tokens are required |
 | `GET /api/bench`, `POST /api/bench`, `POST /api/bench/delete`, `POST /api/bench/clear` | benchmark history |
 | `GET /api/hf/search`, `/api/hf/files`, `/api/hf/card` | Hugging Face search, file lists and model-card descriptions (`format=gguf\|hf`) |
 | `POST /api/hf/download`, `GET /api/hf/status`, `POST /api/hf/cancel` | the download queue |
@@ -992,6 +1026,13 @@ old version: restart it from the Servers panel.
 `ffmpeg` isn't installed or configured. Install it or set its path under
 **Settings → Speech & video**. Everything else keeps working without it.
 
+**A request is rejected with 401 `authentication_error`.**
+A proxy token exists, so every request needs one. Send it as
+`Authorization: Bearer <token>` (OpenAI clients: `OPENAI_API_KEY`; Claude
+Code: `ANTHROPIC_AUTH_TOKEN`) or as `x-api-key`. Lost it? Revoke it and
+generate another under **Settings → Proxy Auth Tokens**; revoking every
+token makes the proxy open again.
+
 **A request is rejected with 413.**
 It's larger than `max_upload_mb` (512 MB by default). Raise it in
 `config.json` if you really mean to send that much.
@@ -1078,11 +1119,16 @@ lines the dashboard reads. It fills in after the first request.
 
 ## Security
 
-There's no authentication anywhere: the dashboard can launch processes and
-delete model files, and the proxy serves your models to anyone who can
-reach it. By default all three bind to `0.0.0.0` so other machines on your
-network can use them.
+The dashboard has no authentication: it can launch processes and delete
+model files, and anyone who can open it can use the models through its
+Chat tab. The proxy is open until you generate a token under **Settings →
+Proxy Auth Tokens**, after which it answers only requests that carry one
+(see [Proxy auth tokens](#proxy-auth-tokens)). Model servers launched by
+the deck have no authentication of their own. By default all three bind
+to `0.0.0.0` so other machines on your network can use them.
 
+* Generate a proxy token before pointing anything beyond this machine at
+  port 8080.
 * On an untrusted network, set `deck_host`, `proxy_host` and `llama_host`
   to `127.0.0.1`.
 * Don't expose these ports to the internet. If you need remote access, put

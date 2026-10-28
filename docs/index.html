@@ -212,13 +212,13 @@
 <div class="card"><h3>Settings</h3><p>point NeuralDeck at your model folders and server builds from the page itself, with a file picker, validation, and an honest account of which changes apply at once and which need a restart.</p></div>
 <div class="card"><h3>Multimodal proxy</h3><p>one OpenAI- and Anthropic-compatible endpoint in front of every model you have running. It routes by model name, transcribes audio through whisper.cpp, turns video into frames for vision models, and relays speech synthesis.</p></div>
     </div>
-    <p class="notice"><strong>No authentication, by design.</strong> Run it on a network you trust, or bind it to <code>127.0.0.1</code> (see <a href="#security">Security</a>).</p>
+    <p class="notice"><strong>The dashboard has no authentication.</strong> Run it on a network you trust, or bind it to <code>127.0.0.1</code>. The proxy is open too until you generate a token for it under <strong>Settings → Proxy Auth Tokens</strong> (see <a href="#security">Security</a>).</p>
   </div>
 </section>
 
 <div class="layout">
   <nav class="sidebar" id="sidebar" aria-label="Documentation sections">
-<ul class="toc"><li><a href="#quick-start">Quick start</a></li><li><a href="#how-it-fits-together">How it fits together</a></li><li><a href="#requirements">Requirements</a></li><li><a href="#install">Install</a><ul><li><a href="#with-the-installer-recommended">With the installer (recommended)</a></li><li><a href="#manually-or-into-an-existing-environment">Manually, or into an existing environment</a></li><li><a href="#updating">Updating</a></li></ul></li><li><a href="#backends-llamacpp-and-vllm">Backends: llama.cpp and vLLM</a><ul><li><a href="#llamacpp-builds">llama.cpp builds</a></li><li><a href="#vllm">vLLM</a></li></ul></li><li><a href="#the-dashboard">The dashboard</a><ul><li><a href="#dashboard-panels">Dashboard panels</a></li><li><a href="#launching-a-model">Launching a model</a></li><li><a href="#servers-and-logs">Servers and logs</a></li></ul></li><li><a href="#getting-models">Getting models</a><ul><li><a href="#the-hugging-face-downloader">The Hugging Face downloader</a></li><li><a href="#adding-models-by-hand">Adding models by hand</a></li><li><a href="#mmproj-files-which-and-when">mmproj files: which and when</a></li></ul></li><li><a href="#choosing-a-quantisation">Choosing a quantisation</a></li><li><a href="#prompt-lab">Prompt Lab</a></li><li><a href="#benchmarks">Benchmarks</a></li><li><a href="#using-the-proxy">Using the proxy</a><ul><li><a href="#endpoints">Endpoints</a></li><li><a href="#how-model-is-matched">How model is matched</a></li><li><a href="#examples">Examples</a></li></ul></li><li><a href="#how-to-recipes">How-to recipes</a></li><li><a href="#settings-reference">Settings reference</a><ul><li><a href="#models">Models</a></li><li><a href="#backends">Backends</a></li><li><a href="#launch-defaults">Launch defaults</a></li><li><a href="#vllm-1">vLLM</a></li><li><a href="#sampling">Sampling</a></li><li><a href="#ports">Ports</a></li><li><a href="#speech--video">Speech &amp; video</a></li><li><a href="#proxy">Proxy</a></li><li><a href="#dashboard">Dashboard</a></li><li><a href="#optional-services">Optional services</a></li><li><a href="#validation-and-safety">Validation and safety</a></li></ul></li><li><a href="#configuring-without-the-page">Configuring without the page</a><ul><li><a href="#settings-not-on-the-page">Settings not on the page</a></li></ul></li><li><a href="#command-line">Command line</a></li><li><a href="#where-things-are-stored">Where things are stored</a></li><li><a href="#dashboard-api">Dashboard API</a></li><li><a href="#troubleshooting">Troubleshooting</a><ul><li><a href="#starting-and-installing">Starting and installing</a></li><li><a href="#launching-models">Launching models</a></li><li><a href="#clients-and-the-proxy">Clients and the proxy</a></li><li><a href="#models-and-downloads">Models and downloads</a></li><li><a href="#vllm-2">vLLM</a></li><li><a href="#telemetry">Telemetry</a></li></ul></li><li><a href="#security">Security</a></li><li><a href="#uninstall">Uninstall</a></li><li><a href="#notes-on-portability">Notes on portability</a></li><li><a href="#documentation-site">Documentation site</a></li><li><a href="#credit">Credit</a></li><li><a href="#license">License</a></li></ul>
+<ul class="toc"><li><a href="#quick-start">Quick start</a></li><li><a href="#how-it-fits-together">How it fits together</a></li><li><a href="#requirements">Requirements</a></li><li><a href="#install">Install</a><ul><li><a href="#with-the-installer-recommended">With the installer (recommended)</a></li><li><a href="#manually-or-into-an-existing-environment">Manually, or into an existing environment</a></li><li><a href="#updating">Updating</a></li></ul></li><li><a href="#backends-llamacpp-and-vllm">Backends: llama.cpp and vLLM</a><ul><li><a href="#llamacpp-builds">llama.cpp builds</a></li><li><a href="#vllm">vLLM</a></li></ul></li><li><a href="#the-dashboard">The dashboard</a><ul><li><a href="#dashboard-panels">Dashboard panels</a></li><li><a href="#launching-a-model">Launching a model</a></li><li><a href="#servers-and-logs">Servers and logs</a></li></ul></li><li><a href="#getting-models">Getting models</a><ul><li><a href="#the-hugging-face-downloader">The Hugging Face downloader</a></li><li><a href="#adding-models-by-hand">Adding models by hand</a></li><li><a href="#mmproj-files-which-and-when">mmproj files: which and when</a></li></ul></li><li><a href="#choosing-a-quantisation">Choosing a quantisation</a></li><li><a href="#prompt-lab">Prompt Lab</a></li><li><a href="#benchmarks">Benchmarks</a></li><li><a href="#using-the-proxy">Using the proxy</a><ul><li><a href="#endpoints">Endpoints</a></li><li><a href="#how-model-is-matched">How model is matched</a></li><li><a href="#examples">Examples</a></li></ul></li><li><a href="#how-to-recipes">How-to recipes</a></li><li><a href="#settings-reference">Settings reference</a><ul><li><a href="#models">Models</a></li><li><a href="#backends">Backends</a></li><li><a href="#launch-defaults">Launch defaults</a></li><li><a href="#vllm-1">vLLM</a></li><li><a href="#sampling">Sampling</a></li><li><a href="#ports">Ports</a></li><li><a href="#speech--video">Speech &amp; video</a></li><li><a href="#proxy">Proxy</a></li><li><a href="#proxy-auth-tokens">Proxy auth tokens</a></li><li><a href="#dashboard">Dashboard</a></li><li><a href="#optional-services">Optional services</a></li><li><a href="#validation-and-safety">Validation and safety</a></li></ul></li><li><a href="#configuring-without-the-page">Configuring without the page</a><ul><li><a href="#settings-not-on-the-page">Settings not on the page</a></li></ul></li><li><a href="#command-line">Command line</a></li><li><a href="#where-things-are-stored">Where things are stored</a></li><li><a href="#dashboard-api">Dashboard API</a></li><li><a href="#troubleshooting">Troubleshooting</a><ul><li><a href="#starting-and-installing">Starting and installing</a></li><li><a href="#launching-models">Launching models</a></li><li><a href="#clients-and-the-proxy">Clients and the proxy</a></li><li><a href="#models-and-downloads">Models and downloads</a></li><li><a href="#vllm-2">vLLM</a></li><li><a href="#telemetry">Telemetry</a></li></ul></li><li><a href="#security">Security</a></li><li><a href="#uninstall">Uninstall</a></li><li><a href="#notes-on-portability">Notes on portability</a></li><li><a href="#documentation-site">Documentation site</a></li><li><a href="#credit">Credit</a></li><li><a href="#license">License</a></li></ul>
   </nav>
   <div class="scrim" id="scrim"></div>
   <main id="content">
@@ -825,8 +825,10 @@ with a few seconds to undo.</li>
 newest 5,000 runs.</p>
 <h2 id="using-the-proxy"><a class="hash" href="#using-the-proxy" aria-label="Link to this section">#</a>Using the proxy</h2>
 <p>Point any OpenAI-compatible client at <strong><code>http://localhost:8080/v1</code></strong> (or
-the machine's address from elsewhere on your network). There's no API key;
-clients that insist on one can send any value.</p>
+the machine's address from elsewhere on your network). Until you generate a
+token there's no API key, and clients that insist on one can send any value.
+Once a token exists (see <a href="#proxy-auth-tokens">Proxy auth tokens</a>) every
+request must carry one, as <code>Authorization: Bearer &lt;token&gt;</code> or <code>x-api-key</code>.</p>
 <h3 id="endpoints"><a class="hash" href="#endpoints" aria-label="Link to this section">#</a>Endpoints</h3>
 <div class="table-wrap"><table>
 <thead>
@@ -911,7 +913,7 @@ print(reply.choices[0].message.content)
 </code></pre>
 <p><strong>Claude Code</strong> (or any Anthropic client)</p>
 <pre><code class="language-bash">export ANTHROPIC_BASE_URL=http://localhost:8080
-export ANTHROPIC_AUTH_TOKEN=none
+export ANTHROPIC_AUTH_TOKEN=none        # or a proxy token, once you have made one
 export ANTHROPIC_MODEL=OrcaSAQ-2-27B                  # a served model name
 export ANTHROPIC_DEFAULT_HAIKU_MODEL=OrcaSAQ-2-27B    # background tasks too
 claude
@@ -1290,6 +1292,32 @@ restart button.</li>
 </tr>
 </tbody>
 </table></div>
+<h3 id="proxy-auth-tokens"><a class="hash" href="#proxy-auth-tokens" aria-label="Link to this section">#</a>Proxy auth tokens</h3>
+<p>Not a config.json setting but a panel of its own at the bottom of the
+Settings page. The proxy accepts any request until the first token is
+generated; from then on every request (except <code>GET /health</code> and the web
+UI's page) must send one, as <code>Authorization: Bearer &lt;token&gt;</code> or as
+<code>x-api-key</code>. Requests without a valid token get a 401 in the client's own
+error shape (OpenAI or Anthropic).</p>
+<ul>
+<li><strong>Generate Token</strong> makes one under the name you give it (what will use
+it: a laptop, Claude Code, a script). The token is shown once, with a
+Copy button; only its SHA-256 is stored, in <code>proxy_tokens.json</code> in the
+data directory, so a lost token is replaced, not recovered.</li>
+<li>The table shows each token's name, its first characters, when it was
+made and when it was last used. <strong>Revoke</strong> deletes it; whatever used it
+fails on its next request.</li>
+<li>Revoking the last token makes the proxy open again.</li>
+<li>Changes take effect at once: the proxy re-reads the file when it changes.</li>
+<li>The Chat tab and Prompt Lab keep working without a token. They reach the
+proxy through the dashboard, which signs its own requests with a key the
+two processes share (<code>proxy_internal.key</code>, readable only by your user).
+Anyone who can open the dashboard can therefore use the models, which
+was already so: the dashboard itself has no authentication.</li>
+</ul>
+<p>Running instances started with llama-server's <code>--api-key</code> are unaffected:
+the proxy still passes the client's <code>Authorization</code> header through to
+them.</p>
 <h3 id="dashboard"><a class="hash" href="#dashboard" aria-label="Link to this section">#</a>Dashboard</h3>
 <div class="table-wrap"><table>
 <thead>
@@ -1514,6 +1542,8 @@ Windows, or wherever <code>NEURALDECK_HOME</code> points. The Settings tab and
 <code>neuraldeck doctor</code> print the exact paths.</p>
 <pre><code>neuraldeck/
 ├── config.json            ← your settings
+├── proxy_tokens.json      ← proxy auth tokens (hashes only); mode 0600
+├── proxy_internal.key     ← the dashboard's own key for the proxy; mode 0600
 ├── bench.jsonl            ← benchmark history (newest 5,000 runs)
 ├── last-model.txt         ← the last model launched
 ├── logs/
@@ -1526,7 +1556,7 @@ Windows, or wherever <code>NEURALDECK_HOME</code> points. The Settings tab and
 </code></pre>
 <h2 id="dashboard-api"><a class="hash" href="#dashboard-api" aria-label="Link to this section">#</a>Dashboard API</h2>
 <p>The dashboard is driven by a JSON API on its own port, which you can
-script against too. There's no authentication.</p>
+script against too. There's no authentication on it.</p>
 <div class="table-wrap"><table>
 <thead>
 <tr>
@@ -1580,6 +1610,10 @@ script against too. There's no authentication.</p>
 <td data-label="Purpose"><span class="cell">read or save settings</span></td>
 </tr>
 <tr>
+<td data-label="Method and path"><span class="cell"><code>GET /api/tokens</code>, <code>POST /api/tokens</code>, <code>DELETE /api/tokens/{id}</code></span></td>
+<td data-label="Purpose"><span class="cell">proxy auth tokens: list, generate (<code>{&quot;name&quot;: …}</code>; the reply's <code>token</code> is shown once), revoke</span></td>
+</tr>
+<tr>
 <td data-label="Method and path"><span class="cell"><code>GET /api/browse?path=&amp;mode=dir|file&amp;ext=</code></span></td>
 <td data-label="Purpose"><span class="cell">directory listing for the file picker</span></td>
 </tr>
@@ -1589,7 +1623,7 @@ script against too. There's no authentication.</p>
 </tr>
 <tr>
 <td data-label="Method and path"><span class="cell"><code>POST /api/chat</code></span></td>
-<td data-label="Purpose"><span class="cell">same-origin relay to the proxy (used by the Prompt Lab)</span></td>
+<td data-label="Purpose"><span class="cell">same-origin relay to the proxy (used by the Chat tab and Prompt Lab); signs with the dashboard's internal key once tokens are required</span></td>
 </tr>
 <tr>
 <td data-label="Method and path"><span class="cell"><code>GET /api/bench</code>, <code>POST /api/bench</code>, <code>POST /api/bench/delete</code>, <code>POST /api/bench/clear</code></span></td>
@@ -1673,6 +1707,12 @@ old version: restart it from the Servers panel.</p>
 <p><strong>Video requests fail.</strong>
 <code>ffmpeg</code> isn't installed or configured. Install it or set its path under
 <strong>Settings → Speech &amp; video</strong>. Everything else keeps working without it.</p>
+<p><strong>A request is rejected with 401 <code>authentication_error</code>.</strong>
+A proxy token exists, so every request needs one. Send it as
+<code>Authorization: Bearer &lt;token&gt;</code> (OpenAI clients: <code>OPENAI_API_KEY</code>; Claude
+Code: <code>ANTHROPIC_AUTH_TOKEN</code>) or as <code>x-api-key</code>. Lost it? Revoke it and
+generate another under <strong>Settings → Proxy Auth Tokens</strong>; revoking every
+token makes the proxy open again.</p>
 <p><strong>A request is rejected with 413.</strong>
 It's larger than <code>max_upload_mb</code> (512 MB by default). Raise it in
 <code>config.json</code> if you really mean to send that much.</p>
@@ -1738,11 +1778,16 @@ If your board exposes only an ACPI zone, that's what's shown.</p>
 The model hasn't served a request yet, or its log doesn't contain the
 lines the dashboard reads. It fills in after the first request.</p>
 <h2 id="security"><a class="hash" href="#security" aria-label="Link to this section">#</a>Security</h2>
-<p>There's no authentication anywhere: the dashboard can launch processes and
-delete model files, and the proxy serves your models to anyone who can
-reach it. By default all three bind to <code>0.0.0.0</code> so other machines on your
-network can use them.</p>
+<p>The dashboard has no authentication: it can launch processes and delete
+model files, and anyone who can open it can use the models through its
+Chat tab. The proxy is open until you generate a token under <strong>Settings →
+Proxy Auth Tokens</strong>, after which it answers only requests that carry one
+(see <a href="#proxy-auth-tokens">Proxy auth tokens</a>). Model servers launched by
+the deck have no authentication of their own. By default all three bind
+to <code>0.0.0.0</code> so other machines on your network can use them.</p>
 <ul>
+<li>Generate a proxy token before pointing anything beyond this machine at
+port 8080.</li>
 <li>On an untrusted network, set <code>deck_host</code>, <code>proxy_host</code> and <code>llama_host</code>
 to <code>127.0.0.1</code>.</li>
 <li>Don't expose these ports to the internet. If you need remote access, put
