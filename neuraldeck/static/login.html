@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign In · NeuralDeck</title>
+<script>try{let t=localStorage.getItem("nd-theme");const L=matchMedia("(prefers-color-scheme: light)").matches;
+  if(t==="system")t=L?"light":"dark"; else if(t==="llama")t=L?"llama-light":"llama-dark";
+  if(["dark","light","llama-dark","llama-light"].includes(t))document.documentElement.dataset.theme=t;}catch(e){}</script>
+<style>
+  :root { color-scheme:dark; --page:#06090f; --surface:#0b1220; --ink:#d6e4ff; --ink-2:#aebfdc; --muted:#6f86a8;
+    --border:rgba(0,240,224,.45); --border-dim:rgba(0,240,224,.16); --cyan:#00f0e0; --critical:#ff4d6d; --green:#4df58d;
+    --mono:"JetBrains Mono","Fira Code","Cascadia Code",ui-monospace,monospace; --radius:0; }
+  :root[data-theme="dark"] { --page:#0d1117; --surface:#161b22; --ink:#e6edf3; --ink-2:#c9d1d9; --muted:#8b949e;
+    --border:#3d444d; --border-dim:#2a313c; --cyan:#58a6ff; --critical:#f85149; --green:#3fb950; --mono:system-ui,sans-serif; --radius:6px; }
+  :root[data-theme="light"] { color-scheme:light; --page:#f6f8fa; --surface:#fff; --ink:#1f2328; --ink-2:#31373d; --muted:#656d76;
+    --border:#d0d7de; --border-dim:#d8dee4; --cyan:#0969da; --critical:#cf222e; --green:#1a7f37; --mono:system-ui,sans-serif; --radius:6px; }
+  :root[data-theme="llama-light"] { color-scheme:light; --page:oklch(1 0 0); --surface:oklch(1 0 0); --ink:oklch(0.145 0 0);
+    --ink-2:oklch(0.3 0 0); --muted:oklch(0.556 0 0); --border:oklch(0.922 0 0); --border-dim:oklch(0.922 0 0);
+    --cyan:oklch(0.205 0 0); --critical:oklch(0.577 0.245 27.325); --green:oklch(0.527 0.154 150.069); --mono:system-ui,sans-serif; --radius:12px; }
+  :root[data-theme="llama-dark"] { --page:oklch(0.145 0 0); --surface:oklch(0.205 0 0); --ink:oklch(0.985 0 0);
+    --ink-2:oklch(0.85 0 0); --muted:oklch(0.708 0 0); --border:oklch(1 0 0 / 15%); --border-dim:oklch(1 0 0 / 10%);
+    --cyan:oklch(0.922 0 0); --critical:oklch(0.704 0.191 22.216); --green:oklch(0.723 0.219 149.579); --mono:system-ui,sans-serif; --radius:12px; }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:16px;
+    background:var(--page); color:var(--ink); font:13.5px/1.5 var(--mono); }
+  .card { width:100%; max-width:380px; background:var(--surface); border:1px solid var(--border-dim); border-radius:var(--radius); padding:24px; }
+  h1 { margin:0 0 2px; font-size:18px; letter-spacing:1px; }
+  .sub { color:var(--muted); font-size:12px; margin:0 0 18px; }
+  label { display:block; color:var(--ink-2); font-size:12px; margin:12px 0 4px; }
+  input { width:100%; height:36px; padding:0 10px; font:inherit; color:var(--ink); background:var(--page);
+    border:1px solid var(--border-dim); border-radius:var(--radius); outline:none; }
+  input:focus { border-color:var(--cyan); }
+  button { width:100%; height:38px; margin-top:18px; font:inherit; font-weight:600; letter-spacing:.5px; cursor:pointer;
+    color:var(--page); background:var(--cyan); border:1px solid var(--cyan); border-radius:var(--radius); }
+  button:disabled { opacity:.6; cursor:default; }
+  .err { color:var(--critical); font-size:12px; min-height:18px; margin-top:10px; }
+  .hint { margin-top:16px; padding:10px 12px; border:1px solid var(--border-dim); border-radius:var(--radius);
+    font-size:12px; color:var(--ink-2); }
+  .hint code { color:var(--green); word-break:break-all; }
+  .step { display:none; } .step.on { display:block; }
+  .foot { margin-top:14px; color:var(--muted); font-size:11px; text-align:center; }
+</style>
+</head>
+<body>
+<main class="card">
+  <h1>NeuralDeck</h1>
+  <form id="login" class="step on" autocomplete="on">
+    <p class="sub">Sign in to the dashboard.</p>
+    <label for="u">User</label><input id="u" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus>
+    <label for="p">Password</label><input id="p" name="password" type="password" autocomplete="current-password" required>
+    <div class="err" id="e1" role="alert"></div>
+    <button id="b1">Sign In</button>
+    <div class="hint" id="hint" hidden></div>
+  </form>
+  <form id="change" class="step" autocomplete="on">
+    <p class="sub">First sign-in: choose a new password for <b id="who"></b>.</p>
+    <label for="n1">New Password <span style="color:var(--muted)">(8+ characters)</span></label>
+    <input id="n1" type="password" autocomplete="new-password" minlength="8" required>
+    <label for="n2">Repeat It</label><input id="n2" type="password" autocomplete="new-password" minlength="8" required>
+    <div class="err" id="e2" role="alert"></div>
+    <button id="b2">Set Password and Continue</button>
+  </form>
+  <div class="foot">Accounts are managed under Settings by an admin.</div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const next=(()=>{ const n=new URLSearchParams(location.search).get("next")||"/"; return n.startsWith("/")&&!n.startsWith("//")?n:"/"; })();
+let pw="";
+async function post(url,body){
+  const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  const d=await r.json().catch(()=>({detail:r.statusText}));
+  if(!r.ok) throw new Error(typeof d.detail==="string"?d.detail:JSON.stringify(d.detail||d));
+  return d;
+}
+fetch("/api/login/hint").then(r=>r.json()).then(h=>{
+  if(h.auth===false){ location.replace(next); return; }
+  if(h.signed_in){ location.replace(next); return; }
+  if(h.initial_password_file){
+    $("hint").hidden=false;
+    $("hint").innerHTML=`<b>First run.</b> The <code>admin</code> password was generated at startup and written to<br><code>${h.initial_password_file.replace(/[<>&]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]))}</code><br>(it is also in the NeuralDeck log). You will choose your own once signed in.`;
+  }
+}).catch(()=>{});
+$("login").addEventListener("submit",async e=>{
+  e.preventDefault(); $("e1").textContent=""; $("b1").disabled=true;
+  try{
+    const me=await post("/api/login",{name:$("u").value.trim(),password:$("p").value});
+    if(me.must_change){ pw=$("p").value; $("who").textContent=me.name; $("login").classList.remove("on"); $("change").classList.add("on"); $("n1").focus(); }
+    else location.replace(next);
+  }catch(err){ $("e1").textContent=err.message; }
+  finally{ $("b1").disabled=false; }
+});
+$("change").addEventListener("submit",async e=>{
+  e.preventDefault(); $("e2").textContent="";
+  if($("n1").value!==$("n2").value){ $("e2").textContent="the two passwords differ"; return; }
+  $("b2").disabled=true;
+  try{ await post("/api/me/password",{current:pw,new:$("n1").value}); location.replace(next); }
+  catch(err){ $("e2").textContent=err.message; $("b2").disabled=false; }
+});
+</script>
+</body>
+</html>

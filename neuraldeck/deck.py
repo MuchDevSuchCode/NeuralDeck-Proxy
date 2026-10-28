@@ -38,12 +38,13 @@ from typing import Optional
 import httpx
 import psutil
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import (FileResponse, JSONResponse, RedirectResponse, Response,
+                               StreamingResponse)
 from starlette.background import BackgroundTask
 
 from . import __version__
 from . import (bench, config, gguf, launcher, llama_log, models, procs,
-               services, settings, sysinfo, tokens)
+               services, settings, sysinfo, tokens, users)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -244,11 +245,189 @@ async def sampler():
 async def lifespan(app: FastAPI):
     task = asyncio.create_task(sampler())
     print(f"NeuralDeck on http://{config.DECK_HOST}:{config.DECK_PORT}", flush=True)
+    _bootstrap_admin()
     yield
     task.cancel()
 
 
 app = FastAPI(title="NeuralDeck", lifespan=lifespan)
+
+
+# ---------------------------------------------------------------------------
+# Sign-in. Every request but the sign-in page and its API needs a session
+# cookie; an admin can do everything, a user can read and chat.
+# ---------------------------------------------------------------------------
+
+SESSION_COOKIE = "nd_session"
+_PUBLIC_PATHS = {"/login", "/api/login", "/api/login/hint", "/api/logout", "/favicon.ico"}
+# what a signed-in account whose password must still be changed may reach
+_MUST_CHANGE_OK = {"/api/me", "/api/me/password", "/api/logout", "/login", "/api/login/hint"}
+# admin-only, by path: everything that launches, stops, deletes, configures
+# or manages accounts. GET /api/settings is here too (it lists paths and
+# the whole configuration).
+_ADMIN_RE = re.compile(
+    r"^/api/(users|tokens|settings|browse|restart|logs|models/delete|llama/|service/|"
+    r"hf/(download|cancel)|bench/(clear|delete))")
+
+
+def _bootstrap_admin():
+    try:
+        pw = users.ensure_admin()
+    except OSError as e:
+        print(f"WARNING: could not create the admin account: {e}", file=sys.stderr, flush=True)
+        return
+    if pw:
+        print(f"""
+=========================================================
+  First run: dashboard account created
+    user:      admin
+    password:  {pw}
+  (also in {users.INITIAL}; you will choose a new one
+   at first sign-in)
+=========================================================""", flush=True)
+
+
+def _user(request: Request):
+    """The signed-in account, or the implicit admin when sign-in is off."""
+    return getattr(request.state, "user", None) or {"name": "", "role": "admin", "must_change": False}
+
+
+def _api_error(status: int, detail: str) -> JSONResponse:
+    return JSONResponse(status_code=status, content={"detail": detail})
+
+
+@app.middleware("http")
+async def require_login(request: Request, call_next):
+    request.state.user = None
+    path = request.url.path
+    if not config.DECK_AUTH or path in _PUBLIC_PATHS:
+        return await call_next(request)
+    if users.count() == 0:
+        _bootstrap_admin()
+    me = await asyncio.to_thread(users.session_user, request.cookies.get(SESSION_COOKIE))
+    if me is None:
+        if path.startswith("/api/"):
+            return _api_error(401, "sign in required")
+        if request.method in ("GET", "HEAD"):
+            nxt = request.url.path + (("?" + request.url.query) if request.url.query else "")
+            return RedirectResponse(f"/login?next={nxt}" if nxt != "/" else "/login", status_code=303)
+        return _api_error(401, "sign in required")
+    request.state.user = me
+    if me.get("must_change") and path not in _MUST_CHANGE_OK:
+        if path.startswith("/api/"):
+            return _api_error(403, "change your password first")
+        return RedirectResponse("/login", status_code=303)
+    if me.get("role") != "admin" and _ADMIN_RE.match(path):
+        return _api_error(403, "admin only")
+    return await call_next(request)
+
+
+@app.get("/login")
+async def login_page():
+    if not config.DECK_AUTH:
+        return RedirectResponse("/", status_code=303)
+    return FileResponse(STATIC_DIR / "login.html", media_type="text/html")
+
+
+@app.get("/api/login/hint")
+async def login_hint(request: Request):
+    if not config.DECK_AUTH:
+        return {"auth": False}
+    me = await asyncio.to_thread(users.session_user, request.cookies.get(SESSION_COOKIE))
+    return {"auth": True, "signed_in": bool(me and not me.get("must_change")),
+            "initial_password_file": users.initial_password_file()}
+
+
+def _set_cookie(resp: Response, sid: str) -> None:
+    resp.set_cookie(SESSION_COOKIE, sid, max_age=users.SESSION_TTL, httponly=True,
+                    samesite="lax", path="/")
+
+
+@app.post("/api/login")
+async def login(request: Request, body: dict):
+    if not config.DECK_AUTH:
+        return {"name": "", "role": "admin", "must_change": False, "auth": False}
+    try:
+        me = await asyncio.to_thread(users.authenticate, body.get("name"), body.get("password"))
+    except users.UserError as e:
+        raise HTTPException(e.status, str(e))
+    if me is None:
+        await asyncio.sleep(0.5)   # a small brake on guessing
+        raise HTTPException(401, "wrong user name or password")
+    sid = await asyncio.to_thread(users.new_session, me["name"])
+    resp = JSONResponse({**me, "auth": True})
+    _set_cookie(resp, sid)
+    return resp
+
+
+@app.post("/api/logout")
+async def logout(request: Request):
+    await asyncio.to_thread(users.drop_session, request.cookies.get(SESSION_COOKIE))
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(SESSION_COOKIE, path="/")
+    return resp
+
+
+@app.get("/api/me")
+async def me(request: Request):
+    return {**_user(request), "auth": bool(config.DECK_AUTH)}
+
+
+@app.post("/api/me/password")
+async def me_password(request: Request, body: dict):
+    me = _user(request)
+    if not me.get("name"):
+        raise HTTPException(400, "sign-in is off; there is no account to change")
+    try:
+        out = await asyncio.to_thread(users.set_password, me["name"], body.get("new"),
+                                      False, body.get("current") or "")
+    except users.UserError as e:
+        raise HTTPException(e.status, str(e))
+    return out
+
+
+@app.get("/api/users")
+async def users_list():
+    return {"users": users.list_users(), "file": str(users.FILE)}
+
+
+@app.post("/api/users")
+async def users_create(body: dict):
+    try:
+        row = await asyncio.to_thread(users.create, body.get("name"), body.get("password"),
+                                      body.get("role") or "user", bool(body.get("must_change", True)))
+    except users.UserError as e:
+        raise HTTPException(e.status, str(e))
+    return {"created": row, "users": users.list_users()}
+
+
+@app.delete("/api/users/{name}")
+async def users_delete(name: str, request: Request):
+    try:
+        await asyncio.to_thread(users.delete, name, _user(request).get("name"))
+    except users.UserError as e:
+        raise HTTPException(e.status, str(e))
+    return {"users": users.list_users()}
+
+
+@app.post("/api/users/{name}/password")
+async def users_password(name: str, body: dict):
+    """An admin reset: the user must pick their own at next sign-in."""
+    try:
+        await asyncio.to_thread(users.set_password, name, body.get("password"), True)
+        await asyncio.to_thread(users.drop_user_sessions, name)
+    except users.UserError as e:
+        raise HTTPException(e.status, str(e))
+    return {"users": users.list_users()}
+
+
+@app.post("/api/users/{name}/role")
+async def users_role(name: str, body: dict, request: Request):
+    try:
+        await asyncio.to_thread(users.set_role, name, body.get("role"), _user(request).get("name"))
+    except users.UserError as e:
+        raise HTTPException(e.status, str(e))
+    return {"users": users.list_users()}
 
 
 # ---------------------------------------------------------------------------

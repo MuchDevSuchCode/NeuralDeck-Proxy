@@ -125,6 +125,10 @@ SCHEMA = [
     _f("deck_port", "Dashboard Port", "int", "Ports",
        "This page. Changing it needs a restart.", restart=True,
        min_=1, max_=65535),
+    _f("deck_auth", "Dashboard Sign-In", "bool", "Ports",
+       "Require an account to use the dashboard (accounts are managed on "
+       "this page). Off: anyone who can reach the port is an admin. "
+       "Applies at once."),
     _f("deck_host", "Dashboard Bind Address", "str", "Ports",
        "0.0.0.0 serves the whole network with no authentication; "
        "127.0.0.1 keeps it on this machine. Changing it needs a restart.",
@@ -216,7 +220,7 @@ ATTR = {
     "vllm_gpu_frac_max": "VLLM_GPU_FRAC_MAX", "vllm_extra_args": "VLLM_EXTRA_ARGS",
     "temp": "TEMP", "top_p": "TOP_P", "min_p": "MIN_P",
     "repeat_penalty": "REPEAT_PENALTY",
-    "deck_port": "DECK_PORT", "deck_host": "DECK_HOST",
+    "deck_port": "DECK_PORT", "deck_host": "DECK_HOST", "deck_auth": "DECK_AUTH",
     "proxy_port": "PROXY_PORT", "proxy_host": "PROXY_HOST",
     "whisper_bin": "WHISPER_BIN", "whisper_model": "WHISPER_MODEL",
     "whisper_port": "WHISPER_PORT", "ffmpeg": "FFMPEG",

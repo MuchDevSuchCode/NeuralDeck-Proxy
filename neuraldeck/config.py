@@ -260,6 +260,8 @@ def _compute(src: dict = None, make_dirs: bool = True) -> dict:
     # it. The deck (this dashboard) is a third, separate port.
     DECK_HOST = str(get("deck_host", "0.0.0.0"))
     DECK_PORT = _int("deck_port", 8770)
+    # sign-in on the dashboard; off makes anyone who can reach it an admin
+    DECK_AUTH = _bool("deck_auth", True)
     PROXY_HOST = str(get("proxy_host", "0.0.0.0"))
     PROXY_PORT = _int("proxy_port", 8080)
     LLAMA_HOST = str(get("llama_host", "0.0.0.0"))
@@ -387,6 +389,7 @@ def _compute(src: dict = None, make_dirs: bool = True) -> dict:
         'MODEL_DIRS': MODEL_DIRS,
         'DECK_HOST': DECK_HOST,
         'DECK_PORT': DECK_PORT,
+        'DECK_AUTH': DECK_AUTH,
         'PROXY_HOST': PROXY_HOST,
         'PROXY_PORT': PROXY_PORT,
         'LLAMA_HOST': LLAMA_HOST,

@@ -212,13 +212,13 @@
 <div class="card"><h3>Settings</h3><p>point NeuralDeck at your model folders and server builds from the page itself, with a file picker, validation, and an honest account of which changes apply at once and which need a restart.</p></div>
 <div class="card"><h3>Multimodal proxy</h3><p>one OpenAI- and Anthropic-compatible endpoint in front of every model you have running. It routes by model name, transcribes audio through whisper.cpp, turns video into frames for vision models, and relays speech synthesis.</p></div>
     </div>
-    <p class="notice"><strong>The dashboard has no authentication.</strong> Run it on a network you trust, or bind it to <code>127.0.0.1</code>. The proxy is open too until you generate a token for it under <strong>Settings → Proxy Auth Tokens</strong> (see <a href="#security">Security</a>).</p>
+    <p class="notice"><strong>Sign-in is on by default.</strong> The first start creates an <code>admin</code> account and prints its password to the log (and to a file in the data directory); you choose your own at first sign-in. The proxy is open until you generate a token for it under <strong>Settings → Proxy Auth Tokens</strong> (see <a href="#security">Security</a>).</p>
   </div>
 </section>
 
 <div class="layout">
   <nav class="sidebar" id="sidebar" aria-label="Documentation sections">
-<ul class="toc"><li><a href="#quick-start">Quick start</a></li><li><a href="#how-it-fits-together">How it fits together</a></li><li><a href="#requirements">Requirements</a></li><li><a href="#install">Install</a><ul><li><a href="#with-the-installer-recommended">With the installer (recommended)</a></li><li><a href="#manually-or-into-an-existing-environment">Manually, or into an existing environment</a></li><li><a href="#updating">Updating</a></li></ul></li><li><a href="#backends-llamacpp-and-vllm">Backends: llama.cpp and vLLM</a><ul><li><a href="#llamacpp-builds">llama.cpp builds</a></li><li><a href="#vllm">vLLM</a></li></ul></li><li><a href="#the-dashboard">The dashboard</a><ul><li><a href="#dashboard-panels">Dashboard panels</a></li><li><a href="#launching-a-model">Launching a model</a></li><li><a href="#servers-and-logs">Servers and logs</a></li></ul></li><li><a href="#getting-models">Getting models</a><ul><li><a href="#the-hugging-face-downloader">The Hugging Face downloader</a></li><li><a href="#adding-models-by-hand">Adding models by hand</a></li><li><a href="#mmproj-files-which-and-when">mmproj files: which and when</a></li></ul></li><li><a href="#choosing-a-quantisation">Choosing a quantisation</a></li><li><a href="#prompt-lab">Prompt Lab</a></li><li><a href="#benchmarks">Benchmarks</a></li><li><a href="#using-the-proxy">Using the proxy</a><ul><li><a href="#endpoints">Endpoints</a></li><li><a href="#how-model-is-matched">How model is matched</a></li><li><a href="#examples">Examples</a></li></ul></li><li><a href="#how-to-recipes">How-to recipes</a></li><li><a href="#settings-reference">Settings reference</a><ul><li><a href="#models">Models</a></li><li><a href="#backends">Backends</a></li><li><a href="#launch-defaults">Launch defaults</a></li><li><a href="#vllm-1">vLLM</a></li><li><a href="#sampling">Sampling</a></li><li><a href="#ports">Ports</a></li><li><a href="#speech--video">Speech &amp; video</a></li><li><a href="#proxy">Proxy</a></li><li><a href="#proxy-auth-tokens">Proxy auth tokens</a></li><li><a href="#dashboard">Dashboard</a></li><li><a href="#optional-services">Optional services</a></li><li><a href="#validation-and-safety">Validation and safety</a></li></ul></li><li><a href="#configuring-without-the-page">Configuring without the page</a><ul><li><a href="#settings-not-on-the-page">Settings not on the page</a></li></ul></li><li><a href="#command-line">Command line</a></li><li><a href="#where-things-are-stored">Where things are stored</a></li><li><a href="#dashboard-api">Dashboard API</a></li><li><a href="#troubleshooting">Troubleshooting</a><ul><li><a href="#starting-and-installing">Starting and installing</a></li><li><a href="#launching-models">Launching models</a></li><li><a href="#clients-and-the-proxy">Clients and the proxy</a></li><li><a href="#models-and-downloads">Models and downloads</a></li><li><a href="#vllm-2">vLLM</a></li><li><a href="#telemetry">Telemetry</a></li></ul></li><li><a href="#security">Security</a></li><li><a href="#uninstall">Uninstall</a></li><li><a href="#notes-on-portability">Notes on portability</a></li><li><a href="#documentation-site">Documentation site</a></li><li><a href="#credit">Credit</a></li><li><a href="#license">License</a></li></ul>
+<ul class="toc"><li><a href="#quick-start">Quick start</a></li><li><a href="#how-it-fits-together">How it fits together</a></li><li><a href="#requirements">Requirements</a></li><li><a href="#install">Install</a><ul><li><a href="#with-the-installer-recommended">With the installer (recommended)</a></li><li><a href="#manually-or-into-an-existing-environment">Manually, or into an existing environment</a></li><li><a href="#updating">Updating</a></li></ul></li><li><a href="#backends-llamacpp-and-vllm">Backends: llama.cpp and vLLM</a><ul><li><a href="#llamacpp-builds">llama.cpp builds</a></li><li><a href="#vllm">vLLM</a></li></ul></li><li><a href="#the-dashboard">The dashboard</a><ul><li><a href="#signing-in-and-accounts">Signing in and accounts</a></li><li><a href="#dashboard-panels">Dashboard panels</a></li><li><a href="#launching-a-model">Launching a model</a></li><li><a href="#servers-and-logs">Servers and logs</a></li></ul></li><li><a href="#getting-models">Getting models</a><ul><li><a href="#the-hugging-face-downloader">The Hugging Face downloader</a></li><li><a href="#adding-models-by-hand">Adding models by hand</a></li><li><a href="#mmproj-files-which-and-when">mmproj files: which and when</a></li></ul></li><li><a href="#choosing-a-quantisation">Choosing a quantisation</a></li><li><a href="#prompt-lab">Prompt Lab</a></li><li><a href="#benchmarks">Benchmarks</a></li><li><a href="#using-the-proxy">Using the proxy</a><ul><li><a href="#endpoints">Endpoints</a></li><li><a href="#how-model-is-matched">How model is matched</a></li><li><a href="#examples">Examples</a></li></ul></li><li><a href="#how-to-recipes">How-to recipes</a></li><li><a href="#settings-reference">Settings reference</a><ul><li><a href="#models">Models</a></li><li><a href="#backends">Backends</a></li><li><a href="#launch-defaults">Launch defaults</a></li><li><a href="#vllm-1">vLLM</a></li><li><a href="#sampling">Sampling</a></li><li><a href="#ports">Ports</a></li><li><a href="#speech--video">Speech &amp; video</a></li><li><a href="#proxy">Proxy</a></li><li><a href="#proxy-auth-tokens">Proxy auth tokens</a></li><li><a href="#dashboard">Dashboard</a></li><li><a href="#optional-services">Optional services</a></li><li><a href="#validation-and-safety">Validation and safety</a></li></ul></li><li><a href="#configuring-without-the-page">Configuring without the page</a><ul><li><a href="#settings-not-on-the-page">Settings not on the page</a></li></ul></li><li><a href="#command-line">Command line</a></li><li><a href="#where-things-are-stored">Where things are stored</a></li><li><a href="#dashboard-api">Dashboard API</a></li><li><a href="#troubleshooting">Troubleshooting</a><ul><li><a href="#starting-and-installing">Starting and installing</a></li><li><a href="#launching-models">Launching models</a></li><li><a href="#clients-and-the-proxy">Clients and the proxy</a></li><li><a href="#models-and-downloads">Models and downloads</a></li><li><a href="#vllm-2">vLLM</a></li><li><a href="#telemetry">Telemetry</a></li></ul></li><li><a href="#security">Security</a></li><li><a href="#uninstall">Uninstall</a></li><li><a href="#notes-on-portability">Notes on portability</a></li><li><a href="#documentation-site">Documentation site</a></li><li><a href="#credit">Credit</a></li><li><a href="#license">License</a></li></ul>
   </nav>
   <div class="scrim" id="scrim"></div>
   <main id="content">
@@ -469,8 +469,39 @@ $PY -m pip install &quot;nvidia-cuda-nvcc==13.0.*&quot;
 server process. Read one before installing it, and pin the commit you read
 rather than tracking a branch.</p>
 <h2 id="the-dashboard"><a class="hash" href="#the-dashboard" aria-label="Link to this section">#</a>The dashboard</h2>
-<p>The dashboard is at <code>http://localhost:8770</code>. It has four views: Dashboard,
-Prompt Lab, Benchmarks and Settings.</p>
+<p>The dashboard is at <code>http://localhost:8770</code>. It has five views: Dashboard,
+Chat, Prompt Lab, Benchmarks and Settings.</p>
+<h3 id="signing-in-and-accounts"><a class="hash" href="#signing-in-and-accounts" aria-label="Link to this section">#</a>Signing in and accounts</h3>
+<p>The dashboard asks for an account. On the very first start, with no
+accounts yet, NeuralDeck creates <strong><code>admin</code></strong> with a random password and
+prints it in its log; the sign-in page points at the file it was also
+written to, <code>admin-initial-password.txt</code> in the data directory. At the
+first sign-in you choose your own password, and the file is deleted.</p>
+<p>Accounts are managed by an admin under <strong>Settings → Users</strong>:</p>
+<ul>
+<li><strong>Add User</strong> takes a name, a temporary password and a role. The new
+user chooses their own password at first sign-in.</li>
+<li><strong>Reset Password</strong> sets a temporary one the same way and signs that
+user out everywhere.</li>
+<li><strong>Make Admin</strong> / <strong>Make User</strong> changes the role. <strong>Delete</strong> removes the
+account and ends its sessions. You cannot delete yourself, demote
+yourself, or delete the last admin.</li>
+<li>Everyone changes their own password under <strong>Settings → Account</strong>, and
+signs out with the button bearing their name in the header.</li>
+</ul>
+<p>An <strong>admin</strong> can do everything. A <strong>user</strong> can watch the dashboard, chat,
+use the Prompt Lab and read benchmarks, but cannot launch or stop models,
+delete models, queue downloads, change settings, restart NeuralDeck, read
+logs, or manage accounts and proxy tokens; those calls are refused with
+<em>admin only</em>.</p>
+<p>Sessions last 30 days of inactivity and survive a restart. Ten failed
+sign-ins in ten minutes lock that name for a few minutes. Passwords are
+stored as scrypt hashes in <code>users.json</code>, sessions in <code>sessions.json</code>,
+both readable only by your user.</p>
+<p>To run without sign-in, turn off <strong>Dashboard Sign-In</strong> under <strong>Settings →
+Ports</strong> (or set <code>deck_auth</code> to <code>false</code>); anyone who can reach the port is
+then an admin. Locked out? Delete <code>users.json</code> from the data directory and
+restart: a fresh <code>admin</code> with a new printed password is created.</p>
 <h3 id="dashboard-panels"><a class="hash" href="#dashboard-panels" aria-label="Link to this section">#</a>Dashboard panels</h3>
 <div class="table-wrap"><table>
 <thead>
@@ -1181,6 +1212,12 @@ restart button.</li>
 <td data-label="Meaning"><span class="cell">The dashboard's port</span></td>
 </tr>
 <tr>
+<td data-label="Key"><span class="cell"><code>deck_auth</code></span></td>
+<td data-label="Default"><span class="cell"><code>true</code></span></td>
+<td data-label="Applies"><span class="cell">now</span></td>
+<td data-label="Meaning"><span class="cell">Require signing in to the dashboard (see <a href="#signing-in-and-accounts">Signing in and accounts</a>). Off: anyone who can reach the port is an admin</span></td>
+</tr>
+<tr>
 <td data-label="Key"><span class="cell"><code>deck_host</code></span></td>
 <td data-label="Default"><span class="cell"><code>0.0.0.0</code></span></td>
 <td data-label="Applies"><span class="cell">restart</span></td>
@@ -1542,6 +1579,9 @@ Windows, or wherever <code>NEURALDECK_HOME</code> points. The Settings tab and
 <code>neuraldeck doctor</code> print the exact paths.</p>
 <pre><code>neuraldeck/
 ├── config.json            ← your settings
+├── users.json             ← dashboard accounts (scrypt hashes); mode 0600
+├── sessions.json          ← dashboard sign-in sessions; mode 0600
+├── admin-initial-password.txt ← the first admin password, until it is changed
 ├── proxy_tokens.json      ← proxy auth tokens (hashes only); mode 0600
 ├── proxy_internal.key     ← the dashboard's own key for the proxy; mode 0600
 ├── bench.jsonl            ← benchmark history (newest 5,000 runs)
@@ -1556,7 +1596,9 @@ Windows, or wherever <code>NEURALDECK_HOME</code> points. The Settings tab and
 </code></pre>
 <h2 id="dashboard-api"><a class="hash" href="#dashboard-api" aria-label="Link to this section">#</a>Dashboard API</h2>
 <p>The dashboard is driven by a JSON API on its own port, which you can
-script against too. There's no authentication on it.</p>
+script against too. With sign-in on (the default) a script first posts to
+<code>/api/login</code> and sends back the <code>nd_session</code> cookie it gets; admin-only
+calls answer 403 to a plain user.</p>
 <div class="table-wrap"><table>
 <thead>
 <tr>
@@ -1604,6 +1646,14 @@ script against too. There's no authentication on it.</p>
 <tr>
 <td data-label="Method and path"><span class="cell"><code>GET /api/logs/{service}?lines=N</code></span></td>
 <td data-label="Purpose"><span class="cell">the tail of a log (1–2000 lines)</span></td>
+</tr>
+<tr>
+<td data-label="Method and path"><span class="cell"><code>POST /api/login</code>, <code>POST /api/logout</code>, <code>GET /api/me</code>, <code>POST /api/me/password</code></span></td>
+<td data-label="Purpose"><span class="cell">sign in (<code>{&quot;name&quot;, &quot;password&quot;}</code>; sets the session cookie), sign out, who am I, change my password (<code>{&quot;current&quot;, &quot;new&quot;}</code>)</span></td>
+</tr>
+<tr>
+<td data-label="Method and path"><span class="cell"><code>GET /api/users</code>, <code>POST /api/users</code>, <code>DELETE /api/users/{name}</code>, <code>POST /api/users/{name}/password</code>, <code>POST /api/users/{name}/role</code></span></td>
+<td data-label="Purpose"><span class="cell">accounts (admin): list, add (<code>{&quot;name&quot;, &quot;password&quot;, &quot;role&quot;}</code>), delete, reset a password, change a role</span></td>
 </tr>
 <tr>
 <td data-label="Method and path"><span class="cell"><code>GET /api/settings</code>, <code>POST /api/settings</code></span></td>
@@ -1778,14 +1828,19 @@ If your board exposes only an ACPI zone, that's what's shown.</p>
 The model hasn't served a request yet, or its log doesn't contain the
 lines the dashboard reads. It fills in after the first request.</p>
 <h2 id="security"><a class="hash" href="#security" aria-label="Link to this section">#</a>Security</h2>
-<p>The dashboard has no authentication: it can launch processes and delete
-model files, and anyone who can open it can use the models through its
-Chat tab. The proxy is open until you generate a token under <strong>Settings →
-Proxy Auth Tokens</strong>, after which it answers only requests that carry one
-(see <a href="#proxy-auth-tokens">Proxy auth tokens</a>). Model servers launched by
-the deck have no authentication of their own. By default all three bind
-to <code>0.0.0.0</code> so other machines on your network can use them.</p>
+<p>The dashboard asks for an account (see <a href="#signing-in-and-accounts">Signing in and
+accounts</a>); an admin can launch processes and
+delete model files, so keep admin accounts to people you trust, and change
+the generated <code>admin</code> password at first sign-in (you are made to). The
+proxy is open until you generate a token under <strong>Settings → Proxy Auth
+Tokens</strong>, after which it answers only requests that carry one (see <a href="#proxy-auth-tokens">Proxy
+auth tokens</a>). Model servers launched by the deck have
+no authentication of their own. By default all three bind to <code>0.0.0.0</code> so
+other machines on your network can use them.</p>
 <ul>
+<li>Everything is plain HTTP: on a network you do not trust, passwords and
+tokens travel in the clear. Put a TLS-terminating reverse proxy in front
+for anything beyond your own LAN.</li>
 <li>Generate a proxy token before pointing anything beyond this machine at
 port 8080.</li>
 <li>On an untrusted network, set <code>deck_host</code>, <code>proxy_host</code> and <code>llama_host</code>

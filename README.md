@@ -31,9 +31,11 @@ runs on **Linux and Windows** (macOS for everything but GPU telemetry).
   transcribes audio through whisper.cpp, turns video into frames for vision
   models, and relays speech synthesis.
 
-> **The dashboard has no authentication.** Run it on a network you trust, or
-> bind it to `127.0.0.1`. The proxy is open too until you generate a token
-> for it under **Settings → Proxy Auth Tokens** (see [Security](#security)).
+> **Sign-in is on by default.** The first start creates an `admin` account
+> and prints its password to the log (and to a file in the data directory);
+> you choose your own at first sign-in. The proxy is open until you generate
+> a token for it under **Settings → Proxy Auth Tokens** (see
+> [Security](#security)).
 
 ---
 
@@ -319,8 +321,44 @@ rather than tracking a branch.
 
 ## The dashboard
 
-The dashboard is at `http://localhost:8770`. It has four views: Dashboard,
-Prompt Lab, Benchmarks and Settings.
+The dashboard is at `http://localhost:8770`. It has five views: Dashboard,
+Chat, Prompt Lab, Benchmarks and Settings.
+
+### Signing in and accounts
+
+The dashboard asks for an account. On the very first start, with no
+accounts yet, NeuralDeck creates **`admin`** with a random password and
+prints it in its log; the sign-in page points at the file it was also
+written to, `admin-initial-password.txt` in the data directory. At the
+first sign-in you choose your own password, and the file is deleted.
+
+Accounts are managed by an admin under **Settings → Users**:
+
+* **Add User** takes a name, a temporary password and a role. The new
+  user chooses their own password at first sign-in.
+* **Reset Password** sets a temporary one the same way and signs that
+  user out everywhere.
+* **Make Admin** / **Make User** changes the role. **Delete** removes the
+  account and ends its sessions. You cannot delete yourself, demote
+  yourself, or delete the last admin.
+* Everyone changes their own password under **Settings → Account**, and
+  signs out with the button bearing their name in the header.
+
+An **admin** can do everything. A **user** can watch the dashboard, chat,
+use the Prompt Lab and read benchmarks, but cannot launch or stop models,
+delete models, queue downloads, change settings, restart NeuralDeck, read
+logs, or manage accounts and proxy tokens; those calls are refused with
+*admin only*.
+
+Sessions last 30 days of inactivity and survive a restart. Ten failed
+sign-ins in ten minutes lock that name for a few minutes. Passwords are
+stored as scrypt hashes in `users.json`, sessions in `sessions.json`,
+both readable only by your user.
+
+To run without sign-in, turn off **Dashboard Sign-In** under **Settings →
+Ports** (or set `deck_auth` to `false`); anyone who can reach the port is
+then an admin. Locked out? Delete `users.json` from the data directory and
+restart: a fresh `admin` with a new printed password is created.
 
 ### Dashboard panels
 
@@ -730,6 +768,7 @@ Launch-time defaults; a request can always override them.
 | Key | Default | Applies | Meaning |
 | --- | --- | --- | --- |
 | `deck_port` | `8770` | restart | The dashboard's port |
+| `deck_auth` | `true` | now | Require signing in to the dashboard (see [Signing in and accounts](#signing-in-and-accounts)). Off: anyone who can reach the port is an admin |
 | `deck_host` | `0.0.0.0` | restart | The dashboard's bind address. `127.0.0.1` keeps it on this machine |
 | `proxy_port` | `8080` | proxy | The port clients point at |
 | `proxy_host` | `0.0.0.0` | proxy | The proxy's bind address |
@@ -898,6 +937,9 @@ Windows, or wherever `NEURALDECK_HOME` points. The Settings tab and
 ```
 neuraldeck/
 ├── config.json            ← your settings
+├── users.json             ← dashboard accounts (scrypt hashes); mode 0600
+├── sessions.json          ← dashboard sign-in sessions; mode 0600
+├── admin-initial-password.txt ← the first admin password, until it is changed
 ├── proxy_tokens.json      ← proxy auth tokens (hashes only); mode 0600
 ├── proxy_internal.key     ← the dashboard's own key for the proxy; mode 0600
 ├── bench.jsonl            ← benchmark history (newest 5,000 runs)
@@ -914,7 +956,9 @@ neuraldeck/
 ## Dashboard API
 
 The dashboard is driven by a JSON API on its own port, which you can
-script against too. There's no authentication on it.
+script against too. With sign-in on (the default) a script first posts to
+`/api/login` and sends back the `nd_session` cookie it gets; admin-only
+calls answer 403 to a plain user.
 
 | Method and path | Purpose |
 | --- | --- |
@@ -928,6 +972,8 @@ script against too. There's no authentication on it.
 | `POST /api/llama/{port}/stop` | stop the instance on a port |
 | `POST /api/service/{name}/start`, `…/stop` | start or stop `proxy`, `whisper`, `tts`, `comfy` |
 | `GET /api/logs/{service}?lines=N` | the tail of a log (1–2000 lines) |
+| `POST /api/login`, `POST /api/logout`, `GET /api/me`, `POST /api/me/password` | sign in (`{"name", "password"}`; sets the session cookie), sign out, who am I, change my password (`{"current", "new"}`) |
+| `GET /api/users`, `POST /api/users`, `DELETE /api/users/{name}`, `POST /api/users/{name}/password`, `POST /api/users/{name}/role` | accounts (admin): list, add (`{"name", "password", "role"}`), delete, reset a password, change a role |
 | `GET /api/settings`, `POST /api/settings` | read or save settings |
 | `GET /api/tokens`, `POST /api/tokens`, `DELETE /api/tokens/{id}` | proxy auth tokens: list, generate (`{"name": …}`; the reply's `token` is shown once), revoke |
 | `GET /api/browse?path=&mode=dir\|file&ext=` | directory listing for the file picker |
@@ -1119,14 +1165,19 @@ lines the dashboard reads. It fills in after the first request.
 
 ## Security
 
-The dashboard has no authentication: it can launch processes and delete
-model files, and anyone who can open it can use the models through its
-Chat tab. The proxy is open until you generate a token under **Settings →
-Proxy Auth Tokens**, after which it answers only requests that carry one
-(see [Proxy auth tokens](#proxy-auth-tokens)). Model servers launched by
-the deck have no authentication of their own. By default all three bind
-to `0.0.0.0` so other machines on your network can use them.
+The dashboard asks for an account (see [Signing in and
+accounts](#signing-in-and-accounts)); an admin can launch processes and
+delete model files, so keep admin accounts to people you trust, and change
+the generated `admin` password at first sign-in (you are made to). The
+proxy is open until you generate a token under **Settings → Proxy Auth
+Tokens**, after which it answers only requests that carry one (see [Proxy
+auth tokens](#proxy-auth-tokens)). Model servers launched by the deck have
+no authentication of their own. By default all three bind to `0.0.0.0` so
+other machines on your network can use them.
 
+* Everything is plain HTTP: on a network you do not trust, passwords and
+  tokens travel in the clear. Put a TLS-terminating reverse proxy in front
+  for anything beyond your own LAN.
 * Generate a proxy token before pointing anything beyond this machine at
   port 8080.
 * On an untrusted network, set `deck_host`, `proxy_host` and `llama_host`

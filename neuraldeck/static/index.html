@@ -294,6 +294,13 @@
   #tok-table td:last-child { text-align:right; }
   .tok-new { display:flex; gap:8px; margin-top:10px; align-items:center; }
   .tok-new .pl-input { flex:1; max-width:360px; }
+  #hdr-user { font-size:11px; padding:1px 8px; }
+  #users-table td:last-child { text-align:right; white-space:nowrap; }
+  #users-table td:last-child button { margin-left:4px; }
+  .ubadge { display:inline-block; font-size:9.5px; padding:0 5px; margin-left:6px; border:1px solid var(--yellow);
+    color:var(--yellow); border-radius:3px; letter-spacing:.5px; vertical-align:1px; }
+  /* a non-admin account: no settings, tokens, downloads or restarts */
+  body.role-user :is(#st-panel, #tok-panel, #users-panel, #hf-dl, #st-restart) { display:none !important; }
   .strow { display:grid; grid-template-columns:230px minmax(0,1fr); gap:4px 14px;
            padding:8px 2px; border-bottom:1px solid var(--grid); align-items:start; }
   .strow:last-child { border-bottom:none; }
@@ -702,6 +709,7 @@
       <option value="llama">llama.cpp</option>
       <option value="llama-light">llama.cpp Light</option>
       <option value="llama-dark">llama.cpp Dark</option></select></label>
+    <button id="hdr-user" onclick="signOut()" style="display:none"></button>
     <button onclick="resetLayout()" id="reset-layout"
       title="put the dashboard panels back in their default order" style="font-size:11px;padding:1px 8px">Reset Layout</button></span>
 </header>
@@ -1034,7 +1042,7 @@
 
 <!-- ═══════════ SETTINGS view ═══════════ -->
 <div id="view-settings" style="display:none">
-  <div class="panel">
+  <div class="panel" id="st-panel">
     <h2>Settings <span class="meta" id="st-where"></span></h2>
     <div id="st-notes"></div>
     <div id="st-body"><div class="advisory">loading…</div></div>
@@ -1073,6 +1081,35 @@
       <input id="tok-name" class="pl-input" placeholder="Name, e.g. laptop or Claude Code" aria-label="Token name" maxlength="64"
         onkeydown="if(event.key==='Enter')tokCreate()">
       <button class="primary" onclick="tokCreate()">Generate Token</button>
+    </div>
+  </div>
+  <div class="panel" id="acct-panel" style="margin-top:12px">
+    <h2>Account <span class="meta" id="acct-who"></span></h2>
+    <div class="tok-new" style="flex-wrap:wrap; margin-top:0">
+      <input id="pw-cur" class="pl-input" type="password" placeholder="Current password" autocomplete="current-password" aria-label="Current password">
+      <input id="pw-new" class="pl-input" type="password" placeholder="New password (8+ characters)" autocomplete="new-password" aria-label="New password">
+      <input id="pw-new2" class="pl-input" type="password" placeholder="Repeat new password" autocomplete="new-password" aria-label="Repeat new password"
+        onkeydown="if(event.key==='Enter')pwChange()">
+      <button class="primary" onclick="pwChange()">Change Password</button>
+    </div>
+  </div>
+  <div class="panel" id="users-panel" style="margin-top:12px" hidden>
+    <h2>Users <span class="meta" id="users-count"></span></h2>
+    <div class="advisory" style="margin:0 0 10px">
+      Admins can do everything. Users can read the dashboard, chat and use the Prompt Lab, but cannot launch or stop
+      models, change settings, or manage accounts and proxy tokens. A new user, or one whose password an admin resets,
+      chooses their own password at next sign-in.
+    </div>
+    <div class="tblwrap">
+      <table id="users-table"><thead><tr><th>Name</th><th>Role</th><th>Created</th><th>Last Sign-In</th><th></th></tr></thead>
+      <tbody id="users-rows"></tbody></table>
+    </div>
+    <div class="tok-new" style="flex-wrap:wrap">
+      <input id="nu-name" class="pl-input" placeholder="Name" aria-label="New user name" maxlength="32" autocapitalize="none" spellcheck="false">
+      <input id="nu-pw" class="pl-input" type="password" placeholder="Temporary password (8+ characters)" aria-label="Temporary password" autocomplete="new-password"
+        onkeydown="if(event.key==='Enter')userCreate()">
+      <select id="nu-role" aria-label="Role"><option value="user">Role: User</option><option value="admin">Role: Admin</option></select>
+      <button class="primary" onclick="userCreate()">Add User</button>
     </div>
   </div>
 </div>
@@ -1511,6 +1548,7 @@ async function api(url,method="GET",body,{quiet=false}={}){
   try{ r=await fetch(url,{method,headers:body?{"Content-Type":"application/json"}:{},
     body:body?JSON.stringify(body):undefined}); }
   catch(e){ if(!quiet) toast(`${url}: dashboard unreachable`,"err"); throw e; }
+  if(r.status===401&&!url.startsWith("/api/login")){ location.href="/login?next="+encodeURIComponent(location.pathname+location.search); }
   if(!r.ok){const e=await r.json().catch(()=>({detail:r.statusText}));
     const msg=errText(e,String(r.status));
     if(!quiet) toast(`${url.split("?")[0]}: ${msg}`,"err",{ms:9000});
@@ -2496,7 +2534,7 @@ function setView(v){
   // unsaved edits survive a trip to another tab: only (re)load settings
   // when there is nothing pending
   if(v==="settings"&&(was!=="settings")&&(!stSchema||!Object.keys(stDirty).length))stLoad();
-  if(v==="settings"&&was!=="settings")tokLoad();
+  if(v==="settings"&&was!=="settings"){ tokLoad(); usersLoad(); }
   if(v==="dash")refreshLog();
   if(v==="chat")chatShow();
 }
@@ -3091,6 +3129,68 @@ function stDiscard(){
   if(n&&!confirm(`Discard ${n} unsaved change${n===1?"":"s"}?`))return;
   stLoad();
 }
+/* ---------- sign-in: who am I, account, users ---------- */
+let ME={name:"",role:"admin",auth:false};
+async function loadMe(){
+  try{ ME=await api("/api/me","GET",undefined,{quiet:true}); }catch(e){ return; }
+  document.body.classList.toggle("role-user",!!ME.auth&&ME.role!=="admin");
+  const b=$("hdr-user"); b.style.display=ME.auth?"":"none"; b.textContent=ME.name+" ⏻";
+  b.title=`Signed in as ${ME.name} (${ME.role}) — click to sign out`;
+  $("acct-who").textContent=ME.auth?`${ME.name} · ${ME.role.toUpperCase()}`:"SIGN-IN OFF";
+  $("acct-panel").hidden=!ME.auth;
+}
+async function signOut(){
+  if(!confirm(`Sign out ${ME.name}?`))return;
+  try{ await api("/api/logout","POST",{}); }catch(e){}
+  location.href="/login";
+}
+async function pwChange(){
+  const cur=$("pw-cur").value, n1=$("pw-new").value, n2=$("pw-new2").value;
+  if(n1!==n2){ toast("the two new passwords differ","err"); $("pw-new2").focus(); return; }
+  try{ await api("/api/me/password","POST",{current:cur,new:n1}); }catch(e){ return; }
+  $("pw-cur").value=$("pw-new").value=$("pw-new2").value=""; toast("password changed","ok");
+}
+let usersData=[];
+async function usersLoad(){
+  const on=!!ME.auth&&ME.role==="admin"; $("users-panel").hidden=!on; if(!on)return;
+  try{ usersData=(await api("/api/users","GET",undefined,{quiet:true})).users; }catch(e){ return; }
+  usersRender();
+}
+function usersRender(){
+  const n=usersData.length; $("users-count").textContent=`${n} account${n===1?"":"s"}`;
+  $("users-rows").innerHTML=usersData.map(u=>{
+    const me=u.name===ME.name, a=escA(u.name), admin=u.role==="admin";
+    return `<tr><td>${escH(u.name)}${me?' <span class="sub">(you)</span>':""}`
+      +`${u.must_change?' <span class="ubadge" title="chooses a password at next sign-in">PASSWORD PENDING</span>':""}</td>`
+      +`<td>${admin?"ADMIN":"USER"}</td><td>${tokWhen(u.created)}</td><td>${tokWhen(u.last_login)}</td>`
+      +`<td><button onclick="userRole('${a}','${admin?"user":"admin"}')"${me?" disabled title=\"you cannot change your own role\"":""}>${admin?"Make User":"Make Admin"}</button>`
+      +`<button onclick="userReset('${a}')">Reset Password</button>`
+      +`<button class="danger" onclick="userDelete('${a}')"${me?" disabled title=\"you cannot delete yourself\"":""}>Delete</button></td></tr>`;
+  }).join("");
+}
+async function userCreate(){
+  const name=$("nu-name").value.trim(), password=$("nu-pw").value, role=$("nu-role").value;
+  if(!name||!password){ toast("a name and a temporary password are needed","err"); return; }
+  let r; try{ r=await api("/api/users","POST",{name,password,role,must_change:true}); }catch(e){ return; }
+  usersData=r.users; usersRender(); $("nu-name").value=$("nu-pw").value="";
+  toast(`user ${r.created.name} added — they choose a password at first sign-in`,"ok",{ms:7000});
+}
+async function userRole(name,role){
+  let r; try{ r=await api(`/api/users/${encodeURIComponent(name)}/role`,"POST",{role}); }catch(e){ return; }
+  usersData=r.users; usersRender(); toast(`${name} is now ${role==="admin"?"an admin":"a user"}`,"ok");
+}
+async function userReset(name){
+  const password=prompt(`Temporary password for ${name} (8+ characters).\nThey are signed out and choose their own at next sign-in.`);
+  if(password==null)return;
+  let r; try{ r=await api(`/api/users/${encodeURIComponent(name)}/password`,"POST",{password}); }catch(e){ return; }
+  usersData=r.users; usersRender(); toast(`password reset for ${name}`,"ok");
+}
+async function userDelete(name){
+  if(!confirm(`Delete user "${name}"? Their sign-ins end at once.`))return;
+  let r; try{ r=await api(`/api/users/${encodeURIComponent(name)}`,"DELETE"); }catch(e){ return; }
+  usersData=r.users; usersRender(); toast(`user ${name} deleted`,"ok");
+}
+
 /* ---------- proxy auth tokens ---------- */
 let tokData=null;
 async function tokLoad(){
@@ -4928,6 +5028,7 @@ document.addEventListener("keydown",e=>{
 csLoad(); csApply();
 
 (async function boot(){
+  await loadMe();
   try{ applyConfig(await api("/api/config","GET",undefined,{quiet:true})); }
   catch(e){ applyConfig(null); }
   try{
@@ -4946,7 +5047,8 @@ csLoad(); csApply();
   if(CFG.hf_available) hfPollStatus(5000);   // pick up a download already running
   const es=new EventSource("/api/stream");
   es.onopen=()=>{$("conn").textContent="LIVE";$("conn").className="pill gen";};
-  es.onerror=()=>{$("conn").textContent="RECONNECTING…";$("conn").className="pill warn";};
+  es.onerror=()=>{$("conn").textContent="RECONNECTING…";$("conn").className="pill warn";
+    api("/api/me","GET",undefined,{quiet:true}).catch(()=>{}); };
   es.onmessage=ev=>{
     let s; try{ s=JSON.parse(ev.data); }catch(e){ return; }
     const ll=s.llama||{};
