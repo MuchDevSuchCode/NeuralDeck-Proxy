@@ -26,6 +26,7 @@ import re
 import shutil
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 from . import config
@@ -480,18 +481,23 @@ def _write_atomic(data: dict) -> None:
         raise
 
 
-def save(submitted: dict) -> dict:
+def save(submitted: dict, extra: dict = None, drop_extra: bool = False) -> dict:
     """Validate, merge into config.json, and re-read it.
 
     Only keys present in the submission are touched, so a page that renders
     one group can save just that group. A key submitted as empty is removed
     from the file, which restores its default.
+
+    `extra` holds settings that are not on the page (config.json keys the
+    schema does not know) to write verbatim — an import carries them over;
+    with `drop_extra` the file's other such keys are removed too.
     """
     if not isinstance(submitted, dict):
         raise Invalid("expected an object of settings")
     unknown = [k for k in submitted if k not in BY_KEY]
     if unknown:
         raise Invalid(f"unknown setting(s): {', '.join(sorted(unknown))}")
+    extra = dict(extra or {})
 
     pending, cleared, locked = {}, [], []
     for key, raw in submitted.items():
@@ -513,10 +519,16 @@ def save(submitted: dict) -> dict:
             raise Invalid(f"{error}. Fix or remove that file, then save "
                           "again — nothing was written.")
         before = {k: stored.get(k) for k in list(pending) + cleared}
+        before_extra = {k: stored.get(k) for k in extra}
         merged = dict(stored)
         merged.update(pending)
         for key in cleared:
             merged.pop(key, None)
+        if drop_extra:
+            for key in list(merged):
+                if key not in BY_KEY and key not in extra:
+                    merged.pop(key)
+        merged.update(extra)
 
         # prove the result still loads before it replaces the file
         try:
@@ -541,7 +553,44 @@ def save(submitted: dict) -> dict:
     return {"saved": sorted(changed), "cleared": sorted(cleared),
             "needs_restart": needs_restart, "proxy_restart": proxy_restart,
             "warnings": warnings, "locked": sorted(locked),
+            "extra": sorted(k for k in extra if before_extra.get(k) != extra[k]),
             "config_file": str(config.CONFIG_FILE)}
+
+
+# ── import / export ────────────────────────────────────────────────────────
+
+EXPORT_META = "_neuraldeck"
+
+
+def export_config() -> dict:
+    """config.json as stored (so it imports back exactly), with a header."""
+    from . import __version__
+    stored, error = config._read_file()
+    if error:
+        raise Invalid(error)
+    out = {EXPORT_META: {"format": "config", "version": __version__,
+                         "exported": time.strftime("%Y-%m-%dT%H:%M:%S%z")}}
+    out.update({k: stored[k] for k in sorted(stored)})
+    return out
+
+
+def import_config(data, replace: bool = False) -> dict:
+    """Apply an exported file. Known keys are validated like a save; keys
+    the page does not know are written verbatim. With `replace`, settings
+    the file does not mention go back to their defaults."""
+    if not isinstance(data, dict):
+        raise Invalid("expected a JSON object of settings, as Export Config writes")
+    data = {k: v for k, v in data.items() if not str(k).startswith("_")}
+    if not data and not replace:
+        raise Invalid("the file holds no settings")
+    submitted = {k: v for k, v in data.items() if k in BY_KEY}
+    extra = {k: v for k, v in data.items() if k not in BY_KEY}
+    if replace:
+        for k in BY_KEY:
+            submitted.setdefault(k, None)
+    result = save(submitted, extra=extra, drop_extra=replace)
+    result["imported"] = sorted(data)
+    return result
 
 
 # ── directory browsing (there is no native file picker in a browser) ───────

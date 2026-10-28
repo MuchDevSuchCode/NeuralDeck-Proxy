@@ -295,6 +295,18 @@
   .tok-new { display:flex; gap:8px; margin-top:10px; align-items:center; }
   .tok-new .pl-input { flex:1; max-width:360px; }
   #hdr-user { font-size:11px; padding:1px 8px; }
+  .umenu-wrap { position:relative; display:inline-block; }
+  .umenu { position:absolute; right:0; top:calc(100% + 4px); min-width:230px; z-index:60; background:var(--surface);
+    border:1px solid var(--border); box-shadow:0 8px 24px var(--scrim); padding:4px; display:flex; flex-direction:column; gap:2px; }
+  .umenu[hidden] { display:none; }
+  .umenu-who { color:var(--muted); font-size:11px; padding:5px 10px 7px; border-bottom:1px solid var(--border-dim); margin-bottom:3px; }
+  .umenu button { text-align:left; clip-path:none; padding:6px 10px; text-transform:none; letter-spacing:0; font-size:12.5px; }
+  #acct-dialog { width:min(1100px, calc(100vw - 20px)); }
+  #cfg-dialog { width:min(640px, calc(100vw - 20px)); }
+  .cfg-keys { max-height:40vh; overflow-y:auto; font-size:12px; columns:2; column-gap:18px; }
+  .cfg-keys div { break-inside:avoid; color:var(--ink-2); padding:1px 0; }
+  .cfg-keys div span { color:var(--muted); }
+  .cfg-keys div.x { color:var(--yellow); }
   #users-table td:last-child { text-align:right; white-space:nowrap; }
   #users-table td:last-child button { margin-left:4px; }
   .ubadge { display:inline-block; font-size:9.5px; padding:0 5px; margin-left:6px; border:1px solid var(--yellow);
@@ -714,7 +726,13 @@
       <option value="llama">llama.cpp</option>
       <option value="llama-light">llama.cpp Light</option>
       <option value="llama-dark">llama.cpp Dark</option></select></label>
-    <button id="hdr-user" onclick="signOut()" style="display:none"></button>
+    <span class="umenu-wrap"><button id="hdr-user" onclick="userMenu(event)" style="display:none" aria-haspopup="menu" aria-expanded="false" aria-controls="umenu"></button>
+      <div id="umenu" class="umenu" role="menu" hidden>
+        <div class="umenu-who" id="umenu-who"></div>
+        <button role="menuitem" onclick="acctOpen('acct')">Account · Change Password</button>
+        <button role="menuitem" id="umenu-users" onclick="acctOpen('users')">Manage Users</button>
+        <button role="menuitem" onclick="signOut()">Sign Out</button>
+      </div></span>
     <button onclick="resetLayout()" id="reset-layout"
       title="put the dashboard panels back in their default order" style="font-size:11px;padding:1px 8px">Reset Layout</button></span>
 </header>
@@ -1056,6 +1074,9 @@
       <button id="st-revert" onclick="stDiscard()" disabled>Discard</button>
       <span class="sub" id="st-dirty" role="status"></span>
       <span style="flex:1"></span>
+      <button onclick="cfgExport()" title="download config.json">⬇ Export Config</button>
+      <button onclick="$('cfg-file').click()" title="load a config.json exported from here">⬆ Import Config</button>
+      <input id="cfg-file" type="file" accept="application/json,.json" hidden onchange="cfgPick(this)">
       <button id="st-restart" onclick="stRestart()" style="display:none">↻ Restart NeuralDeck</button>
     </div>
   </div>
@@ -1088,8 +1109,30 @@
       <button class="primary" onclick="tokCreate()">Generate Token</button>
     </div>
   </div>
-  <div class="panel" id="acct-panel" style="margin-top:12px">
-    <h2>Account <span class="meta" id="acct-who"></span></h2>
+</div>
+
+<!-- ═══════════ folder picker ═══════════ -->
+<!-- ═══════════ chat settings modal ═══════════ -->
+<dialog id="cfg-dialog" class="modal" aria-labelledby="cfg-title" onclick="if(event.target===this)this.close()">
+  <div class="panel">
+    <h2><span id="cfg-title">Import Config</span> <span class="meta"><button onclick="$('cfg-dialog').close()" aria-label="Close">✕ Close</button></span></h2>
+    <div class="advisory" id="cfg-summary" style="margin:0 0 10px"></div>
+    <div class="cfg-keys" id="cfg-keys"></div>
+    <div style="margin:12px 0 4px">
+      <label style="display:block; margin-bottom:6px"><input type="radio" name="cfg-mode" value="merge" checked> <b>Merge</b> — apply the file's settings; anything it does not mention stays as it is</label>
+      <label style="display:block"><input type="radio" name="cfg-mode" value="replace"> <b>Replace</b> — the file becomes the whole configuration; settings it does not mention go back to their defaults</label>
+    </div>
+    <div class="advisory" style="margin:0 0 10px">Settings fixed in the environment are left alone. Accounts, sessions and proxy tokens are not part of the config and are untouched.</div>
+    <div style="display:flex; gap:8px; justify-content:flex-end">
+      <button onclick="$('cfg-dialog').close()">Cancel</button>
+      <button class="primary" id="cfg-go" onclick="cfgImport()">Import</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="acct-dialog" class="modal" aria-labelledby="acct-title" onclick="if(event.target===this)this.close()">
+  <div class="panel" id="acct-panel">
+    <h2>Account <span class="meta"><span id="acct-who"></span> <button onclick="$('acct-dialog').close()" aria-label="Close">✕ Close</button></span></h2>
     <div class="tok-new" style="flex-wrap:wrap; margin-top:0">
       <input id="pw-cur" class="pl-input" type="password" placeholder="Current password" autocomplete="current-password" aria-label="Current password">
       <input id="pw-new" class="pl-input" type="password" placeholder="New password (8+ characters)" autocomplete="new-password" aria-label="New password">
@@ -1117,10 +1160,8 @@
       <button class="primary" onclick="userCreate()">Add User</button>
     </div>
   </div>
-</div>
+</dialog>
 
-<!-- ═══════════ folder picker ═══════════ -->
-<!-- ═══════════ chat settings modal ═══════════ -->
 <dialog id="cs-dialog" class="modal" aria-labelledby="cs-title" onclick="if(event.target===this)this.close()">
   <div class="panel">
     <h2><span id="cs-title">Chat Settings</span> <span class="meta">
@@ -2542,7 +2583,7 @@ function setView(v){
   // unsaved edits survive a trip to another tab: only (re)load settings
   // when there is nothing pending
   if(v==="settings"&&(was!=="settings")&&(!stSchema||!Object.keys(stDirty).length))stLoad();
-  if(v==="settings"&&was!=="settings"){ tokLoad(); usersLoad(); }
+  if(v==="settings"&&was!=="settings")tokLoad();
   if(v==="dash")refreshLog();
   if(v==="chat")chatShow();
 }
@@ -3149,6 +3190,21 @@ async function loadMe(){
   $("acct-who").textContent=ME.auth?`${ME.name} · ${ME.role.toUpperCase()}`:"SIGN-IN OFF";
   $("acct-panel").hidden=!ME.auth;
 }
+function userMenu(e){
+  e.stopPropagation();
+  const m=$("umenu"), open=m.hidden;
+  m.hidden=!open; $("hdr-user").setAttribute("aria-expanded",String(open));
+  if(open){ $("umenu-who").textContent=`${ME.name} · ${ME.role==="admin"?"ADMIN":"USER"}`; $("umenu-users").hidden=ME.role!=="admin";
+    m.querySelector("button").focus(); }
+}
+document.addEventListener("click",e=>{ if(!e.target.closest(".umenu-wrap")){ $("umenu").hidden=true; $("hdr-user").setAttribute("aria-expanded","false"); } });
+document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&!$("umenu").hidden){ $("umenu").hidden=true; $("hdr-user").focus(); } });
+function acctOpen(which){
+  $("umenu").hidden=true;
+  const d=$("acct-dialog"); if(!d.open)d.showModal();
+  usersLoad().then(()=>{ if(which==="users"&&ME.role==="admin") $("users-panel").scrollIntoView({block:"start"}); });
+  if(which==="acct") $("pw-cur").focus();
+}
 async function signOut(){
   if(!confirm(`Sign out ${ME.name}?`))return;
   try{ await api("/api/logout","POST",{}); }catch(e){}
@@ -3463,9 +3519,15 @@ async function stSave(){
     toast("settings not saved: "+e.message,"err",{ms:9000}); return; }
   // only what was sent is now clean; an edit made while saving stays dirty
   for(const k in sent) if(JSON.stringify(stDirty[k])===JSON.stringify(sent[k])) delete stDirty[k];
+  await stApplyResult(r);
+}
+// what the page does with a save (or import) result: notes, restart
+// badges, a toast, and a refresh of everything that reads the config
+async function stApplyResult(r){
   const parts=[], warn=[];
   if((r.saved||[]).length)parts.push(`saved ${r.saved.join(", ")}`);
   if((r.cleared||[]).length)parts.push(`reset ${r.cleared.join(", ")} to default`);
+  if((r.extra||[]).length)parts.push(`wrote ${r.extra.join(", ")} (not on this page)`);
   const okTxt=parts.join(" · ")||"nothing changed";
   stNote("ok",escH(okTxt));
   for(const w of r.warnings||[]){ stNote("warn",escH(w)); warn.push(w); }
@@ -3491,6 +3553,36 @@ async function stSave(){
   // deck, so pick the new ones up without a reload
   try{ applyConfig(await api("/api/config","GET",undefined,{quiet:true})); }catch(e){}
   loadModels().catch(()=>{});
+}
+function cfgExport(){
+  const a=document.createElement("a"); a.href="/api/settings/export"; a.download=""; document.body.appendChild(a); a.click(); a.remove();
+}
+let cfgPending=null;
+async function cfgPick(inp){
+  const f=inp.files[0]; inp.value=""; if(!f)return;
+  let data; try{ data=JSON.parse(await f.text()); }catch(e){ toast(`${f.name}: not JSON (${e.message})`,"err",{ms:8000}); return; }
+  if(!data||typeof data!=="object"||Array.isArray(data)){ toast(`${f.name}: expected an object of settings`,"err"); return; }
+  const meta=data._neuraldeck||{}, keys=Object.keys(data).filter(k=>!k.startsWith("_"));
+  const known=new Set((stSchema?stSchema.fields:[]).map(x=>x.key));
+  cfgPending=data;
+  $("cfg-summary").innerHTML=`<b>${escH(f.name)}</b> · ${keys.length} setting${keys.length===1?"":"s"}`
+    +(meta.exported?` · exported ${escH(meta.exported)}${meta.version?` by NeuralDeck ${escH(meta.version)}`:""}`:"")
+    +(Object.keys(stDirty).length?` · <span style="color:var(--yellow)">your ${Object.keys(stDirty).length} unsaved edit(s) on this page will be discarded</span>`:"");
+  $("cfg-keys").innerHTML=keys.map(k=>`<div class="${known.has(k)?"":"x"}" title="${known.has(k)?"":"not a setting on this page — written as-is"}">${escH(k)} <span>${escH(JSON.stringify(data[k]).slice(0,60))}</span></div>`).join("")
+    ||'<div class="x">no settings — with Replace, everything returns to defaults</div>';
+  $("cfg-dialog").showModal();
+}
+async function cfgImport(){
+  if(!cfgPending)return;
+  const replace=document.querySelector('input[name="cfg-mode"]:checked').value==="replace";
+  if(replace&&!confirm("Replace the whole configuration with this file?\nEvery setting it does not mention goes back to its default."))return;
+  $("cfg-go").disabled=true;
+  let r; try{ r=await api("/api/settings/import","POST",{config:cfgPending,replace}); }
+  catch(e){ $("cfg-go").disabled=false; return; }
+  $("cfg-go").disabled=false; $("cfg-dialog").close(); cfgPending=null;
+  for(const k in stDirty) delete stDirty[k];
+  $("st-notes").querySelectorAll(".stnote:not(.cfgerr)").forEach(x=>x.remove());
+  await stApplyResult(r);
 }
 async function stRestart(){
   if(!confirm("Restart NeuralDeck now?\n\nRunning models are not affected — "

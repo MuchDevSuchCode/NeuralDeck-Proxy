@@ -332,8 +332,9 @@ prints it in its log; the sign-in page points at the file it was also
 written to, `admin-initial-password.txt` in the data directory. At the
 first sign-in you choose your own password, and the file is deleted.
 
-Accounts are managed by an admin under **Settings → Users**. Each account
-has a set of checkboxes, one per view, and an **Admin** box:
+Click your name in the header for the account menu: **Account · Change
+Password**, **Manage Users** (admins) and **Sign Out**. Each account in
+Manage Users has a set of checkboxes, one per view, and an **Admin** box:
 
 * **Dashboard**: telemetry, the model list, launching and stopping
   models, the Servers panel and its logs, deleting models, the Hugging
@@ -356,8 +357,7 @@ New accounts start with every view but Settings.
   user out everywhere.
 * **Delete** removes the account and ends its sessions. You cannot delete
   yourself, untick your own Admin box, or delete the last admin.
-* Everyone changes their own password under **Settings → Account**, and
-  signs out with the button bearing their name in the header.
+* Everyone changes their own password under **Account** in that menu.
 
 Sessions last 30 days of inactivity and survive a restart. Ten failed
 sign-ins in ten minutes lock that name for a few minutes. Passwords are
@@ -803,6 +803,25 @@ Launch-time defaults; a request can always override them.
 | `llama_timeout` | `600` | proxy | Seconds to wait on a model server (1–7200) |
 | `whisper_timeout` | `300` | proxy | Seconds to wait on whisper-server (1–7200) |
 
+### Importing and exporting settings
+
+**Export Config** in the Settings page's save bar downloads `config.json`
+as stored (with a small `_neuraldeck` header naming the version and
+time), so it imports back exactly. **Import Config** takes such a file,
+shows what it holds, and offers two modes:
+
+* **Merge** applies the file's settings and leaves everything else as it
+  is.
+* **Replace** makes the file the whole configuration: settings it does
+  not mention return to their defaults.
+
+Known settings are validated as if saved from the page; keys the page
+does not know (the [settings not on the page](#settings-not-on-the-page))
+are written as-is. Settings fixed in the environment are left alone, and
+a setting the proxy reads restarts it, like a save. Accounts, sessions,
+proxy tokens and the benchmark history are not part of the config and are
+untouched.
+
 ### Proxy auth tokens
 
 Not a config.json setting but a panel of its own at the bottom of the
@@ -984,6 +1003,7 @@ a view the account lacks answers 403.
 | `POST /api/login`, `POST /api/logout`, `GET /api/me`, `POST /api/me/password` | sign in (`{"name", "password"}`; sets the session cookie), sign out, who am I, change my password (`{"current", "new"}`) |
 | `GET /api/users`, `POST /api/users`, `DELETE /api/users/{name}`, `POST /api/users/{name}/password`, `POST /api/users/{name}/access` | accounts (admin): list, add (`{"name", "password", "role", "access"}`), delete, reset a password, change role and/or access (`{"role": "admin"\|"user", "access": ["dash", "chat", "prompt", "bench", "settings"]}`) |
 | `GET /api/settings`, `POST /api/settings` | read or save settings |
+| `GET /api/settings/export`, `POST /api/settings/import` | download `config.json`; apply one (`{"config": {...}, "replace": bool}`) |
 | `GET /api/tokens`, `POST /api/tokens`, `DELETE /api/tokens/{id}` | proxy auth tokens: list, generate (`{"name": …}`; the reply's `token` is shown once), revoke |
 | `GET /api/browse?path=&mode=dir\|file&ext=` | directory listing for the file picker |
 | `POST /api/restart` | restart the dashboard |

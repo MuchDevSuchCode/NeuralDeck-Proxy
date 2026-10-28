@@ -575,6 +575,36 @@ async def settings_post(body: dict):
     return JSONResponse(result)
 
 
+@app.get("/api/settings/export")
+async def settings_export():
+    try:
+        data = settings.export_config()
+    except settings.Invalid as e:
+        raise HTTPException(400, str(e))
+    name = f"neuraldeck-config-{time.strftime('%Y%m%d-%H%M')}.json"
+    return Response(json.dumps(data, indent=2) + "\n", media_type="application/json",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@app.post("/api/settings/import")
+async def settings_import(body: dict):
+    """{"config": {...}, "replace": bool}: apply an exported file. Like a
+    save, the proxy is restarted when a setting it reads changed."""
+    try:
+        result = await asyncio.to_thread(settings.import_config, body.get("config"),
+                                         bool(body.get("replace")))
+    except settings.Invalid as e:
+        raise HTTPException(400, str(e))
+    except OSError as e:
+        raise HTTPException(500, f"could not write {config.CONFIG_FILE}: {e}")
+    result = dict(result)
+    result["proxy_restarted"], result["proxy_error"] = False, None
+    if result.get("proxy_restart"):
+        result["proxy_restarted"], result["proxy_error"] = \
+            await asyncio.to_thread(_restart_proxy)
+    return JSONResponse(result)
+
+
 def _restart_proxy() -> tuple:
     """(restarted, error). Only a proxy that is running is restarted."""
     if services.find("proxy") is None:
