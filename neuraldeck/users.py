@@ -11,9 +11,10 @@ written to ``admin-initial-password.txt`` in the data directory. That
 account must change its password at first sign-in, and the file is
 deleted when it does.
 
-Roles: an admin can do everything; a user can chat, use the Prompt Lab
-and read the dashboard, but not launch or stop models, change settings,
-or manage accounts and proxy tokens.
+Access is per view. An admin can do everything; a user has a list of the
+views they may use (Dashboard, Chat, Prompt Lab, Benchmarks, Settings),
+each view carrying the API calls behind it. Accounts and proxy tokens are
+always admin-only.
 """
 
 import hashlib
@@ -32,6 +33,8 @@ FILE = config.DATA_DIR / "users.json"
 SESSIONS = config.DATA_DIR / "sessions.json"
 INITIAL = config.DATA_DIR / "admin-initial-password.txt"
 ROLES = ("admin", "user")
+VIEWS = ("dash", "chat", "prompt", "bench", "settings")
+DEFAULT_ACCESS = ["dash", "chat", "prompt", "bench"]
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,31}$")
 MIN_PASSWORD = 8
 SESSION_TTL = 30 * 86400        # a month, sliding
@@ -97,9 +100,25 @@ def _check_name(name) -> str:
     return name
 
 
+def _access_of(u: dict) -> list:
+    if u.get("role") == "admin":
+        return list(VIEWS)
+    acc = u.get("access")
+    if not isinstance(acc, list):
+        return list(DEFAULT_ACCESS)
+    return [v for v in VIEWS if v in acc]
+
+
+def _check_access(access) -> list:
+    if not isinstance(access, list) or any(v not in VIEWS for v in access):
+        raise UserError(400, f"access is a list drawn from {', '.join(VIEWS)}")
+    return [v for v in VIEWS if v in access]
+
+
 def _public(u: dict) -> dict:
-    return {"name": u["name"], "role": u.get("role", "user"), "created": u.get("created"),
-            "last_login": u.get("last_login"), "must_change": bool(u.get("must_change"))}
+    return {"name": u["name"], "role": u.get("role", "user"), "access": _access_of(u),
+            "created": u.get("created"), "last_login": u.get("last_login"),
+            "must_change": bool(u.get("must_change"))}
 
 
 # ── users ──────────────────────────────────────────────────────────────────
@@ -145,18 +164,20 @@ def initial_password_file():
     return str(INITIAL) if INITIAL.exists() else None
 
 
-def create(name, password, role="user", must_change=False) -> dict:
+def create(name, password, role="user", must_change=False, access=None) -> dict:
     name = _check_name(name)
     _check_password(password)
     if role not in ROLES:
         raise UserError(400, f"role must be one of {', '.join(ROLES)}")
+    access = _check_access(access) if access is not None else list(DEFAULT_ACCESS)
     with _lock:
         users = _read(FILE)
         if any(u.get("name") == name for u in users):
             raise UserError(409, f"user '{name}' already exists")
         salt = os.urandom(16)
-        row = {"name": name, "role": role, "hash": _hash(password, salt), "salt": salt.hex(),
-               "created": int(time.time()), "last_login": None, "must_change": bool(must_change)}
+        row = {"name": name, "role": role, "access": access, "hash": _hash(password, salt),
+               "salt": salt.hex(), "created": int(time.time()), "last_login": None,
+               "must_change": bool(must_change)}
         users.append(row)
         _write(FILE, users)
     return _public(row)
@@ -177,19 +198,29 @@ def delete(name: str, by: str) -> None:
     drop_user_sessions(name)
 
 
-def set_role(name: str, role: str, by: str) -> dict:
-    if role not in ROLES:
+def set_access(name: str, by: str, role=None, access=None) -> dict:
+    """Change a user's role and/or the views they may use."""
+    if role is not None and role not in ROLES:
         raise UserError(400, f"role must be one of {', '.join(ROLES)}")
+    if access is not None:
+        access = _check_access(access)
     with _lock:
         users = _read(FILE)
         target = next((u for u in users if u.get("name") == name), None)
         if target is None:
             raise UserError(404, f"no user '{name}'")
-        if name == by and role != "admin":
-            raise UserError(400, "you cannot remove your own admin role")
-        target["role"] = role
+        if role is not None:
+            if name == by and role != "admin":
+                raise UserError(400, "you cannot remove your own admin role")
+            target["role"] = role
+        if access is not None:
+            target["access"] = access
         _write(FILE, users)
         return _public(target)
+
+
+def set_role(name: str, role: str, by: str) -> dict:
+    return set_access(name, by, role=role)
 
 
 def set_password(name: str, password: str, must_change: bool, current=None) -> dict:

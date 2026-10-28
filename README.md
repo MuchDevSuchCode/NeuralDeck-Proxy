@@ -332,23 +332,32 @@ prints it in its log; the sign-in page points at the file it was also
 written to, `admin-initial-password.txt` in the data directory. At the
 first sign-in you choose your own password, and the file is deleted.
 
-Accounts are managed by an admin under **Settings → Users**:
+Accounts are managed by an admin under **Settings → Users**. Each account
+has a set of checkboxes, one per view, and an **Admin** box:
 
-* **Add User** takes a name, a temporary password and a role. The new
-  user chooses their own password at first sign-in.
+* **Dashboard**: telemetry, the model list, launching and stopping
+  models, the Servers panel and its logs, deleting models, the Hugging
+  Face downloader.
+* **Chat**: the Chat tab, including its tools and MCP relay.
+* **Prompt Lab**: sending prompts and recording their timings.
+* **Benchmarks**: reading, deleting and clearing the benchmark history.
+* **Settings**: reading and saving settings, the folder picker, and
+  restarting NeuralDeck.
+* **Admin**: everything above, plus this Users panel and the proxy auth
+  tokens.
+
+A user sees only the tabs they have, and the API calls behind a view they
+lack are refused with *no access to …*. Ticking a box applies at once.
+New accounts start with every view but Settings.
+
+* **Add User** takes a name, a temporary password and the access boxes.
+  The new user chooses their own password at first sign-in.
 * **Reset Password** sets a temporary one the same way and signs that
   user out everywhere.
-* **Make Admin** / **Make User** changes the role. **Delete** removes the
-  account and ends its sessions. You cannot delete yourself, demote
-  yourself, or delete the last admin.
+* **Delete** removes the account and ends its sessions. You cannot delete
+  yourself, untick your own Admin box, or delete the last admin.
 * Everyone changes their own password under **Settings → Account**, and
   signs out with the button bearing their name in the header.
-
-An **admin** can do everything. A **user** can watch the dashboard, chat,
-use the Prompt Lab and read benchmarks, but cannot launch or stop models,
-delete models, queue downloads, change settings, restart NeuralDeck, read
-logs, or manage accounts and proxy tokens; those calls are refused with
-*admin only*.
 
 Sessions last 30 days of inactivity and survive a restart. Ten failed
 sign-ins in ten minutes lock that name for a few minutes. Passwords are
@@ -957,8 +966,8 @@ neuraldeck/
 
 The dashboard is driven by a JSON API on its own port, which you can
 script against too. With sign-in on (the default) a script first posts to
-`/api/login` and sends back the `nd_session` cookie it gets; admin-only
-calls answer 403 to a plain user.
+`/api/login` and sends back the `nd_session` cookie it gets; a call behind
+a view the account lacks answers 403.
 
 | Method and path | Purpose |
 | --- | --- |
@@ -973,7 +982,7 @@ calls answer 403 to a plain user.
 | `POST /api/service/{name}/start`, `…/stop` | start or stop `proxy`, `whisper`, `tts`, `comfy` |
 | `GET /api/logs/{service}?lines=N` | the tail of a log (1–2000 lines) |
 | `POST /api/login`, `POST /api/logout`, `GET /api/me`, `POST /api/me/password` | sign in (`{"name", "password"}`; sets the session cookie), sign out, who am I, change my password (`{"current", "new"}`) |
-| `GET /api/users`, `POST /api/users`, `DELETE /api/users/{name}`, `POST /api/users/{name}/password`, `POST /api/users/{name}/role` | accounts (admin): list, add (`{"name", "password", "role"}`), delete, reset a password, change a role |
+| `GET /api/users`, `POST /api/users`, `DELETE /api/users/{name}`, `POST /api/users/{name}/password`, `POST /api/users/{name}/access` | accounts (admin): list, add (`{"name", "password", "role", "access"}`), delete, reset a password, change role and/or access (`{"role": "admin"\|"user", "access": ["dash", "chat", "prompt", "bench", "settings"]}`) |
 | `GET /api/settings`, `POST /api/settings` | read or save settings |
 | `GET /api/tokens`, `POST /api/tokens`, `DELETE /api/tokens/{id}` | proxy auth tokens: list, generate (`{"name": …}`; the reply's `token` is shown once), revoke |
 | `GET /api/browse?path=&mode=dir\|file&ext=` | directory listing for the file picker |

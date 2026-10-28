@@ -262,12 +262,19 @@ SESSION_COOKIE = "nd_session"
 _PUBLIC_PATHS = {"/login", "/api/login", "/api/login/hint", "/api/logout", "/favicon.ico"}
 # what a signed-in account whose password must still be changed may reach
 _MUST_CHANGE_OK = {"/api/me", "/api/me/password", "/api/logout", "/login", "/api/login/hint"}
-# admin-only, by path: everything that launches, stops, deletes, configures
-# or manages accounts. GET /api/settings is here too (it lists paths and
-# the whole configuration).
-_ADMIN_RE = re.compile(
-    r"^/api/(users|tokens|settings|browse|restart|logs|models/delete|llama/|service/|"
-    r"hf/(download|cancel)|bench/(clear|delete))")
+# Which view each API call belongs to; a user needs that view. Calls not
+# listed (telemetry, config, who-am-i) are open to anyone signed in, and
+# accounts and proxy tokens are admin-only whatever the access list.
+_VIEW_OF_PATH = [
+    (re.compile(r"^/api/(models|llama/|launch/status|service/|logs/|hf/)"), "dash"),
+    (re.compile(r"^/api/(px/|mcp)"), "chat"),
+    (re.compile(r"^/api/chat$"), ("chat", "prompt")),
+    (re.compile(r"^/api/bench"), ("bench", "prompt")),
+    (re.compile(r"^/api/(settings|browse|restart)"), "settings"),
+]
+_ADMIN_RE = re.compile(r"^/api/(users|tokens)")
+_VIEW_NAMES = {"dash": "Dashboard", "chat": "Chat", "prompt": "Prompt Lab",
+               "bench": "Benchmarks", "settings": "Settings"}
 
 
 def _bootstrap_admin():
@@ -289,7 +296,8 @@ def _bootstrap_admin():
 
 def _user(request: Request):
     """The signed-in account, or the implicit admin when sign-in is off."""
-    return getattr(request.state, "user", None) or {"name": "", "role": "admin", "must_change": False}
+    return getattr(request.state, "user", None) or {
+        "name": "", "role": "admin", "access": list(users.VIEWS), "must_change": False}
 
 
 def _api_error(status: int, detail: str) -> JSONResponse:
@@ -317,8 +325,15 @@ async def require_login(request: Request, call_next):
         if path.startswith("/api/"):
             return _api_error(403, "change your password first")
         return RedirectResponse("/login", status_code=303)
-    if me.get("role") != "admin" and _ADMIN_RE.match(path):
-        return _api_error(403, "admin only")
+    if me.get("role") != "admin":
+        if _ADMIN_RE.match(path):
+            return _api_error(403, "admin only")
+        for rx, views in _VIEW_OF_PATH:
+            if rx.match(path):
+                views = (views,) if isinstance(views, str) else views
+                if not any(v in me.get("access", []) for v in views):
+                    return _api_error(403, f"no access to {_VIEW_NAMES[views[0]]}")
+                break
     return await call_next(request)
 
 
@@ -395,7 +410,8 @@ async def users_list():
 async def users_create(body: dict):
     try:
         row = await asyncio.to_thread(users.create, body.get("name"), body.get("password"),
-                                      body.get("role") or "user", bool(body.get("must_change", True)))
+                                      body.get("role") or "user", bool(body.get("must_change", True)),
+                                      body.get("access"))
     except users.UserError as e:
         raise HTTPException(e.status, str(e))
     return {"created": row, "users": users.list_users()}
@@ -425,6 +441,17 @@ async def users_password(name: str, body: dict):
 async def users_role(name: str, body: dict, request: Request):
     try:
         await asyncio.to_thread(users.set_role, name, body.get("role"), _user(request).get("name"))
+    except users.UserError as e:
+        raise HTTPException(e.status, str(e))
+    return {"users": users.list_users()}
+
+
+@app.post("/api/users/{name}/access")
+async def users_access(name: str, body: dict, request: Request):
+    """{"role": "admin"|"user"} and/or {"access": ["dash", "chat", ...]}."""
+    try:
+        await asyncio.to_thread(users.set_access, name, _user(request).get("name"),
+                                body.get("role"), body.get("access"))
     except users.UserError as e:
         raise HTTPException(e.status, str(e))
     return {"users": users.list_users()}

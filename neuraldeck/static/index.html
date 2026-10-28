@@ -299,8 +299,13 @@
   #users-table td:last-child button { margin-left:4px; }
   .ubadge { display:inline-block; font-size:9.5px; padding:0 5px; margin-left:6px; border:1px solid var(--yellow);
     color:var(--yellow); border-radius:3px; letter-spacing:.5px; vertical-align:1px; }
-  /* a non-admin account: no settings, tokens, downloads or restarts */
-  body.role-user :is(#st-panel, #tok-panel, #users-panel, #hf-dl, #st-restart) { display:none !important; }
+  /* a non-admin account: accounts and proxy tokens are admin-only */
+  body.role-user :is(#tok-panel, #users-panel) { display:none !important; }
+  .acc { display:inline-flex; gap:10px; flex-wrap:wrap; }
+  .acc label { display:inline-flex; align-items:center; gap:4px; font-size:11.5px; color:var(--ink-2); cursor:pointer; white-space:nowrap; }
+  .acc label.adm { color:var(--pink); font-weight:600; }
+  .acc input { margin:0; }
+  #users-table th.acc-h { white-space:nowrap; }
   .strow { display:grid; grid-template-columns:230px minmax(0,1fr); gap:4px 14px;
            padding:8px 2px; border-bottom:1px solid var(--grid); align-items:start; }
   .strow:last-child { border-bottom:none; }
@@ -1096,19 +1101,19 @@
   <div class="panel" id="users-panel" style="margin-top:12px" hidden>
     <h2>Users <span class="meta" id="users-count"></span></h2>
     <div class="advisory" style="margin:0 0 10px">
-      Admins can do everything. Users can read the dashboard, chat and use the Prompt Lab, but cannot launch or stop
-      models, change settings, or manage accounts and proxy tokens. A new user, or one whose password an admin resets,
-      chooses their own password at next sign-in.
+      Tick the views each account may use; a view's buttons and API calls go with it. <b>Admin</b> grants everything,
+      plus this panel and the proxy tokens. A new user, or one whose password an admin resets, chooses their own password
+      at next sign-in. Changes apply at once.
     </div>
     <div class="tblwrap">
-      <table id="users-table"><thead><tr><th>Name</th><th>Role</th><th>Created</th><th>Last Sign-In</th><th></th></tr></thead>
+      <table id="users-table"><thead><tr><th>Name</th><th class="acc-h">Access</th><th>Created</th><th>Last Sign-In</th><th></th></tr></thead>
       <tbody id="users-rows"></tbody></table>
     </div>
     <div class="tok-new" style="flex-wrap:wrap">
       <input id="nu-name" class="pl-input" placeholder="Name" aria-label="New user name" maxlength="32" autocapitalize="none" spellcheck="false">
       <input id="nu-pw" class="pl-input" type="password" placeholder="Temporary password (8+ characters)" aria-label="Temporary password" autocomplete="new-password"
         onkeydown="if(event.key==='Enter')userCreate()">
-      <select id="nu-role" aria-label="Role"><option value="user">Role: User</option><option value="admin">Role: Admin</option></select>
+      <span class="acc" id="nu-acc"></span>
       <button class="primary" onclick="userCreate()">Add User</button>
     </div>
   </div>
@@ -2520,8 +2525,11 @@ async function hfTick(){
 /* ---------- view tabs ---------- */
 const VIEWS=["dash","chat","prompt","bench","settings"];
 let curView=null;
+const VIEW_NAMES={dash:"Dashboard",chat:"Chat",prompt:"Prompt Lab",bench:"Benchmarks",settings:"Settings"};
+const canView=v=>!ME.auth||ME.role==="admin"||(ME.access||[]).includes(v);
 function setView(v){
   if(!VIEWS.includes(v))v="chat";
+  if(!canView(v)) v=VIEWS.find(canView)||"chat";
   try{localStorage.setItem("nd-view",v);}catch(e){}
   for(const x of VIEWS){
     $("view-"+x).style.display=x===v?"":"none";
@@ -3134,6 +3142,8 @@ let ME={name:"",role:"admin",auth:false};
 async function loadMe(){
   try{ ME=await api("/api/me","GET",undefined,{quiet:true}); }catch(e){ return; }
   document.body.classList.toggle("role-user",!!ME.auth&&ME.role!=="admin");
+  for(const v of VIEWS) $("vt-"+v).style.display=canView(v)?"":"none";
+  if(typeof curView==="string"&&curView&&!canView(curView)) setView(curView);   // lands on the first allowed view
   const b=$("hdr-user"); b.style.display=ME.auth?"":"none"; b.textContent=ME.name+" ⏻";
   b.title=`Signed in as ${ME.name} (${ME.role}) — click to sign out`;
   $("acct-who").textContent=ME.auth?`${ME.name} · ${ME.role.toUpperCase()}`:"SIGN-IN OFF";
@@ -3156,28 +3166,48 @@ async function usersLoad(){
   try{ usersData=(await api("/api/users","GET",undefined,{quiet:true})).users; }catch(e){ return; }
   usersRender();
 }
+// the access checkboxes: one per view, plus Admin (which implies them all)
+function accHTML(id,access,admin,{self=false}={}){
+  const boxes=VIEWS.map(v=>`<label><input type="checkbox" data-v="${v}" ${admin||access.includes(v)?"checked":""} ${admin?"disabled":""}>${VIEW_NAMES[v]}</label>`).join("");
+  return `<span class="acc" id="${id}">${boxes}<label class="adm" ${self?'title="you cannot remove your own admin role"':""}>`
+    +`<input type="checkbox" data-v="admin" ${admin?"checked":""} ${self?"disabled":""}>Admin</label></span>`;
+}
+function accRead(id){
+  const el=$(id), admin=el.querySelector('[data-v="admin"]').checked;
+  return {role:admin?"admin":"user", access:VIEWS.filter(v=>el.querySelector(`[data-v="${v}"]`).checked)};
+}
 function usersRender(){
   const n=usersData.length; $("users-count").textContent=`${n} account${n===1?"":"s"}`;
   $("users-rows").innerHTML=usersData.map(u=>{
     const me=u.name===ME.name, a=escA(u.name), admin=u.role==="admin";
-    return `<tr><td>${escH(u.name)}${me?' <span class="sub">(you)</span>':""}`
+    return `<tr data-u="${a}"><td>${escH(u.name)}${me?' <span class="sub">(you)</span>':""}`
       +`${u.must_change?' <span class="ubadge" title="chooses a password at next sign-in">PASSWORD PENDING</span>':""}</td>`
-      +`<td>${admin?"ADMIN":"USER"}</td><td>${tokWhen(u.created)}</td><td>${tokWhen(u.last_login)}</td>`
-      +`<td><button onclick="userRole('${a}','${admin?"user":"admin"}')"${me?" disabled title=\"you cannot change your own role\"":""}>${admin?"Make User":"Make Admin"}</button>`
-      +`<button onclick="userReset('${a}')">Reset Password</button>`
+      +`<td>${accHTML("acc-"+u.name,u.access||[],admin,{self:me})}</td><td>${tokWhen(u.created)}</td><td>${tokWhen(u.last_login)}</td>`
+      +`<td><button onclick="userReset('${a}')">Reset Password</button>`
       +`<button class="danger" onclick="userDelete('${a}')"${me?" disabled title=\"you cannot delete yourself\"":""}>Delete</button></td></tr>`;
   }).join("");
+  for(const tr of $("users-rows").querySelectorAll("tr")){
+    tr.querySelectorAll(".acc input").forEach(cb=>cb.addEventListener("change",()=>userAccess(tr.dataset.u)));
+  }
+  if(!$("nu-acc").children.length) $("nu-acc").innerHTML=accHTML("nu-acc-in",["dash","chat","prompt","bench"],false);
+  $("nu-acc").querySelector('[data-v="admin"]').onchange=e=>{
+    $("nu-acc").querySelectorAll("input:not([data-v=admin])").forEach(cb=>{ cb.disabled=e.target.checked; if(e.target.checked)cb.checked=true; });
+  };
+}
+async function userAccess(name){
+  const {role,access}=accRead("acc-"+name);
+  let r; try{ r=await api(`/api/users/${encodeURIComponent(name)}/access`,"POST",{role,access}); }
+  catch(e){ usersRender(); return; }
+  usersData=r.users; usersRender();
+  const u=usersData.find(x=>x.name===name);
+  toast(`${name}: ${u.role==="admin"?"admin":u.access.length?u.access.map(v=>VIEW_NAMES[v]).join(", "):"no views"}`,"ok");
 }
 async function userCreate(){
-  const name=$("nu-name").value.trim(), password=$("nu-pw").value, role=$("nu-role").value;
+  const name=$("nu-name").value.trim(), password=$("nu-pw").value, {role,access}=accRead("nu-acc-in");
   if(!name||!password){ toast("a name and a temporary password are needed","err"); return; }
-  let r; try{ r=await api("/api/users","POST",{name,password,role,must_change:true}); }catch(e){ return; }
+  let r; try{ r=await api("/api/users","POST",{name,password,role,access,must_change:true}); }catch(e){ return; }
   usersData=r.users; usersRender(); $("nu-name").value=$("nu-pw").value="";
   toast(`user ${r.created.name} added — they choose a password at first sign-in`,"ok",{ms:7000});
-}
-async function userRole(name,role){
-  let r; try{ r=await api(`/api/users/${encodeURIComponent(name)}/role`,"POST",{role}); }catch(e){ return; }
-  usersData=r.users; usersRender(); toast(`${name} is now ${role==="admin"?"an admin":"a user"}`,"ok");
 }
 async function userReset(name){
   const password=prompt(`Temporary password for ${name} (8+ characters).\nThey are signed out and choose their own at next sign-in.`);

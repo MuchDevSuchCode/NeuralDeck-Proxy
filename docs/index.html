@@ -477,23 +477,33 @@ accounts yet, NeuralDeck creates <strong><code>admin</code></strong> with a rand
 prints it in its log; the sign-in page points at the file it was also
 written to, <code>admin-initial-password.txt</code> in the data directory. At the
 first sign-in you choose your own password, and the file is deleted.</p>
-<p>Accounts are managed by an admin under <strong>Settings → Users</strong>:</p>
+<p>Accounts are managed by an admin under <strong>Settings → Users</strong>. Each account
+has a set of checkboxes, one per view, and an <strong>Admin</strong> box:</p>
 <ul>
-<li><strong>Add User</strong> takes a name, a temporary password and a role. The new
-user chooses their own password at first sign-in.</li>
+<li><strong>Dashboard</strong>: telemetry, the model list, launching and stopping
+models, the Servers panel and its logs, deleting models, the Hugging
+Face downloader.</li>
+<li><strong>Chat</strong>: the Chat tab, including its tools and MCP relay.</li>
+<li><strong>Prompt Lab</strong>: sending prompts and recording their timings.</li>
+<li><strong>Benchmarks</strong>: reading, deleting and clearing the benchmark history.</li>
+<li><strong>Settings</strong>: reading and saving settings, the folder picker, and
+restarting NeuralDeck.</li>
+<li><strong>Admin</strong>: everything above, plus this Users panel and the proxy auth
+tokens.</li>
+</ul>
+<p>A user sees only the tabs they have, and the API calls behind a view they
+lack are refused with <em>no access to …</em>. Ticking a box applies at once.
+New accounts start with every view but Settings.</p>
+<ul>
+<li><strong>Add User</strong> takes a name, a temporary password and the access boxes.
+The new user chooses their own password at first sign-in.</li>
 <li><strong>Reset Password</strong> sets a temporary one the same way and signs that
 user out everywhere.</li>
-<li><strong>Make Admin</strong> / <strong>Make User</strong> changes the role. <strong>Delete</strong> removes the
-account and ends its sessions. You cannot delete yourself, demote
-yourself, or delete the last admin.</li>
+<li><strong>Delete</strong> removes the account and ends its sessions. You cannot delete
+yourself, untick your own Admin box, or delete the last admin.</li>
 <li>Everyone changes their own password under <strong>Settings → Account</strong>, and
 signs out with the button bearing their name in the header.</li>
 </ul>
-<p>An <strong>admin</strong> can do everything. A <strong>user</strong> can watch the dashboard, chat,
-use the Prompt Lab and read benchmarks, but cannot launch or stop models,
-delete models, queue downloads, change settings, restart NeuralDeck, read
-logs, or manage accounts and proxy tokens; those calls are refused with
-<em>admin only</em>.</p>
 <p>Sessions last 30 days of inactivity and survive a restart. Ten failed
 sign-ins in ten minutes lock that name for a few minutes. Passwords are
 stored as scrypt hashes in <code>users.json</code>, sessions in <code>sessions.json</code>,
@@ -1597,8 +1607,8 @@ Windows, or wherever <code>NEURALDECK_HOME</code> points. The Settings tab and
 <h2 id="dashboard-api"><a class="hash" href="#dashboard-api" aria-label="Link to this section">#</a>Dashboard API</h2>
 <p>The dashboard is driven by a JSON API on its own port, which you can
 script against too. With sign-in on (the default) a script first posts to
-<code>/api/login</code> and sends back the <code>nd_session</code> cookie it gets; admin-only
-calls answer 403 to a plain user.</p>
+<code>/api/login</code> and sends back the <code>nd_session</code> cookie it gets; a call behind
+a view the account lacks answers 403.</p>
 <div class="table-wrap"><table>
 <thead>
 <tr>
@@ -1652,8 +1662,8 @@ calls answer 403 to a plain user.</p>
 <td data-label="Purpose"><span class="cell">sign in (<code>{&quot;name&quot;, &quot;password&quot;}</code>; sets the session cookie), sign out, who am I, change my password (<code>{&quot;current&quot;, &quot;new&quot;}</code>)</span></td>
 </tr>
 <tr>
-<td data-label="Method and path"><span class="cell"><code>GET /api/users</code>, <code>POST /api/users</code>, <code>DELETE /api/users/{name}</code>, <code>POST /api/users/{name}/password</code>, <code>POST /api/users/{name}/role</code></span></td>
-<td data-label="Purpose"><span class="cell">accounts (admin): list, add (<code>{&quot;name&quot;, &quot;password&quot;, &quot;role&quot;}</code>), delete, reset a password, change a role</span></td>
+<td data-label="Method and path"><span class="cell"><code>GET /api/users</code>, <code>POST /api/users</code>, <code>DELETE /api/users/{name}</code>, <code>POST /api/users/{name}/password</code>, <code>POST /api/users/{name}/access</code></span></td>
+<td data-label="Purpose"><span class="cell">accounts (admin): list, add (<code>{&quot;name&quot;, &quot;password&quot;, &quot;role&quot;, &quot;access&quot;}</code>), delete, reset a password, change role and/or access (<code>{&quot;role&quot;: &quot;admin&quot;|&quot;user&quot;, &quot;access&quot;: [&quot;dash&quot;, &quot;chat&quot;, &quot;prompt&quot;, &quot;bench&quot;, &quot;settings&quot;]}</code>)</span></td>
 </tr>
 <tr>
 <td data-label="Method and path"><span class="cell"><code>GET /api/settings</code>, <code>POST /api/settings</code></span></td>
