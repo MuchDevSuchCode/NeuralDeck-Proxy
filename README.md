@@ -1217,6 +1217,39 @@ other machines on your network can use them.
   the server process. Review them before installing, and pin the version
   you reviewed.
 
+### Exposing both over one ngrok URL
+
+An ngrok endpoint forwards to one port, but a traffic policy can split one
+public URL between the dashboard and the proxy. In `ngrok.yml` (agent
+config version 3), with a domain reserved for this machine:
+
+```yaml
+endpoints:
+  - name: neuraldeck-proxy
+    url: http://neuraldeck-proxy.internal
+    upstream:
+      url: 8080
+  - name: neuraldeck
+    url: https://YOUR-DOMAIN.ngrok.app
+    upstream:
+      url: 80
+    traffic_policy:
+      on_http_request:
+        - expressions:
+            - "!(req.url.path == '/' || req.url.path.startsWith('/api/') || req.url.path.startsWith('/login') || req.url.path == '/favicon.ico')"
+          actions:
+            - type: forward-internal
+              config:
+                url: http://neuraldeck-proxy.internal
+```
+
+Then `ngrok config check` and `ngrok start --all`. The dashboard answers
+`/`, `/login` and `/api/…`; every other path is the proxy, so clients use
+`https://YOUR-DOMAIN.ngrok.app/v1` with a proxy token as their API key, and
+people sign in to the page at the root. Generate a proxy token first: the
+proxy is open until one exists. The llama.cpp web UI at the proxy's own
+root is not reachable this way; the Chat tab covers it.
+
 ## Uninstall
 
 Stop NeuralDeck, then delete:
