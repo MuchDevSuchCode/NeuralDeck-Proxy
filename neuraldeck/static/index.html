@@ -91,7 +91,7 @@
   :root[data-theme] * { text-shadow:none !important; box-shadow:none !important; }
   :root[data-theme] .panel { background:var(--surface); clip-path:none; border-radius:6px; }
   :root[data-theme] :is(button,select,.tooltip) { clip-path:none; border-radius:4px; }
-  :root[data-theme] :is(header h1, .panel)::after { display:none; }
+  :root[data-theme] .panel::after { display:none; }   /* the notch is NeuralDeck's; the title's cursor stays, in each theme's own color */
   :root[data-theme] .panel h2::before { color:var(--muted); }
   * { box-sizing:border-box; margin:0; }
   body {
@@ -118,7 +118,8 @@
     padding:6px 10px; font:inherit; width:100%;
   }
   input.pl-input { height:28px; padding:0 10px; }
-  #pl-out { white-space:pre-wrap; }
+  #pl-out { white-space:pre-wrap; background:var(--well); border:1px solid var(--border-dim); border-radius:6px; padding:10px 12px; }
+  #pl-bench-empty { margin-top:0; padding:11px 0; }
   .codeblk { margin:8px 0; border:1px solid var(--border-dim); background:var(--well);
              white-space:normal; }
   .codehdr { display:flex; align-items:center; justify-content:space-between;
@@ -132,7 +133,7 @@
   .tblwrap { overflow-x:auto; position:relative; }   /* contains .vh headers */
   #bn-runs-wrap { max-height:60vh; overflow-y:auto; }
   #bn-runs-wrap thead th { position:sticky; top:0; background:var(--surface); z-index:1; }
-  #models { max-height:72vh; overflow-y:auto; }
+  #models { max-height:min(72vh, 600px); overflow-y:auto; }
   .tblwrap td { white-space:nowrap; }   /* scroll sideways rather than wrap names into towers */
   .grpsep { color:var(--muted); font-size:10.5px; letter-spacing:1.5px;
             text-transform:uppercase; margin:9px 0 3px; padding-top:6px;
@@ -144,6 +145,9 @@
   .mchk input { accent-color:var(--cyan); }
   #bn-models { max-height:96px; overflow-y:auto; border:1px solid var(--border-dim);
                padding:4px 6px; margin-bottom:10px; }
+  #bn-models:empty { display:none; }
+  :is(#bn-agg, #bn-runs):has(tbody:empty) { display:none; }
+  #view-bench:has(#bn-models:empty) #bn-filter, #view-bench:has(#bn-runs tbody:empty) .legend:has(#bn-count) { display:none; }
   header h1 {
     color:var(--cyan); font-size:17px; font-weight:700; letter-spacing:4px; text-transform:uppercase;
     text-shadow: var(--glow-cyan), 2px 0 0 color-mix(in srgb, var(--pink) 45%, transparent), -2px 0 0 color-mix(in srgb, var(--s1) 45%, transparent);
@@ -152,6 +156,8 @@
   @keyframes blink { 50% { opacity:0; } }
   header .sub { color:var(--muted); font-size:12px; }
   header .right { margin-left:auto; color:var(--muted); font-size:12px; }
+  header h1, .viewtabs, header .right { flex:none; }
+  @media (min-width:1360px){ header { flex-wrap:nowrap; } }
 
   .cols { display:grid; gap:12px; grid-template-columns: 1fr 1fr; align-items:start; }
   @media (max-width:1080px){ .cols { grid-template-columns:1fr; } }
@@ -215,8 +221,7 @@
   button.danger:hover { background:color-mix(in srgb, var(--critical) 16%, transparent); text-shadow:0 0 7px color-mix(in srgb, var(--critical) 60%, transparent);
     box-shadow:0 0 10px color-mix(in srgb, var(--critical) 35%, transparent); }
   button.primary { background:color-mix(in srgb, var(--cyan) 14%, transparent); }
-  button:disabled { opacity:.55; cursor:default; box-shadow:none; text-shadow:none;
-    border-style:dashed; background:transparent; }
+  button:disabled { opacity:.45; cursor:default; box-shadow:none; text-shadow:none; background:transparent; }
   button:disabled:hover { background:transparent; }
   select {
     background:var(--surface2); color:var(--ink-2); border:1px solid var(--border-dim);
@@ -291,10 +296,18 @@
   .tok-reveal-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:6px; }
   .tok-reveal-row code { flex:1; min-width:200px; user-select:all; font-size:13px; padding:6px 8px;
     background:var(--surface2); border:1px solid var(--border-dim); border-radius:4px; word-break:break-all; }
-  #tok-table td:last-child { text-align:right; }
+  #tok-table td:last-child { text-align:right; white-space:nowrap; }
+  .tok-acts button { margin-left:6px; }
+  .tok-cell { white-space:nowrap; }
+  .tok-cell .tok-val { user-select:all; margin-right:6px; }
+  .tok-cell .ibtn { margin-left:2px; vertical-align:middle; }
+  .tok-cell .ibtn:disabled { opacity:.3; }
+  .tok-legacy { margin-left:8px; font-size:10.5px; color:var(--muted); }
   .tok-new { display:flex; gap:8px; margin-top:10px; align-items:center; }
   .tok-new .pl-input { flex:1; max-width:360px; }
   #hdr-user { font-size:11px; padding:1px 8px; }
+  .ibtn { display:inline-flex; align-items:center; justify-content:center; width:26px; height:22px; padding:0; }
+  .ibtn .ico { width:14px; height:14px; vertical-align:0; }
   .umenu-wrap { position:relative; display:inline-block; }
   .umenu { position:absolute; right:0; top:calc(100% + 4px); min-width:230px; z-index:60; background:var(--surface);
     border:1px solid var(--border); box-shadow:0 8px 24px var(--scrim); padding:4px; display:flex; flex-direction:column; gap:2px; }
@@ -302,6 +315,11 @@
   .umenu-who { color:var(--muted); font-size:11px; padding:5px 10px 7px; border-bottom:1px solid var(--border-dim); margin-bottom:3px; }
   .umenu button { text-align:left; clip-path:none; padding:6px 10px; text-transform:none; letter-spacing:0; font-size:12.5px; }
   #acct-dialog { width:min(1100px, calc(100vw - 20px)); }
+  .dlg-sec { margin-top:16px; padding-top:14px; border-top:1px solid var(--border-dim); }
+  .dlg-h { display:flex; align-items:center; gap:8px; margin:0 0 8px; color:var(--cyan); font-size:12px; font-weight:700;
+    letter-spacing:2px; text-transform:uppercase; }
+  .dlg-h .meta { margin-left:auto; color:var(--muted); font-weight:400; letter-spacing:0; text-transform:none; }
+  :root[data-theme^="llama"] .dlg-h { color:var(--ink); letter-spacing:0; text-transform:none; font-size:14px; font-weight:600; }
   #cfg-dialog { width:min(640px, calc(100vw - 20px)); }
   .cfg-keys { max-height:40vh; overflow-y:auto; font-size:12px; columns:2; column-gap:18px; }
   .cfg-keys div { break-inside:avoid; color:var(--ink-2); padding:1px 0; }
@@ -427,7 +445,7 @@
   .instrow .port { color:var(--yellow); }
   .panel h2 .meta { overflow-wrap:anywhere; min-width:0; }
   header .right { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-  #hw-line { min-width:0; flex:1 1 120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #hw-line { min-width:0; flex:1 1 40px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .strow .lab label { cursor:default; }
   .strow .lab .badge { white-space:nowrap; }
   .pathrow button { white-space:nowrap; flex:none; }
@@ -450,8 +468,9 @@
     .viewtabs button { padding:3px 10px; flex:none; }
     header .right { order:2; width:100%; }
     #hw-line { display:none; }
-    header .right { margin-left:auto; font-size:11px; }
-    .uptime-lbl { display:none; }
+    header .right { margin-left:auto; font-size:11px; flex-wrap:nowrap; }
+    .uptime-lbl, .theme-lbl { display:none; }
+    .umenu-wrap { margin-left:auto; }
     .panel { padding:10px 10px; }
     .kv { grid-template-columns:minmax(90px,auto) 1fr; gap:3px 10px; }
     .coregrid { grid-template-columns:repeat(3,1fr); }
@@ -640,11 +659,12 @@
     .chat.side-open .chat-side { display:flex; }
     .chat.side-open::before { content:""; position:absolute; inset:0; z-index:14; background:var(--scrim); }
     .chat.side-pinned #chat-side-tgl { display:inline-block; }
-    /* composer: the message box takes the row, the controls sit under it */
+    /* composer: one row — attach, message, send; the reasoning picker, when shown, sits above it */
     .chat-row { flex-wrap:wrap; }
-    #chat-in { flex:1 1 100%; order:-1; }
-    #chat-effort { flex:1; max-width:none; }
-    #chat-send, #chat-stop { margin-left:auto; }
+    #chat-in { flex:1 1 0; min-width:0; }
+    #chat-effort { flex:1 1 100%; order:-1; max-width:none; }
+    #chat-cs-btn { margin-left:auto; }
+    #chat-cs-btn .cs-lbl { display:none; }
     #mp-btn { max-width:52vw; }
     #chat-ctx, .chat-top .caps { display:none; }
     .msg.user .msg-body { max-width:95%; }
@@ -658,6 +678,7 @@
   :root[data-theme^="llama"] :is(pre, code, kbd, .logbox, .codeblk pre) {
     font-family:ui-monospace, SFMono-Regular, "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas, "Liberation Mono", Menlo, monospace; }
   :root[data-theme^="llama"] header h1 { color:var(--ink); letter-spacing:0; text-transform:none; font-size:18px; font-weight:600; }
+  :root[data-theme^="llama"] header h1::after { color:var(--muted); }
   :root[data-theme^="llama"] .panel { border-radius:14px; border-color:var(--border-dim); padding:14px 16px; }
   :root[data-theme^="llama"] .panel h2 { color:var(--ink); letter-spacing:0; text-transform:none; font-size:14px; font-weight:600;
     border-bottom-color:var(--border-dim); }
@@ -695,7 +716,12 @@
   :root[data-theme^="llama"] #chat-effort { height:34px; margin-bottom:2px; }
   :root[data-theme^="llama"] #chat-send:hover { background:color-mix(in oklch, var(--cyan) 90%, var(--page)); }
   :root[data-theme^="llama"] #chat-stop { background:var(--critical); color:#fff; border-color:var(--critical); }
-  @media (max-width:760px){ :root[data-theme^="llama"] .chat-compose { width:calc(100% - 12px); border-radius:18px; } }
+  @media (max-width:760px){
+    :root[data-theme^="llama"] .chat-compose { width:calc(100% - 12px); border-radius:18px; }
+    :root[data-theme^="llama"] #chat-in { flex:1 1 100%; order:-1; }
+    :root[data-theme^="llama"] #chat-effort { flex:1; order:0; }
+    :root[data-theme^="llama"] :is(#chat-send, #chat-stop) { margin-left:auto; }
+  }
   :root[data-theme^="llama"] .chat-row > .cbtn:first-child { background:var(--surface2); border-color:transparent; }
   :root[data-theme^="llama"] #chat-effort { border-radius:999px; }
   :root[data-theme^="llama"] .chat button.ghost { background:transparent; border-color:transparent; padding:0 6px;
@@ -716,7 +742,7 @@
   <span class="sub" id="hw-line">—</span>
   <span class="right"><span id="conn" class="pill">CONNECTING…</span>
     <span title="time since this machine booted"><span class="uptime-lbl">System Uptime </span><span id="uptime" style="color:var(--green)">—</span></span>
-    <label class="sub" for="theme-sel" style="display:inline-flex;align-items:center;gap:4px">Theme
+    <label class="sub" for="theme-sel" style="display:inline-flex;align-items:center;gap:4px"><span class="theme-lbl">Theme</span>
     <select id="theme-sel" onchange="setTheme(this.value)" title="color theme"
       style="font-size:11px;padding:1px 6px;height:auto">
       <option value="neuraldeck">NeuralDeck</option>
@@ -733,8 +759,8 @@
         <button role="menuitem" id="umenu-users" onclick="acctOpen('users')">Manage Users</button>
         <button role="menuitem" onclick="signOut()">Sign Out</button>
       </div></span>
-    <button onclick="resetLayout()" id="reset-layout"
-      title="put the dashboard panels back in their default order" style="font-size:11px;padding:1px 8px">Reset Layout</button></span>
+    <button onclick="resetLayout()" id="reset-layout" class="ibtn"
+      title="Reset Layout: put the dashboard panels back in their default order" aria-label="Reset Layout"></button></span>
 </header>
 
 <div id="view-dash">
@@ -807,13 +833,6 @@
       <div class="advisory">ceiling = peak bandwidth ÷ weight bytes (theoretical, per token)</div>
     </div>
 
-    <div class="panel">
-      <h2>Storage</h2>
-      <div id="storage"></div>
-      <dl class="kv" style="margin-top:6px">
-        <dt>Disk R/W</dt><dd id="io-disk">—</dd>
-      </dl>
-    </div>
 
     <div class="panel">
       <h2>Network / Processes</h2>
@@ -931,6 +950,13 @@
         <div class="barwrap"><div class="bar"><i id="b-ctx"></i></div><span class="barpct" id="p-ctx"></span></div></div>
       <div id="inf-insts" style="margin-top:8px"></div>
     </div>
+    <div class="panel">
+      <h2>Storage</h2>
+      <div id="storage"></div>
+      <dl class="kv" style="margin-top:6px">
+        <dt>Disk R/W</dt><dd id="io-disk">—</dd>
+      </dl>
+    </div>
 
   </div>
 </div>
@@ -967,7 +993,7 @@
       </div>
       <span class="caps" id="chat-caps"></span>
       <span id="chat-ctx" title="context used by this conversation, of the model's per-request window"></span>
-      <button onclick="csOpen()" title="all chat settings" aria-label="Chat Settings">⚙ Chat Settings</button>
+      <button id="chat-cs-btn" onclick="csOpen()" title="all chat settings" aria-label="Chat Settings">⚙<span class="cs-lbl"> Chat Settings</span></button>
     </div>
     <div id="chat-log" aria-live="polite"></div>
     <div class="chat-compose" id="chat-compose">
@@ -1035,7 +1061,7 @@
       <span style="flex:1"></span>
       <button class="danger" onclick="benchClearAll()">Clear All</button>
     </div>
-    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
+    <div id="bn-filter" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
       <input id="bn-search" class="pl-input" placeholder="search models…" aria-label="Search models"
         style="width:200px" oninput="renderBench()" autocomplete="off">
       <span id="bn-backends" style="display:flex; gap:5px; flex-wrap:wrap;" role="group" aria-label="Backend filter"></span>
@@ -1065,31 +1091,16 @@
 
 <!-- ═══════════ SETTINGS view ═══════════ -->
 <div id="view-settings" style="display:none">
-  <div class="panel" id="st-panel">
-    <h2>Settings <span class="meta" id="st-where"></span></h2>
-    <div id="st-notes"></div>
-    <div id="st-body"><div class="advisory">loading…</div></div>
-    <div class="stbar" style="position:sticky; bottom:0; background:var(--surface); padding:8px 0; z-index:2">
-      <button class="primary" id="st-save" onclick="stSave()" disabled>Save Changes</button>
-      <button id="st-revert" onclick="stDiscard()" disabled>Discard</button>
-      <span class="sub" id="st-dirty" role="status"></span>
-      <span style="flex:1"></span>
-      <button onclick="cfgExport()" title="download config.json">⬇ Export Config</button>
-      <button onclick="$('cfg-file').click()" title="load a config.json exported from here">⬆ Import Config</button>
-      <input id="cfg-file" type="file" accept="application/json,.json" hidden onchange="cfgPick(this)">
-      <button id="st-restart" onclick="stRestart()" style="display:none">↻ Restart NeuralDeck</button>
-    </div>
-  </div>
-  <div class="panel" id="tok-panel" style="margin-top:12px">
+  <div class="panel" id="tok-panel" style="margin-bottom:12px">
     <h2>Proxy Auth Tokens <span class="meta" id="tok-state"></span></h2>
     <div class="advisory" style="margin:0 0 10px">
       Bearer tokens for the proxy on port <span id="tok-port" style="color:var(--ink-2)"></span>. The proxy is open until the
       first token exists; after that every request must send one as <code>Authorization: Bearer …</code>
-      (or <code>x-api-key</code>). A token is shown once, when made; only its hash is kept. The Chat tab and Prompt Lab
+      (or <code>x-api-key</code>). <b>Show</b> reveals a token again, <b>Regenerate</b> gives it a new secret. The Chat tab and Prompt Lab
       keep working without one. Changes apply at once, no restart.
     </div>
     <div id="tok-reveal" class="tok-reveal" hidden>
-      <div class="tok-reveal-h">New token <b id="tok-reveal-name"></b> — copy it now; it will not be shown again.</div>
+      <div class="tok-reveal-h">New token <b id="tok-reveal-name"></b> — copy it now, or find it later with Show.</div>
       <div class="tok-reveal-row">
         <code id="tok-secret"></code>
         <button class="primary" onclick="tokCopy()">Copy</button>
@@ -1107,6 +1118,21 @@
       <input id="tok-name" class="pl-input" placeholder="Name, e.g. laptop or Claude Code" aria-label="Token name" maxlength="64"
         onkeydown="if(event.key==='Enter')tokCreate()">
       <button class="primary" onclick="tokCreate()">Generate Token</button>
+    </div>
+  </div>
+  <div class="panel" id="st-panel">
+    <h2>Settings <span class="meta" id="st-where"></span></h2>
+    <div id="st-notes"></div>
+    <div id="st-body"><div class="advisory">loading…</div></div>
+    <div class="stbar" style="position:sticky; bottom:0; background:var(--surface); padding:8px 0; z-index:2">
+      <button class="primary" id="st-save" onclick="stSave()" disabled>Save Changes</button>
+      <button id="st-revert" onclick="stDiscard()" disabled>Discard</button>
+      <span class="sub" id="st-dirty" role="status"></span>
+      <span style="flex:1"></span>
+      <button onclick="cfgExport()" title="download config.json">⬇ Export Config</button>
+      <button onclick="$('cfg-file').click()" title="load a config.json exported from here">⬆ Import Config</button>
+      <input id="cfg-file" type="file" accept="application/json,.json" hidden onchange="cfgPick(this)">
+      <button id="st-restart" onclick="stRestart()" style="display:none">↻ Restart NeuralDeck</button>
     </div>
   </div>
 </div>
@@ -1140,9 +1166,8 @@
         onkeydown="if(event.key==='Enter')pwChange()">
       <button class="primary" onclick="pwChange()">Change Password</button>
     </div>
-  </div>
-  <div class="panel" id="users-panel" style="margin-top:12px" hidden>
-    <h2>Users <span class="meta" id="users-count"></span></h2>
+  <div id="users-panel" class="dlg-sec" hidden>
+    <h3 class="dlg-h">Users <span class="meta" id="users-count"></span></h3>
     <div class="advisory" style="margin:0 0 10px">
       Tick the views each account may use; a view's buttons and API calls go with it. <b>Admin</b> grants everything,
       plus this panel and the proxy tokens. A new user, or one whose password an admin resets, chooses their own password
@@ -1159,6 +1184,7 @@
       <span class="acc" id="nu-acc"></span>
       <button class="primary" onclick="userCreate()">Add User</button>
     </div>
+  </div>
   </div>
 </dialog>
 
@@ -1461,6 +1487,7 @@ let chKv=null;
     col.addEventListener("drop",e=>e.preventDefault());
   });
 })();
+
 
 /* ---------- machine configuration ----------
    The deck reports its own ports, backends and defaults, so the page never
@@ -3289,9 +3316,15 @@ function tokRender(){
   const d=tokData, n=d.tokens.length, st=$("tok-state");
   $("tok-port").textContent=d.proxy_port;
   st.textContent=n?`REQUIRED · ${n} token${n===1?"":"s"}`:"OPEN · no tokens"; st.className="meta "+(n?"on":"open");
-  $("tok-rows").innerHTML=d.tokens.map(t=>`<tr><td>${escH(t.name)||"—"}</td><td><code>${escH(t.prefix)}…</code></td>`
-    +`<td>${tokWhen(t.created)}</td><td>${tokWhen(t.last_used)}</td>`
-    +`<td><button class="danger" onclick="tokRevoke('${escA(t.id)}','${escA(t.name)}')">Revoke</button></td></tr>`).join("");
+  const legacy=' disabled title="made before the deck kept secrets — Regenerate it once, then it can be shown and copied"';
+  $("tok-rows").innerHTML=d.tokens.map(t=>`<tr data-id="${escA(t.id)}"><td>${escH(t.name)||"—"}</td>`
+    +`<td class="tok-cell"><code class="tok-val">${escH(t.prefix)}…</code>`
+    +`<button class="ibtn tok-eye" onclick="tokShow('${escA(t.id)}',this)" aria-label="Show token" title="show"${t.showable?"":legacy}>${svgI("eye")}</button>`
+    +`<button class="ibtn" onclick="tokCopyId('${escA(t.id)}')" aria-label="Copy token" title="copy"${t.showable?"":legacy}>${svgI("copy")}</button>`
+    +(t.showable?"":`<span class="tok-legacy" title="made before the deck kept secrets">regenerate to show</span>`)+`</td>`
+    +`<td title="${t.rotated?"regenerated "+escA(tokWhen(t.rotated)):""}">${tokWhen(t.created)}${t.rotated?" ↻":""}</td><td>${tokWhen(t.last_used)}</td>`
+    +`<td class="tok-acts"><button onclick="tokRegen('${escA(t.id)}','${escA(t.name)}')" title="give this token a new secret; the old one stops working at once">Regenerate</button>`
+    +`<button class="danger" onclick="tokRevoke('${escA(t.id)}','${escA(t.name)}')">Revoke</button></td></tr>`).join("");
   $("tok-tblwrap").hidden=!n;
   $("tok-empty").textContent=n?"":"No tokens: the proxy answers any request. Generate one to require it.";
 }
@@ -3302,6 +3335,24 @@ async function tokCreate(){
   tokData=r; inp.value=""; tokRender();
   $("tok-reveal-name").textContent=r.created.name; $("tok-secret").textContent=r.token; $("tok-reveal").hidden=false;
   if(r.tokens.length===1) toast("the proxy now requires a token on every request","ok",{ms:8000});
+}
+async function tokSecret(id){ return (await api(`/api/tokens/${id}/secret`,"GET")).token; }
+async function tokShow(id,btn){
+  const row=btn.closest("tr"), cell=row.querySelector(".tok-val"), t=tokData.tokens.find(x=>x.id===id);
+  if(row.dataset.shown){ cell.textContent=t.prefix+"…"; delete row.dataset.shown; btn.innerHTML=svgI("eye"); btn.title="show"; btn.setAttribute("aria-label","Show token"); return; }
+  let sec; try{ sec=await tokSecret(id); }catch(e){ return; }
+  cell.textContent=sec; row.dataset.shown="1"; btn.innerHTML=svgI("eyeoff"); btn.title="hide"; btn.setAttribute("aria-label","Hide token");
+}
+async function tokCopyId(id){
+  let sec; try{ sec=await tokSecret(id); }catch(e){ return; }
+  const ok=await copyText(sec); toast(ok?"token copied":"copy failed — show it, select it and copy by hand",ok?"ok":"err");
+}
+async function tokRegen(id,name){
+  if(!confirm(`Regenerate token "${name}"?\nIt gets a new secret and anything using the old one stops working at once.`))return;
+  let r; try{ r=await api(`/api/tokens/${id}/regenerate`,"POST",{}); }catch(e){ return; }
+  tokData=r; tokRender();
+  $("tok-reveal-name").textContent=r.created.name+" (regenerated)"; $("tok-secret").textContent=r.token; $("tok-reveal").hidden=false;
+  $("tok-reveal").scrollIntoView({block:"nearest"});
 }
 async function tokCopy(){
   const ok=await copyText($("tok-secret").textContent);
@@ -3713,9 +3764,10 @@ function kvTrack(insts){
 }
 /* ---------- chat tab ---------- */
 /* A native chat client with the llama.cpp web UI's feature set and every
-   one of its settings. Conversations are kept in this browser (IndexedDB,
-   or memory when the browser refuses it); every request goes through the
-   deck to the proxy, which routes it to the model it names. */
+   one of its settings. Conversations are kept on the deck, per account
+   (chats/<account>/ in the data directory), so each signed-in user has
+   their own history and finds it from any browser; every request goes
+   through the deck to the proxy, which routes it to the model it names. */
 
 /* ── settings: the web UI's registry, same keys, labels and defaults ── */
 const CS_TITLE_PROMPT="Based on the following interaction, generate a short, concise title (maximum 6-8 words) that captures the main topic. Return ONLY the title text, nothing else. Do not use quotes.\n\nUser: {{USER}}\n\nAssistant: {{ASSISTANT}}\n\nTitle:";
@@ -3955,6 +4007,9 @@ const ICON={
   zap:'<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
   file:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
   square:'<rect x="5" y="5" width="14" height="14" rx="2"/>',
+  eyeoff:'<path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/>',
+  copy:'<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  undo:'<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/>',
   up:'<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
   plus:'<path d="M5 12h14"/><path d="M12 5v14"/>',
   chev:'<path d="m6 9 6 6 6-6"/>',
@@ -4104,23 +4159,39 @@ function chatBuildLine(){
   $("chat-build").textContent=CS.showBuildVersion?`NeuralDeck ${CFG.version||""}${c&&c.build?" · llama.cpp "+c.build:""}`.replace("  "," "):"";
 }
 
-/* ── conversations ── */
-const chatDB={db:null, mem:new Map(),
-  async open(){
-    try{ this.db=await new Promise((ok,no)=>{ const r=indexedDB.open("neuraldeck-chat",1);
-      r.onupgradeneeded=()=>r.result.createObjectStore("convs",{keyPath:"id"});
-      r.onsuccess=()=>ok(r.result); r.onerror=()=>no(r.error); }); }
-    catch(e){ this.db=null; }
-  },
-  req(mode,fn){ return new Promise((ok,no)=>{ const t=this.db.transaction("convs",mode), r=fn(t.objectStore("convs"));
-    t.oncomplete=()=>ok(r.result); t.onerror=()=>no(t.error); t.onabort=()=>no(t.error); }); },
-  async all(){ if(this.db) try{ return await this.req("readonly",s=>s.getAll()); }catch(e){}
-    return [...this.mem.values()]; },
-  async put(c){ this.mem.set(c.id,c); if(!this.db)return;
-    try{ await this.req("readwrite",s=>s.put(c)); }
-    catch(e){ toast("couldn't save this chat in the browser: "+(e&&e.message||e),"err"); } },
-  async del(id){ this.mem.delete(id); if(this.db) try{ await this.req("readwrite",s=>s.delete(id)); }catch(e){} },
+/* ── conversations: the deck keeps them per account ── */
+const chatDB={mem:new Map(),
+  async open(){ await chatMigrateLocal(); },
+  async all(){
+    try{ const r=await api("/api/chats","GET",undefined,{quiet:true}); return r.items||[]; }
+    catch(e){ toast("couldn't load your chats from the deck: "+e.message,"err"); return [...this.mem.values()]; } },
+  async put(c){ this.mem.set(c.id,c);
+    try{ await api("/api/chats/"+encodeURIComponent(c.id),"PUT",chatClean(c),{quiet:true}); }
+    catch(e){ toast("couldn't save this chat: "+e.message,"err"); } },
+  async del(id){ this.mem.delete(id); try{ await api("/api/chats/"+encodeURIComponent(id),"DELETE",undefined,{quiet:true}); }catch(e){} },
 };
+// Chats used to live in this browser (IndexedDB). The first account to open
+// the chat tab here takes them over, and the browser copy is cleared so no
+// later account on this browser sees them.
+async function chatMigrateLocal(){
+  if(!("indexedDB" in window))return;
+  let db;
+  try{ db=await new Promise((ok,no)=>{ const r=indexedDB.open("neuraldeck-chat",1);
+    r.onupgradeneeded=()=>r.result.createObjectStore("convs",{keyPath:"id"});
+    r.onsuccess=()=>ok(r.result); r.onerror=()=>no(r.error); r.onblocked=()=>no(new Error("blocked")); }); }
+  catch(e){ return; }
+  const req=(mode,fn)=>new Promise((ok,no)=>{ const t=db.transaction("convs",mode), r=fn(t.objectStore("convs"));
+    t.oncomplete=()=>ok(r&&r.result); t.onerror=()=>no(t.error); t.onabort=()=>no(t.error); });
+  try{
+    const old=(await req("readonly",s=>s.getAll())).filter(c=>c&&Array.isArray(c.messages));
+    if(old.length){
+      for(const c of old) await api("/api/chats/"+encodeURIComponent(c.id),"PUT",chatClean(c),{quiet:true});
+      await req("readwrite",s=>s.clear());
+      toast(`moved ${old.length} chat${old.length>1?"s":""} from this browser to ${ME.auth?"your account":"the deck"}`,"ok");
+    }
+  }catch(e){}
+  db.close();
+}
 let chatConvs=[], chatCur=null, chatAbort=null, chatAtts=[], chatReady=false, chatRaf=0, chatPreAbort=null;
 const chatId=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 
@@ -4246,8 +4317,9 @@ async function chatImport(inp){
 }
 async function chatDeleteAll(){
   if(!chatConvs.length){ toast("no saved chats"); return; }
-  if(!confirm(`Delete all ${chatConvs.length} saved chats from this browser? This can't be undone.`))return;
-  for(const c of chatConvs) await chatDB.del(c.id);
+  if(!confirm(`Delete all ${chatConvs.length} saved chats${ME.auth?" of "+ME.name:""}? This can't be undone.`))return;
+  try{ await api("/api/chats","DELETE"); }catch(e){ return; }
+  chatDB.mem.clear();
   chatConvs=[]; chatNew(); if($("cs-dialog").open) csRenderBody();
   toast("all chats deleted","ok");
 }
@@ -4260,7 +4332,7 @@ function csImportExportHTML(){
       <div class="help">Load a JSON file exported from here (one chat or many). Imported chats are added; nothing is replaced.</div>
       <div style="margin-top:6px"><button onclick="$('chat-import').click()">Import…</button></div></div>
     <div class="cs-f"><label><span>Delete all conversations</span></label>
-      <div class="help">Removes every saved chat from this browser.</div>
+      <div class="help">Removes every saved chat of this account.</div>
       <div style="margin-top:6px"><button class="danger" onclick="chatDeleteAll()">Delete All</button></div></div>`;
 }
 
@@ -5121,6 +5193,7 @@ function chatComposerSync(){
 }
 $("chat-send").innerHTML=svgI("up"); $("chat-stop").innerHTML=svgI("square");
 document.querySelector(".chat-row .cbtn").innerHTML=svgI("plus");
+$("reset-layout").innerHTML=svgI("undo");
 function chatGrow(){ const t=$("chat-in"); t.style.height="auto"; t.style.height=Math.min(240,t.scrollHeight+2)+"px"; }
 $("chat-in").addEventListener("input",()=>{ chatGrow(); chatComposerSync(); });
 $("chat-in").addEventListener("keydown",e=>{

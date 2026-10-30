@@ -16,6 +16,8 @@ API behind it:
   POST /api/llama/{port}/stop   stop one instance
   GET  /api/launch/status       progress of an in-flight launch
   POST /api/chat                same-origin relay to the proxy (Prompt Lab)
+  GET  /api/chats               the signed-in account's saved chats
+  PUT  /api/chats/{id}          save one; DELETE removes one, DELETE /api/chats all
   GET  /api/bench               benchmark history
   GET  /api/hf/*                Hugging Face browse + download
 
@@ -43,7 +45,7 @@ from fastapi.responses import (FileResponse, JSONResponse, RedirectResponse, Res
 from starlette.background import BackgroundTask
 
 from . import __version__
-from . import (bench, config, gguf, launcher, llama_log, models, procs,
+from . import (bench, chats, config, gguf, launcher, llama_log, models, procs,
                services, settings, sysinfo, tokens, users)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -267,7 +269,7 @@ _MUST_CHANGE_OK = {"/api/me", "/api/me/password", "/api/logout", "/login", "/api
 # accounts and proxy tokens are admin-only whatever the access list.
 _VIEW_OF_PATH = [
     (re.compile(r"^/api/(models|llama/|launch/status|service/|logs/|hf/)"), "dash"),
-    (re.compile(r"^/api/(px/|mcp)"), "chat"),
+    (re.compile(r"^/api/(px/|mcp|chats)"), "chat"),
     (re.compile(r"^/api/chat$"), ("chat", "prompt")),
     (re.compile(r"^/api/bench"), ("bench", "prompt")),
     (re.compile(r"^/api/(settings|browse|restart)"), "settings"),
@@ -952,6 +954,26 @@ async def tokens_create(body: dict):
     return {**_tokens_payload(), "created": row, "token": secret}
 
 
+@app.get("/api/tokens/{token_id}/secret")
+async def tokens_secret(token_id: str):
+    sec = await asyncio.to_thread(tokens.secret, token_id)
+    if sec is None:
+        raise HTTPException(404, "that token's secret is not on file — regenerate it to get one you can show")
+    return {"token": sec}
+
+
+@app.post("/api/tokens/{token_id}/regenerate")
+async def tokens_regenerate(token_id: str):
+    try:
+        got = await asyncio.to_thread(tokens.regenerate, token_id)
+    except OSError as e:
+        raise HTTPException(500, f"could not write {tokens.FILE}: {e}")
+    if got is None:
+        raise HTTPException(404, "no such token")
+    row, sec = got
+    return {**_tokens_payload(), "created": row, "token": sec}
+
+
 @app.delete("/api/tokens/{token_id}")
 async def tokens_revoke(token_id: str):
     try:
@@ -961,6 +983,58 @@ async def tokens_revoke(token_id: str):
     if not ok:
         raise HTTPException(404, "no such token")
     return _tokens_payload()
+
+
+# ---------------------------------------------------------------------------
+# Saved chats: one store per account, so a user sees only their own history
+# and finds it again from any browser.
+# ---------------------------------------------------------------------------
+
+def _chat_account(request: Request) -> str:
+    return _user(request).get("name") or chats.LOCAL
+
+
+@app.get("/api/chats")
+async def chats_list(request: Request):
+    acct = _chat_account(request)
+    return {"items": await asyncio.to_thread(chats.list_convs, acct)}
+
+
+@app.put("/api/chats/{cid}")
+async def chats_put(cid: str, request: Request):
+    try:
+        if int(request.headers.get("content-length") or 0) > chats.MAX_BYTES:
+            raise HTTPException(413, f"this conversation is over {chats.MAX_BYTES // (1024 * 1024)} MB")
+        conv = await request.json()
+    except ValueError:
+        raise HTTPException(400, "the body is not JSON")
+    try:
+        await asyncio.to_thread(chats.put, _chat_account(request), cid, conv)
+    except chats.ChatError as e:
+        raise HTTPException(e.status, str(e))
+    except OSError as e:
+        raise HTTPException(500, f"could not save the chat: {e}")
+    return {"ok": True}
+
+
+@app.delete("/api/chats/{cid}")
+async def chats_delete(cid: str, request: Request):
+    try:
+        gone = await asyncio.to_thread(chats.delete, _chat_account(request), cid)
+    except chats.ChatError as e:
+        raise HTTPException(e.status, str(e))
+    except OSError as e:
+        raise HTTPException(500, f"could not delete the chat: {e}")
+    return {"ok": True, "deleted": gone}
+
+
+@app.delete("/api/chats")
+async def chats_clear(request: Request):
+    try:
+        n = await asyncio.to_thread(chats.clear, _chat_account(request))
+    except chats.ChatError as e:
+        raise HTTPException(e.status, str(e))
+    return {"ok": True, "deleted": n}
 
 
 @app.post("/api/chat")

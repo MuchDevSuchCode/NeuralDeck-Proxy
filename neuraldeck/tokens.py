@@ -3,8 +3,10 @@
 The proxy is open until the first token is generated; from then on every
 request (bar /health and the web UI's page) must carry one, as
 ``Authorization: Bearer <token>`` or ``x-api-key: <token>``. Tokens are
-made on the Settings page, shown once, and only their SHA-256 is kept in
-``proxy_tokens.json`` in the data directory. Revoking is deleting the row.
+made on the Settings page and kept in ``proxy_tokens.json`` in the data
+directory (mode 0600): the SHA-256 the proxy checks against, and, so the
+page can show a token again, the secret itself. Revoking is deleting the
+row; regenerating gives a row a new secret and keeps its name and history.
 
 The dashboard talks to the proxy on the user's behalf (the Chat tab, the
 Prompt Lab) and needs no token of its own: both processes run as the same
@@ -84,7 +86,8 @@ def _hash(secret: str) -> str:
 
 def _public(t: dict) -> dict:
     return {"id": t["id"], "name": t.get("name") or "", "prefix": t.get("prefix", ""),
-            "created": t.get("created"), "last_used": t.get("last_used")}
+            "created": t.get("created"), "rotated": t.get("rotated"), "last_used": t.get("last_used"),
+            "showable": bool(t.get("secret"))}
 
 
 def list_tokens() -> list:
@@ -97,18 +100,46 @@ def required() -> bool:
     return bool(_read())
 
 
+def _fresh() -> str:
+    return PREFIX + secrets.token_urlsafe(32)
+
+
 def create(name: str) -> tuple:
-    """A new token: (its public row, the secret). The secret is returned
-    exactly once; only its hash is stored."""
+    """A new token: (its public row, the secret)."""
     name = (name or "").strip()[:64]
-    secret = PREFIX + secrets.token_urlsafe(32)
+    secret = _fresh()
     row = {"id": secrets.token_hex(6), "name": name, "prefix": secret[:len(PREFIX) + 6],
-           "hash": _hash(secret), "created": int(time.time()), "last_used": None}
+           "hash": _hash(secret), "secret": secret, "created": int(time.time()), "last_used": None}
     with _lock:
         tokens = list(_read())
         tokens.append(row)
         _write(tokens)
     return _public(row), secret
+
+
+def secret(token_id: str):
+    """A token's secret, or None when there is no such token or it was made
+    before secrets were kept (regenerate it to get one that can be shown)."""
+    with _lock:
+        for t in _read():
+            if t.get("id") == token_id:
+                return t.get("secret") or None
+    return None
+
+
+def regenerate(token_id: str):
+    """Give a token a new secret; the old one stops working at once. The
+    (public row, secret), or None when there is no such token."""
+    new = _fresh()
+    with _lock:
+        tokens = list(_read())
+        for t in tokens:
+            if t.get("id") == token_id:
+                t.update({"prefix": new[:len(PREFIX) + 6], "hash": _hash(new), "secret": new,
+                          "rotated": int(time.time())})
+                _write(tokens)
+                return _public(t), new
+    return None
 
 
 def revoke(token_id: str) -> bool:

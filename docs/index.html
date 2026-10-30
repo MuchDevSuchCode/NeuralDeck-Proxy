@@ -206,7 +206,7 @@
     </div>
     <div class="cards">
 <div class="card"><h3>Dashboard</h3><p>live CPU/GPU/VRAM/thermal telemetry, every running model server with the flags it was launched with, KV-cache occupancy, a roofline estimate, per-service start/stop, logs, and model management: launch, relaunch, delete, and download from Hugging Face.</p></div>
-<div class="card"><h3>Chat</h3><p>a full port of the llama.cpp web UI, every setting included: conversations saved in the browser (search, rename, export/import), a model picker with capability icons (vision, audio, video, reasoning, tools, speculative decoding), streaming markdown with code, tables and math, reasoning effort, edit/regenerate/continue/stop, image, PDF, text, audio, video and voice attachments, all sampling and penalty parameters, and tool calling with permission prompts: llama-server built-ins, a sandboxed JavaScript tool and MCP servers (relayed through the deck to avoid CORS).</p></div>
+<div class="card"><h3>Chat</h3><p>a full port of the llama.cpp web UI, every setting included: conversations saved per account (search, rename, export/import), a model picker with capability icons (vision, audio, video, reasoning, tools, speculative decoding), streaming markdown with code, tables and math, reasoning effort, edit/regenerate/continue/stop, image, PDF, text, audio, video and voice attachments, all sampling and penalty parameters, and tool calling with permission prompts: llama-server built-ins, a sandboxed JavaScript tool and MCP servers (relayed through the deck to avoid CORS).</p></div>
 <div class="card"><h3>Prompt Lab</h3><p>send a prompt to any loaded model and watch it stream, with time-to-first-token, prefill/decode throughput and draft acceptance measured per run.</p></div>
 <div class="card"><h3>Benchmarks</h3><p>every request through the stack is recorded, from the Prompt Lab, from a standard prompt, or from any other client on your network. Compare models, backends and speculation settings on medians.</p></div>
 <div class="card"><h3>Settings</h3><p>point NeuralDeck at your model folders and server builds from the page itself, with a file picker, validation, and an honest account of which changes apply at once and which need a restart.</p></div>
@@ -504,6 +504,12 @@ user out everywhere.</li>
 yourself, untick your own Admin box, or delete the last admin.</li>
 <li>Everyone changes their own password under <strong>Account</strong> in that menu.</li>
 </ul>
+<p>Chats are per account. Each signed-in user has their own conversation
+history, kept on the deck under <code>chats/&lt;name&gt;/</code> in the data directory, so
+nobody sees anyone else's chats and a history follows its account to any
+browser. Chats that an older NeuralDeck kept in the browser are moved to
+the account of whoever opens the Chat tab in that browser next, then
+cleared from it. With sign-in off there is one shared history.</p>
 <p>Sessions last 30 days of inactivity and survive a restart. Ten failed
 sign-ins in ten minutes lock that name for a few minutes. Passwords are
 stored as scrypt hashes in <code>users.json</code>, sessions in <code>sessions.json</code>,
@@ -1357,7 +1363,7 @@ a setting the proxy reads restarts it, like a save. Accounts, sessions,
 proxy tokens and the benchmark history are not part of the config and are
 untouched.</p>
 <h3 id="proxy-auth-tokens"><a class="hash" href="#proxy-auth-tokens" aria-label="Link to this section">#</a>Proxy auth tokens</h3>
-<p>Not a config.json setting but a panel of its own at the bottom of the
+<p>Not a config.json setting but a panel of its own at the top of the
 Settings page. The proxy accepts any request until the first token is
 generated; from then on every request (except <code>GET /health</code> and the web
 UI's page) must send one, as <code>Authorization: Bearer &lt;token&gt;</code> or as
@@ -1365,12 +1371,21 @@ UI's page) must send one, as <code>Authorization: Bearer &lt;token&gt;</code> or
 error shape (OpenAI or Anthropic).</p>
 <ul>
 <li><strong>Generate Token</strong> makes one under the name you give it (what will use
-it: a laptop, Claude Code, a script). The token is shown once, with a
-Copy button; only its SHA-256 is stored, in <code>proxy_tokens.json</code> in the
-data directory, so a lost token is replaced, not recovered.</li>
+it: a laptop, Claude Code, a script). The token appears with a Copy
+button.</li>
 <li>The table shows each token's name, its first characters, when it was
-made and when it was last used. <strong>Revoke</strong> deletes it; whatever used it
-fails on its next request.</li>
+made and when it was last used. The eye beside a token reveals the whole
+of it and the copy icon copies it; <strong>Regenerate</strong> gives it a new secret,
+so whatever used the old one stops at once and the name and history
+stay; <strong>Revoke</strong> deletes it, and whatever used it fails on its next
+request.</li>
+<li>Tokens are kept in <code>proxy_tokens.json</code> in the data directory, readable
+only by your user: the SHA-256 the proxy checks against and, so Show can
+work, the token itself. Anyone who can read that file can use the
+proxy, which was already true of the dashboard's own key beside it.
+Tokens made by an older NeuralDeck have no stored secret, so their eye
+and copy icons are greyed out (&quot;regenerate to show&quot;) until they are
+regenerated once.</li>
 <li>Revoking the last token makes the proxy open again.</li>
 <li>Changes take effect at once: the proxy re-reads the file when it changes.</li>
 <li>The Chat tab and Prompt Lab keep working without a token. They reach the
@@ -1609,8 +1624,9 @@ Windows, or wherever <code>NEURALDECK_HOME</code> points. The Settings tab and
 ├── users.json             ← dashboard accounts (scrypt hashes); mode 0600
 ├── sessions.json          ← dashboard sign-in sessions; mode 0600
 ├── admin-initial-password.txt ← the first admin password, until it is changed
-├── proxy_tokens.json      ← proxy auth tokens (hashes only); mode 0600
+├── proxy_tokens.json      ← proxy auth tokens (hash and secret); mode 0600
 ├── proxy_internal.key     ← the dashboard's own key for the proxy; mode 0600
+├── chats/&lt;account&gt;/       ← each account's saved chats, one JSON file per chat; mode 0600
 ├── bench.jsonl            ← benchmark history (newest 5,000 runs)
 ├── last-model.txt         ← the last model launched
 ├── logs/
@@ -1691,8 +1707,8 @@ a view the account lacks answers 403.</p>
 <td data-label="Purpose"><span class="cell">download <code>config.json</code>; apply one (<code>{&quot;config&quot;: {...}, &quot;replace&quot;: bool}</code>)</span></td>
 </tr>
 <tr>
-<td data-label="Method and path"><span class="cell"><code>GET /api/tokens</code>, <code>POST /api/tokens</code>, <code>DELETE /api/tokens/{id}</code></span></td>
-<td data-label="Purpose"><span class="cell">proxy auth tokens: list, generate (<code>{&quot;name&quot;: …}</code>; the reply's <code>token</code> is shown once), revoke</span></td>
+<td data-label="Method and path"><span class="cell"><code>GET /api/tokens</code>, <code>POST /api/tokens</code>, <code>GET /api/tokens/{id}/secret</code>, <code>POST /api/tokens/{id}/regenerate</code>, <code>DELETE /api/tokens/{id}</code></span></td>
+<td data-label="Purpose"><span class="cell">proxy auth tokens: list, generate (<code>{&quot;name&quot;: …}</code>; the reply carries the <code>token</code>), show one, give one a new secret, revoke</span></td>
 </tr>
 <tr>
 <td data-label="Method and path"><span class="cell"><code>GET /api/browse?path=&amp;mode=dir|file&amp;ext=</code></span></td>
@@ -1701,6 +1717,10 @@ a view the account lacks answers 403.</p>
 <tr>
 <td data-label="Method and path"><span class="cell"><code>POST /api/restart</code></span></td>
 <td data-label="Purpose"><span class="cell">restart the dashboard</span></td>
+</tr>
+<tr>
+<td data-label="Method and path"><span class="cell"><code>GET /api/chats</code>, <code>PUT /api/chats/{id}</code>, <code>DELETE /api/chats/{id}</code>, <code>DELETE /api/chats</code></span></td>
+<td data-label="Purpose"><span class="cell">the signed-in account's saved chats: list, save one (the body is the conversation), delete one, delete all</span></td>
 </tr>
 <tr>
 <td data-label="Method and path"><span class="cell"><code>POST /api/chat</code></span></td>

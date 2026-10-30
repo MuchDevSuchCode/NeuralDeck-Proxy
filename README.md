@@ -9,7 +9,7 @@ runs on **Linux and Windows** (macOS for everything but GPU telemetry).
   roofline estimate, per-service start/stop, logs, and model management:
   launch, relaunch, delete, and download from Hugging Face.
 * **Chat**: a full port of the llama.cpp web UI, every setting included:
-  conversations saved in the browser (search, rename, export/import), a
+  conversations saved per account (search, rename, export/import), a
   model picker with capability icons (vision, audio, video, reasoning,
   tools, speculative decoding), streaming markdown with code, tables and
   math, reasoning effort, edit/regenerate/continue/stop, image, PDF, text,
@@ -358,6 +358,13 @@ New accounts start with every view but Settings.
 * **Delete** removes the account and ends its sessions. You cannot delete
   yourself, untick your own Admin box, or delete the last admin.
 * Everyone changes their own password under **Account** in that menu.
+
+Chats are per account. Each signed-in user has their own conversation
+history, kept on the deck under `chats/<name>/` in the data directory, so
+nobody sees anyone else's chats and a history follows its account to any
+browser. Chats that an older NeuralDeck kept in the browser are moved to
+the account of whoever opens the Chat tab in that browser next, then
+cleared from it. With sign-in off there is one shared history.
 
 Sessions last 30 days of inactivity and survive a restart. Ten failed
 sign-ins in ten minutes lock that name for a few minutes. Passwords are
@@ -824,7 +831,7 @@ untouched.
 
 ### Proxy auth tokens
 
-Not a config.json setting but a panel of its own at the bottom of the
+Not a config.json setting but a panel of its own at the top of the
 Settings page. The proxy accepts any request until the first token is
 generated; from then on every request (except `GET /health` and the web
 UI's page) must send one, as `Authorization: Bearer <token>` or as
@@ -832,12 +839,21 @@ UI's page) must send one, as `Authorization: Bearer <token>` or as
 error shape (OpenAI or Anthropic).
 
 * **Generate Token** makes one under the name you give it (what will use
-  it: a laptop, Claude Code, a script). The token is shown once, with a
-  Copy button; only its SHA-256 is stored, in `proxy_tokens.json` in the
-  data directory, so a lost token is replaced, not recovered.
+  it: a laptop, Claude Code, a script). The token appears with a Copy
+  button.
 * The table shows each token's name, its first characters, when it was
-  made and when it was last used. **Revoke** deletes it; whatever used it
-  fails on its next request.
+  made and when it was last used. The eye beside a token reveals the whole
+  of it and the copy icon copies it; **Regenerate** gives it a new secret,
+  so whatever used the old one stops at once and the name and history
+  stay; **Revoke** deletes it, and whatever used it fails on its next
+  request.
+* Tokens are kept in `proxy_tokens.json` in the data directory, readable
+  only by your user: the SHA-256 the proxy checks against and, so Show can
+  work, the token itself. Anyone who can read that file can use the
+  proxy, which was already true of the dashboard's own key beside it.
+  Tokens made by an older NeuralDeck have no stored secret, so their eye
+  and copy icons are greyed out ("regenerate to show") until they are
+  regenerated once.
 * Revoking the last token makes the proxy open again.
 * Changes take effect at once: the proxy re-reads the file when it changes.
 * The Chat tab and Prompt Lab keep working without a token. They reach the
@@ -968,8 +984,9 @@ neuraldeck/
 ├── users.json             ← dashboard accounts (scrypt hashes); mode 0600
 ├── sessions.json          ← dashboard sign-in sessions; mode 0600
 ├── admin-initial-password.txt ← the first admin password, until it is changed
-├── proxy_tokens.json      ← proxy auth tokens (hashes only); mode 0600
+├── proxy_tokens.json      ← proxy auth tokens (hash and secret); mode 0600
 ├── proxy_internal.key     ← the dashboard's own key for the proxy; mode 0600
+├── chats/<account>/       ← each account's saved chats, one JSON file per chat; mode 0600
 ├── bench.jsonl            ← benchmark history (newest 5,000 runs)
 ├── last-model.txt         ← the last model launched
 ├── logs/
@@ -1004,9 +1021,10 @@ a view the account lacks answers 403.
 | `GET /api/users`, `POST /api/users`, `DELETE /api/users/{name}`, `POST /api/users/{name}/password`, `POST /api/users/{name}/access` | accounts (admin): list, add (`{"name", "password", "role", "access"}`), delete, reset a password, change role and/or access (`{"role": "admin"\|"user", "access": ["dash", "chat", "prompt", "bench", "settings"]}`) |
 | `GET /api/settings`, `POST /api/settings` | read or save settings |
 | `GET /api/settings/export`, `POST /api/settings/import` | download `config.json`; apply one (`{"config": {...}, "replace": bool}`) |
-| `GET /api/tokens`, `POST /api/tokens`, `DELETE /api/tokens/{id}` | proxy auth tokens: list, generate (`{"name": …}`; the reply's `token` is shown once), revoke |
+| `GET /api/tokens`, `POST /api/tokens`, `GET /api/tokens/{id}/secret`, `POST /api/tokens/{id}/regenerate`, `DELETE /api/tokens/{id}` | proxy auth tokens: list, generate (`{"name": …}`; the reply carries the `token`), show one, give one a new secret, revoke |
 | `GET /api/browse?path=&mode=dir\|file&ext=` | directory listing for the file picker |
 | `POST /api/restart` | restart the dashboard |
+| `GET /api/chats`, `PUT /api/chats/{id}`, `DELETE /api/chats/{id}`, `DELETE /api/chats` | the signed-in account's saved chats: list, save one (the body is the conversation), delete one, delete all |
 | `POST /api/chat` | same-origin relay to the proxy (used by the Chat tab and Prompt Lab); signs with the dashboard's internal key once tokens are required |
 | `GET /api/bench`, `POST /api/bench`, `POST /api/bench/delete`, `POST /api/bench/clear` | benchmark history |
 | `GET /api/hf/search`, `/api/hf/files`, `/api/hf/card` | Hugging Face search, file lists and model-card descriptions (`format=gguf\|hf`) |
