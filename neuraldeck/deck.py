@@ -282,7 +282,7 @@ _MUST_CHANGE_OK = {"/api/me", "/api/me/password", "/api/logout", "/login", "/api
 # accounts and proxy tokens are admin-only whatever the access list.
 _VIEW_OF_PATH = [
     (re.compile(r"^/api/(models|llama/|launch/status|service/|logs/|hf/)"), "dash"),
-    (re.compile(r"^/api/(px/|mcp|chats|tools|generated)"), "chat"),
+    (re.compile(r"^/api/(px/|mcp|chats|tools|generated|images/)"), "chat"),
     (re.compile(r"^/api/chat$"), ("chat", "prompt")),
     (re.compile(r"^/api/bench"), ("bench", "prompt")),
     (re.compile(r"^/api/(settings|browse|restart)"), "settings"),
@@ -1021,6 +1021,25 @@ async def tools_run(body: dict, request: Request):
     except tools.ToolError as e:
         return {"error": str(e)}
     return {"result": text}
+
+
+@app.get("/api/images/progress")
+async def images_progress(request: Request):
+    """How far sd-server is through this account's image, with its latest
+    latent preview, for the chat's generation animation."""
+    jid = tools.IMAGE_JOBS.get(_chat_account(request))
+    if not jid:
+        return {"busy": False}
+    try:
+        r = await _px_client.get(f"{config.SD_URL.rstrip('/')}/sdcpp/v1/jobs/{jid}", timeout=3.0)
+        d = r.json() if r.status_code == 200 else {}
+    except (httpx.HTTPError, ValueError):
+        return {"busy": False}
+    pv = d.get("preview") or {}
+    step, steps = int(pv.get("step") or 0), int(pv.get("total_steps") or 0)
+    return {"busy": d.get("status") in ("queued", "generating", "running"), "status": d.get("status"),
+            "progress": (step / steps) if steps else 0.0, "step": step, "steps": steps,
+            "image": pv.get("b64_json") or None}
 
 
 _GEN_NAME = re.compile(r"^[\w.-]{1,80}$")

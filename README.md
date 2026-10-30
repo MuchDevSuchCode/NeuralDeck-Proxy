@@ -669,6 +669,25 @@ curl http://localhost:8080/v1/images/generations -H "Authorization: Bearer $TOKE
   -d '{"prompt": "a lighthouse at dawn, oil painting", "size": "1024x1024"}' | jq -r '.data[0].b64_json' | base64 -d > out.png
 ```
 
+**Swapping the text encoder.** Any Qwen3-4B variant can stand in for the
+stock encoder, in GGUF or safetensors; set it under **Text Encoder** and
+restart sd-server. The encoder is where prompt understanding lives and it
+has no filter of its own, but the stock one does flatten some prompts.
+[BennyDaBall/Qwen3-4b-Z-Image-Turbo-AbliteratedV1](https://huggingface.co/BennyDaBall/Qwen3-4b-Z-Image-Turbo-AbliteratedV1)
+is the Z-Image encoder itself with refusal directions removed, at a
+reported KL divergence of 0.0004 from the original; its Q8 GGUF is 4.3 GB,
+3.7 GB smaller than the bf16 safetensors, and renders the same prompt and
+seed near-identically.
+
+**Your words, verbatim.** When a chat model calls `generate_image`, it
+composes the prompt, and chat models tend to soften what they pass on: a
+request for an artistic nude comes out as a portrait. The tool tells the
+model to pass wording through faithfully, which helps, but the sure way
+around it is to skip the model: type `/image <prompt>` in the chat and
+the exact text goes to the generator, with `--size 1024x768`, `--seed 7`
+and `--neg <text>` as options. An abliterated chat model (several are in
+your model list) also stops softening prompts it composes itself.
+
 ComfyUI is still supported as the chat tool's fallback: when sd-server is
 not running but a workflow file is set, `generate_image` uses that.
 

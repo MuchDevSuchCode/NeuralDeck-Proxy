@@ -1027,6 +1027,23 @@ docs for each.</p>
   -H &quot;Content-Type: application/json&quot; \
   -d '{&quot;prompt&quot;: &quot;a lighthouse at dawn, oil painting&quot;, &quot;size&quot;: &quot;1024x1024&quot;}' | jq -r '.data[0].b64_json' | base64 -d &gt; out.png
 </code></pre>
+<p><strong>Swapping the text encoder.</strong> Any Qwen3-4B variant can stand in for the
+stock encoder, in GGUF or safetensors; set it under <strong>Text Encoder</strong> and
+restart sd-server. The encoder is where prompt understanding lives and it
+has no filter of its own, but the stock one does flatten some prompts.
+<a href="https://huggingface.co/BennyDaBall/Qwen3-4b-Z-Image-Turbo-AbliteratedV1">BennyDaBall/Qwen3-4b-Z-Image-Turbo-AbliteratedV1</a>
+is the Z-Image encoder itself with refusal directions removed, at a
+reported KL divergence of 0.0004 from the original; its Q8 GGUF is 4.3 GB,
+3.7 GB smaller than the bf16 safetensors, and renders the same prompt and
+seed near-identically.</p>
+<p><strong>Your words, verbatim.</strong> When a chat model calls <code>generate_image</code>, it
+composes the prompt, and chat models tend to soften what they pass on: a
+request for an artistic nude comes out as a portrait. The tool tells the
+model to pass wording through faithfully, which helps, but the sure way
+around it is to skip the model: type <code>/image &lt;prompt&gt;</code> in the chat and
+the exact text goes to the generator, with <code>--size 1024x768</code>, <code>--seed 7</code>
+and <code>--neg &lt;text&gt;</code> as options. An abliterated chat model (several are in
+your model list) also stops softening prompts it composes itself.</p>
 <p>ComfyUI is still supported as the chat tool's fallback: when sd-server is
 not running but a workflow file is set, <code>generate_image</code> uses that.</p>
 <h2 id="prompt-lab"><a class="hash" href="#prompt-lab" aria-label="Link to this section">#</a>Prompt Lab</h2>

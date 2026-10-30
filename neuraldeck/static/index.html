@@ -580,7 +580,39 @@
     font-size:1.05em; margin:1em 0 .4em; color:var(--ink); border:0; padding:0; text-transform:none; letter-spacing:0; }
   .msg-body h1 { font-size:1.35em; } .msg-body h2 { font-size:1.2em; }
   .msg-body .md-img { display:block; max-width:min(100%,640px); border-radius:6px; margin:6px 0; }
+  /* image generation in progress: the latent preview sharpening up behind a light sweep */
+  .imgen { display:flex; gap:14px; align-items:flex-end; padding:8px 10px 10px; }
+  .imgen-frame { position:relative; width:220px; max-width:60%; aspect-ratio:var(--ar,1); flex:none; overflow:hidden; border-radius:8px;
+    border:1px solid var(--border-dim); background:
+      radial-gradient(ellipse at 30% 20%, color-mix(in srgb, var(--cyan) 22%, transparent), transparent 60%),
+      radial-gradient(ellipse at 80% 80%, color-mix(in srgb, var(--pink) 18%, transparent), transparent 55%), var(--surface2); }
+  .imgen-prev { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:0; transition:opacity .6s ease; filter:blur(6px) saturate(1.1); }
+  .imgen-prev.on { opacity:1; }
+  .imgen-prev.sharp { filter:none; transition:opacity .4s ease, filter 1.2s ease; }
+  .imgen-sheen { position:absolute; inset:-40% -60%; background:linear-gradient(115deg, transparent 40%, color-mix(in srgb, #fff 28%, transparent) 50%, transparent 60%);
+    animation:imgen-sweep 2.2s ease-in-out infinite; pointer-events:none; }
+  .imgen-grid { position:absolute; inset:0; pointer-events:none; background-image:
+      linear-gradient(color-mix(in srgb, var(--cyan) 14%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in srgb, var(--cyan) 14%, transparent) 1px, transparent 1px);
+    background-size:22px 22px; animation:imgen-grid 1.6s linear infinite; opacity:.9; transition:opacity .5s; }
+  .imgen-frame.has-preview .imgen-grid { opacity:.25; }
+  .imgen-frame.has-preview { border-color:color-mix(in srgb, var(--cyan) 45%, transparent); }
+  .imgen-meta { flex:1; min-width:120px; }
+  .imgen-bar { height:6px; border-radius:3px; background:var(--surface2); border:1px solid var(--border-dim); overflow:hidden; }
+  .imgen-bar i { display:block; height:100%; width:0; border-radius:3px; transition:width .6s ease;
+    background:linear-gradient(90deg, var(--cyan), var(--pink)); box-shadow:0 0 10px color-mix(in srgb, var(--cyan) 50%, transparent); }
+  .imgen-bar.pulse i { animation:imgen-pulse 1.4s ease-in-out infinite; width:30%; }
+  .imgen-txt { color:var(--muted); font-size:11.5px; margin-top:6px; font-variant-numeric:tabular-nums; }
+  .imgen-txt b { color:var(--ink-2); font-weight:600; }
+  @keyframes imgen-sweep { 0% { transform:translateX(-45%); } 100% { transform:translateX(45%); } }
+  @keyframes imgen-grid { 0% { background-position:0 0, 0 0; } 100% { background-position:0 22px, 22px 0; } }
+  @keyframes imgen-pulse { 0% { margin-left:-30%; } 100% { margin-left:100%; } }
+  @media (prefers-reduced-motion: reduce){ .imgen-sheen, .imgen-grid, .imgen-bar.pulse i { animation:none; } }
+  :root[data-theme^="llama"] .imgen-bar i { background:var(--ink); box-shadow:none; }
   .msg-body .md-audio { display:block; max-width:420px; margin:6px 0; }
+  .tool-media { margin:-2px 0 10px; }
+  .tool-media .md-img { display:block; max-width:min(100%,640px); border-radius:8px; border:1px solid var(--border-dim); }
+  .tool-media .sub { margin-top:4px; font-size:11px; }
   .msg-body ul,.msg-body ol { margin:.2em 0 .7em; padding-left:1.6em; }
   .msg-body li { margin:.15em 0; } .msg-body li > p { margin:0; }
   .msg-body blockquote { margin:.4em 0; padding:.1em .9em; border-left:3px solid var(--border); color:var(--ink-2); }
@@ -4547,18 +4579,37 @@ function chatAttsHTML(atts){
       a.kind==="pdf"?` · ${a.pages?a.pages.length+" pages":""}`:""}</span>`).join("")}</div>`;
 }
 const TOOL_ST={pending:"QUEUED",asking:"WAITING FOR YOUR OK",running:"RUNNING…",done:"DONE",error:"ERROR",denied:"DENIED"};
-function chatToolHTML(t){
+function chatToolHTML(t,content=""){
   let args=t.args||"";
   try{ args=JSON.stringify(JSON.parse(args||"{}"),null,2); }catch(e){}
-  const open=t.status==="asking"||t.status==="running"&&CS.showToolCallInProgress||(t.uiOpen??CS.showToolCallInProgress);
+  const imgen=t.name==="generate_image"&&t.status==="running";
+  const open=imgen||t.status==="asking"||t.status==="running"&&CS.showToolCallInProgress||(t.uiOpen??CS.showToolCallInProgress);
   const cls=t.status==="error"||t.status==="denied"?" err":t.status==="done"?" ok":"";
+  let ar=1; if(imgen) try{ const a=JSON.parse(t.args||"{}"); if(a.width>0&&a.height>0) ar=a.width/a.height; }catch(e){}
   return `<details class="tool" data-tid="${escA(t.id)}"${open?" open":""}><summary>${svgI("wrench")} <b>${escH(t.name)}</b>`+
     `${t.source?` <span class="sub">${escH(t.source)}</span>`:""} · <span class="tool-st${cls}">${TOOL_ST[t.status]||t.status}</span></summary>`+
+    (imgen?`<div class="imgen" data-tid="${escA(t.id)}"><div class="imgen-frame" style="--ar:${ar.toFixed(3)}"><img class="imgen-prev" alt=""><div class="imgen-grid"></div><div class="imgen-sheen"></div></div>
+      <div class="imgen-meta"><div class="imgen-bar pulse"><i></i></div><div class="imgen-txt">warming up…</div></div></div>`:"")+
     `<div class="tbody"><div class="tlabel">arguments</div><pre>${escH(args)}</pre>`+
     (t.result!=null?`<div class="tlabel">result</div><pre>${escH(t.result)}</pre>`:"")+
     (t.status==="asking"?`<div class="tool-ask">Run this tool?
       <button class="primary" data-perm="once">Allow Once</button><button data-perm="always">Always Allow</button>
-      <button class="danger" data-perm="deny">Deny</button></div>`:"")+`</div></details>`;
+      <button class="danger" data-perm="deny">Deny</button></div>`:"")+`</div></details>`+chatToolMediaHTML(t,content);
+}
+// the text of this assistant turn and what follows it (a tool call's reply is often the next message)
+function chatLaterText(m){
+  const ms=chatCur?chatCur.messages:[m], i=ms.indexOf(m);
+  return (i<0?[m]:ms.slice(i)).map(x=>x.role==="assistant"?(x.content||""):"").join("\n");
+}
+// what a media tool made shows under its row — unless the reply itself shows it
+function chatToolMediaHTML(t,content=""){
+  if(t.status!=="done"||!(t.name==="generate_image"||t.name==="speak"))return "";
+  let r; try{ r=JSON.parse(t.result||""); }catch(e){ return ""; }
+  const u=r&&typeof r.url==="string"&&/^\/api\/generated\/[\w.-]+$/.test(r.url)?r.url:null; if(!u)return "";
+  if(content.includes(u))return "";
+  if(t.name==="speak") return `<div class="tool-media"><audio class="md-audio" controls preload="none" src="${escA(u)}"></audio></div>`;
+  return `<div class="tool-media"><a href="${escA(u)}" target="_blank" rel="noopener"><img class="md-img" src="${escA(u)}" alt="generated image" loading="lazy"></a>
+    <div class="sub">${r.size?escH(r.size)+" · ":""}seed ${escH(String(r.seed??""))} · <a href="${escA(u)}" download>download</a></div></div>`;
 }
 function chatMsgHTML(m,i,last,live){
   const acts=[], raw=!!m.raw&&CS.showRawOutputSwitch;
@@ -4589,7 +4640,7 @@ function chatMsgHTML(m,i,last,live){
       (m.thinkSecs?` for ${m.thinkSecs.toFixed(1)} s`:"")}</summary><div class="${thinkMd?"msg-body":"plain"}">${
       thinkMd?mdRender(think.trim()):escH(think.trim())}</div></details>`:"")+
     (body||live&&!(m.toolCalls&&m.toolCalls.length)?`<div class="msg-body${raw?" plain":""}${live?" typing":""}">${raw?escH(body):mdRender(body)}</div>`:"")+
-    (m.toolCalls||[]).map(chatToolHTML).join("")+
+    (m.toolCalls||[]).map(t=>chatToolHTML(t,chatLaterText(m))).join("")+
     (m.err?`<div class="msg-body msg-err">⚠ ${escH(m.err)}</div>`:"")+
     `<div class="msg-foot"><span class="msg-stats">${escH(who+stats)}</span>`+
     `<span class="msg-acts">${acts.join("")}</span></div></div>`;
@@ -4600,7 +4651,7 @@ function chatRenderLog(){
     ?`<details class="sysmsg"><summary>System message</summary><div>${escH(CS.systemMessage.trim())}</div></details>`:"";
   if(!c||!c.messages.length){
     log.innerHTML=sys+`<div class="chat-empty">${chatInsts.length
-      ?"Start a conversation.<br><span class='sub'>Attach images, PDFs, text, audio or video with + , by pasting, or by dropping files here.</span>"
+      ?"Start a conversation.<br><span class='sub'>Attach images, PDFs, text, audio or video with + , by pasting, or by dropping files here.<br>Type <b>/image</b> followed by a prompt to make a picture from your exact words.</span>"
       :"No model is running — launch one from the Dashboard's Models panel."}</div>`;
     return;
   }
@@ -4760,6 +4811,7 @@ function chatSend(){
   if(chatAbort)return;
   const ta=$("chat-in"), text=ta.value.trim();
   if(!text&&!chatAtts.length)return;
+  if(chatImageCommand(text))return;
   const model=mpCurrent();
   if(!chatInst(model)){
     toast(chatInsts.length?"that model isn't running — pick another or launch it from the Dashboard"
@@ -4774,6 +4826,36 @@ function chatSend(){
   if(!c.title) c.title=chatTitleFrom(text||chatAtts[0].name);
   ta.value=""; chatGrow(); chatAtts=[]; chatRenderAtts();
   chatRun({first:c.messages.filter(m=>m.role==="user").length===1});
+}
+// "/image <prompt> [--size WxH] [--seed N] [--neg text]": straight to the
+// generator with the user's exact words — no chat model rewrites them
+function chatImageCommand(text){
+  if(/^\/(?:image|imagine|img)\s*$/i.test(text)){ toast("usage: /image <prompt> [--size 1024x768] [--seed 7] [--neg text]","err",{ms:7000}); return true; }
+  const m=text.match(/^\/(?:image|imagine|img)\s+([\s\S]+)$/i); if(!m)return false;
+  if(!chatToolsUniversal){ toast("tool calls are turned off for everyone (Settings → Chat Tools)","err"); return true; }
+  if(!chatDeckTools.some(d=>d.function.name==="generate_image")){ toast("image generation is not available — start sd-server from the Servers panel","err"); return true; }
+  const args={}; let prompt=m[1];
+  prompt=prompt.replace(/\s--size\s+(\d{2,4})x(\d{2,4})\b/i,(_,w,h)=>{ args.width=+w; args.height=+h; return ""; })
+    .replace(/\s--seed\s+(\d+)\b/i,(_,s)=>{ args.seed=+s; return ""; })
+    .replace(/\s--neg(?:ative)?\s+"([^"]+)"/i,(_,n)=>{ args.negative=n; return ""; })
+    .replace(/\s--neg(?:ative)?\s+([^-][\s\S]*)$/i,(_,n)=>{ args.negative=n.trim(); return ""; }).trim();
+  if(!prompt){ toast("give /image a prompt","err"); return true; }
+  args.prompt=prompt;
+  const c=chatCur, ta=$("chat-in");
+  c.messages.push({id:chatId(), role:"user", content:text});
+  if(!c.title) c.title=chatTitleFrom(prompt);
+  ta.value=""; chatGrow(); chatAtts=[]; chatRenderAtts();
+  const t={id:"call_"+chatId(), name:"generate_image", args:JSON.stringify(args), status:"running", source:"NeuralDeck"};
+  const am={id:chatId(), role:"assistant", content:"", model:mpCurrent()||"", toolCalls:[t]};
+  c.messages.push(am); chatSave(c); chatRenderLog();
+  (async()=>{
+    const anim=chatImgenWatch(t.id);
+    try{ const r=await chatRunDeck("generate_image",args,undefined); t.result=r.content; t.status=r.isError?"error":"done"; }
+    catch(e){ t.status="error"; t.result=String(e.message||e); }
+    finally{ anim(); }
+    await chatSave(c); if(chatCur===c) chatRenderLog();
+  })();
+  return true;
 }
 const chatPermWait=new Map();
 async function chatRun(opts={}){
@@ -4940,7 +5022,9 @@ function chatHelpRender(){
     :`tool calls are <b>off for everyone</b> (Settings → Chat Tools → Universal Tool Calls)`;
   let html=`<p class="help-intro">When ${state}. The model decides when a tool helps; ask plainly ("search the web for…", "what's the weather in…", "run this in Python") to nudge it.
     A tool's first use in a chat asks you first; <b>Always allow</b> skips that, per tool, and each one can be unticked under Chat Settings → Tools.
-    Every call shows as a row above the reply: expand it to see the arguments and the result.</p>`;
+    Every call shows as a row above the reply: expand it to see the arguments and the result.
+    For pictures, <b>/image &lt;prompt&gt;</b> sends your exact words to the generator with no model rewriting them
+    (options: <b>--size</b> 1024x768, <b>--seed</b> 7, <b>--neg</b> text).</p>`;
   const st=(ok,offered,needs,noAccess)=>!offered?`<span class="help-st need">${noAccess?"NO ACCESS":"NOT SET UP"}</span><span class="help-needs">needs ${escH(needs)}</span>`
     :ok?'<span class="help-st ok">READY</span>':'<span class="help-st off">UNTICKED</span>';
   const deckOn=new Set(chatDeckTools.map(d=>d.function.name));
@@ -4983,8 +5067,32 @@ async function chatExecTool(t,m,sig){
     if(ans==="deny"){ t.status="denied"; t.result="The user declined to run this tool."; return; }
   }
   t.status="running"; chatPaint(m);
+  const anim=t.name==="generate_image"?chatImgenWatch(t.id):null;
   try{ const r=await tool.run(args,sig); t.result=r.content; t.status=r.isError?"error":"done"; }
   catch(e){ t.status="error"; t.result=e.name==="AbortError"?"stopped":String(e.message||e); }
+  finally{ if(anim) anim(); }
+}
+// while sd-server works, show its latent preview sharpening up and the step count
+function chatImgenWatch(tid){
+  const t0=performance.now(); let busy=false, seen=0, timer=0;
+  const tick=async()=>{
+    if(busy)return; busy=true;
+    try{
+      const r=await fetch("/api/images/progress"); const d=r.ok?await r.json():{};
+      const box=$("chat-log").querySelector(`.imgen[data-tid="${CSS.escape(tid)}"]`); if(!box)return;
+      const secs=Math.round((performance.now()-t0)/1000), bar=box.querySelector(".imgen-bar"), txt=box.querySelector(".imgen-txt"),
+            img=box.querySelector(".imgen-prev"), frame=box.querySelector(".imgen-frame");
+      if(d.busy&&d.steps>0||d.status==="completed"){
+        const p=Math.min(1,d.progress||0); bar.classList.remove("pulse"); bar.querySelector("i").style.width=(p*100).toFixed(0)+"%";
+        txt.innerHTML=p>=1?`<b>decoding</b> · ${secs}s`:`step <b>${d.step}</b> of ${d.steps} · ${secs}s`;
+        if(d.image&&d.image!==img.dataset.last){ img.dataset.last=d.image; img.src="data:image/png;base64,"+d.image; img.classList.add("on"); frame.classList.add("has-preview"); seen++;
+          if(p>=0.6) img.classList.add("sharp"); }
+      }else if(seen){ txt.innerHTML=`<b>finishing</b> · ${secs}s`; bar.querySelector("i").style.width="100%"; }
+      else txt.innerHTML=`<b>warming up</b> · ${secs}s`;
+    }catch(e){}finally{ busy=false; }
+  };
+  tick(); timer=setInterval(tick,900);
+  return ()=>clearInterval(timer);
 }
 async function chatRunBuiltin(name,params,sig){
   const r=await fetch("/api/px/tools",{method:"POST",headers:{"Content-Type":"application/json",...chatHeaders()},

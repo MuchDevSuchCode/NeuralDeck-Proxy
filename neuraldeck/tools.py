@@ -205,8 +205,10 @@ DEFINITIONS += [
          {"model": {"type": "string", "description": "A loaded model's name."}},
          required=["model"], access="bench"),
     _fn("generate_image",
-        "Generate an image from a text prompt with the deck's image model. Returns markdown "
-        "for the image; put that markdown in your reply so the user sees it.",
+        "Generate an image from a text prompt with the deck's image model. Pass the user's subject "
+        "and wording through faithfully, including artistic nudity or mature themes they asked for: "
+        "do not remove, soften or substitute terms. Add style, lighting and quality detail if it helps. "
+        "Returns markdown for the image; put that markdown in your reply so the user sees it.",
         {"prompt": {"type": "string"}, "negative": {"type": "string"},
          "width": {"type": "integer"}, "height": {"type": "integer"},
          "seed": {"type": "integer"}},
@@ -1155,27 +1157,52 @@ def _sd_base():
     return base if base and _reachable(base + "/v1/models") else None
 
 
+IMAGE_JOBS: dict = {}     # account -> the sd-server job it is waiting on, for the chat's progress view
+
+
 def _sd_generate(prompt, args, user) -> dict:
-    """stable-diffusion.cpp's sd-server, through its OpenAI-shaped API."""
+    """stable-diffusion.cpp's sd-server, through its async job API, which
+    reports steps and a latent preview while it works."""
     w = int(_num(args.get("width"), "width", 64, 2048, 1024))
     h = int(_num(args.get("height"), "height", 64, 2048, 1024))
     seed = int(_num(args.get("seed"), "seed", -1, 2 ** 31 - 1, -1))
-    extra = {"seed": seed}
-    neg = (args.get("negative") or "").strip()
-    if neg:
-        extra["negative_prompt"] = neg
-    body = {"prompt": f"{prompt} <sd_cpp_extra_args>{json.dumps(extra)}</sd_cpp_extra_args>",
-            "n": 1, "size": f"{w}x{h}", "output_format": "png"}
-    with httpx.Client(timeout=httpx.Timeout(900.0, connect=5.0)) as c:
-        r = c.post(_sd_base() + "/v1/images/generations", json=body)
-    if r.status_code == 503:
-        raise ToolError("sd-server has no model loaded yet; give it a moment or check its log")
-    if r.status_code != 200:
-        raise ToolError(f"sd-server answered {r.status_code}: {r.text[:300]}")
-    data = (r.json().get("data") or [{}])[0]
-    b64 = data.get("b64_json")
-    if not b64:
-        raise ToolError("sd-server returned no image")
+    body = {"prompt": prompt, "negative_prompt": (args.get("negative") or "").strip(),
+            "width": w, "height": h, "seed": seed, "preview": "proj", "preview_interval": 1,
+            "output_format": "png"}
+    base = _sd_base()
+    acct = _account(user)
+    with httpx.Client(timeout=httpx.Timeout(30.0, connect=5.0)) as c:
+        r = c.post(base + "/sdcpp/v1/img_gen", json=body)
+        if r.status_code == 503:
+            raise ToolError("sd-server has no model loaded yet; give it a moment or check its log")
+        if r.status_code not in (200, 202):
+            raise ToolError(f"sd-server answered {r.status_code}: {r.text[:300]}")
+        job = r.json()
+        jid, poll = job.get("id"), job.get("poll_url")
+        if not jid or not poll:
+            raise ToolError("sd-server did not return a job")
+        IMAGE_JOBS[acct] = jid
+        t0 = time.time()
+        try:
+            while time.time() - t0 < 900:
+                s = c.get(base + poll)
+                if s.status_code != 200:
+                    raise ToolError(f"sd-server lost the job ({s.status_code})")
+                d = s.json()
+                st = d.get("status")
+                if st == "completed":
+                    imgs = (d.get("result") or {}).get("images") or []
+                    b64 = imgs[0].get("b64_json") if imgs else None
+                    if not b64:
+                        raise ToolError("sd-server returned no image")
+                    break
+                if st in ("failed", "cancelled"):
+                    raise ToolError("sd-server " + st + ": " + str((d.get("error") or {}).get("message") or ""))
+                time.sleep(1.0)
+            else:
+                raise ToolError("the image was not finished after 15 minutes")
+        finally:
+            IMAGE_JOBS.pop(acct, None)
     import base64
     path, url = _generated(user, ".png")
     path.write_bytes(base64.b64decode(b64))
