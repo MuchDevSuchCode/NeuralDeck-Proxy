@@ -174,6 +174,11 @@ SCHEMA = [
     _f("sd_extra_args", "Extra sd-server Args", "strlist", "Image Generation",
        "Appended to the command, one argument per entry, e.g. --offload-to-cpu "
        "or --clip_l / --t5xxl for FLUX."),
+    _f("sd_edit_model", "Image Edit Model", "bool", "Image Generation",
+       "On when the loaded model is an instruction-editing model (FLUX.2 "
+       "Klein, Qwen Image Edit, Kontext): a picture from the chat goes to it "
+       "as a reference to edit, keeping the subject. Off for Z-Image and "
+       "other text-to-image models, where a picture is an img2img start."),
 
     # ── Tool Integrations ─────────────────────────────────────────────────
     _f("ha_url", "Home Assistant URL", "str", "Tool Integrations",
@@ -300,7 +305,7 @@ ATTR = {
     "smtp_from": "SMTP_FROM",
     "sd_bin": "SD_BIN", "sd_diffusion_model": "SD_DIFFUSION_MODEL",
     "sd_text_encoder": "SD_TEXT_ENCODER", "sd_vae": "SD_VAE", "sd_port": "SD_PORT",
-    "sd_steps": "SD_STEPS", "sd_cfg_scale": "SD_CFG_SCALE", "sd_extra_args": "SD_EXTRA_ARGS",
+    "sd_steps": "SD_STEPS", "sd_cfg_scale": "SD_CFG_SCALE", "sd_extra_args": "SD_EXTRA_ARGS", "sd_edit_model": "SD_EDIT_MODEL",
     "proxy_port": "PROXY_PORT", "proxy_host": "PROXY_HOST",
     "whisper_bin": "WHISPER_BIN", "whisper_model": "WHISPER_MODEL",
     "whisper_port": "WHISPER_PORT", "ffmpeg": "FFMPEG",

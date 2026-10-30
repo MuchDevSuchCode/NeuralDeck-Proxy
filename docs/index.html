@@ -935,8 +935,23 @@ reachable, or beyond the account's access is simply not offered.</p>
 <td data-label="Needs"><span class="cell">the Benchmarks view</span></td>
 </tr>
 <tr>
+<td data-label="Tool"><span class="cell"><code>create_document</code></span></td>
+<td data-label="Does"><span class="cell">a downloadable document rendered from Markdown: PDF, Word (.docx), HTML, Markdown or plain text, with headings, lists, tables and code blocks</span></td>
+<td data-label="Needs"><span class="cell">the <code>markdown</code>, <code>fpdf2</code> and <code>python-docx</code> packages (installed with the deck)</span></td>
+</tr>
+<tr>
+<td data-label="Tool"><span class="cell"><code>create_spreadsheet</code></span></td>
+<td data-label="Does"><span class="cell">a downloadable Excel workbook, one or more sheets of rows, formulas included</span></td>
+<td data-label="Needs"><span class="cell">the <code>openpyxl</code> package (installed with the deck)</span></td>
+</tr>
+<tr>
+<td data-label="Tool"><span class="cell"><code>write_file</code></span></td>
+<td data-label="Does"><span class="cell">any text file to download: CSV, JSON, YAML, code, SVG, config, notes</span></td>
+<td data-label="Needs"><span class="cell">nothing</span></td>
+</tr>
+<tr>
 <td data-label="Tool"><span class="cell"><code>generate_image</code></span></td>
-<td data-label="Does"><span class="cell">an image from sd-server (or ComfyUI), shown inline in the reply</span></td>
+<td data-label="Does"><span class="cell">an image from sd-server (or ComfyUI), shown inline in the reply; given a picture from the chat, a restyled or edited version of it</span></td>
 <td data-label="Needs"><span class="cell">sd-server running (see <a href="#image-generation">Image generation</a>), or ComfyUI plus a workflow file</span></td>
 </tr>
 <tr>
@@ -986,8 +1001,22 @@ be steered into reading the deck's API, the proxy or anything on the LAN.</p>
 <p>For <code>generate_image</code>, export a workflow from ComfyUI in API format, put
 the strings <code>{prompt}</code>, <code>{negative}</code>, <code>{seed}</code>, <code>{width}</code> and <code>{height}</code>
 where those values go, and name the file under <strong>Settings → Chat Tools</strong>.
-Images and clips the tools make are kept under <code>generated/&lt;account&gt;/</code> in
-the data directory and served only to that account.</p>
+Images, clips and files the tools make are kept under
+<code>generated/&lt;account&gt;/</code> in the data directory and served only to that
+account.</p>
+<p><strong>Documents and files.</strong> Ask for "a PDF of this", "a Word document", "a
+spreadsheet of the figures" or "save that as a CSV" and the model
+writes the content and calls <code>create_document</code>, <code>create_spreadsheet</code> or
+<code>write_file</code>; the reply carries a chip that downloads the file under its
+own name. Documents are written in Markdown and rendered on the deck:
+PDF through fpdf2 with the system's DejaVu fonts when present (any Latin,
+Greek or Cyrillic text; CJK needs a font the deck does not ship), Word
+through python-docx with real heading, list, quote and table styles so
+the file edits cleanly, and HTML as a single styled page. Anything but a
+picture or an audio clip is served as an attachment, and an HTML or SVG
+file never renders on the dashboard's origin, so a file the model wrote
+cannot script the page. Files are limited to 8 MB and a workbook to
+200,000 cells.</p>
 <h2 id="image-generation"><a class="hash" href="#image-generation" aria-label="Link to this section">#</a>Image generation</h2>
 <p>NeuralDeck generates images the way the hosted assistants do: a prompt
 in, a picture out, no node graph. The engine is
@@ -1044,8 +1073,58 @@ around it is to skip the model: type <code>/image &lt;prompt&gt;</code> in the c
 the exact text goes to the generator, with <code>--size 1024x768</code>, <code>--seed 7</code>
 and <code>--neg &lt;text&gt;</code> as options. An abliterated chat model (several are in
 your model list) also stops softening prompts it composes itself.</p>
+<p><strong>Working from a picture.</strong> Attach a photo and ask for "a cartoon of
+this", or attach it with <code>/image cartoon version, bold outlines</code>, and
+the picture goes to sd-server as the starting point (img2img): it is
+noised to a chosen strength and redrawn to the prompt, so composition,
+pose and colours survive while the style follows the words. The tool's
+<code>source_image</code> argument takes <code>last</code>, <code>attached</code> or <code>generated</code>; <code>/image</code>
+has <code>--from last|attached|generated</code> and <code>--strength</code>. With
+Z-Image-Turbo, strength behaves more like a threshold than a dial: up to
+about 0.65 the original look survives (good for small changes), 0.75 (the
+default) turns a photo into a cartoon, painting or sketch while keeping
+the layout, and 0.9 keeps only the rough layout. The deck stretches the
+step count so the full default number of steps works on the picture at
+any strength; a 768×512 restyle takes about 19 s. The output takes the
+source's shape, longest side 1024, unless <code>--size</code> says otherwise.
+Nothing "looks at" the photo, the model sees pixels plus your words, so
+describe the scene in the new style ("cartoon of a golden retriever on a
+porch", not "cartoon of this"), and expect a similar person rather than
+the same person. A vision model (one with an mmproj file) describes the
+photo itself when it calls the tool; a text-only model asks you what the
+picture shows first. When the subject must stay recognisably itself, use
+an editing model.</p>
+<p><strong>Editing models: keeping the subject.</strong> Instruction-editing models take
+the picture as a reference they understand, so "turn this into a
+cartoon" keeps the person's face, glasses and shirt, and "put a hat on
+the dog" changes only that. stable-diffusion.cpp runs FLUX.1 Kontext,
+Qwen Image Edit (2509 and 2511), FLUX.2 Klein, Boogu Image Edit, LongCat
+Image Edit and more; each replaces Z-Image as the loaded model and brings
+its own weights. The best fit for this stack is
+<a href="https://huggingface.co/black-forest-labs/FLUX.2-klein-4B">FLUX.2 Klein 4B</a>:
+Apache-2.0, distilled to 4 steps at CFG 1.0, 4.3 GB at Q8, and it uses
+the same Qwen3-4B text encoder as Z-Image (the abliterated one included),
+so only the diffusion model and a 0.34 GB VAE are new:</p>
+<pre><code class="language-bash">mkdir -p /mnt/models/FLUX.2-Klein-4B &amp;&amp; cd /mnt/models/FLUX.2-Klein-4B
+hf download leejet/FLUX.2-klein-4B-GGUF flux-2-klein-4b-Q8_0.gguf --local-dir .
+hf download Comfy-Org/Flux-2-Klein-4B split_files/vae/flux2-vae.safetensors --local-dir .
+</code></pre>
+<p>Under <strong>Settings → Image Generation</strong> point <strong>Diffusion Model</strong> at the
+Klein GGUF and <strong>VAE</strong> at <code>flux2-vae.safetensors</code>, set <strong>Default Steps</strong>
+to 4, turn on <strong>Image Edit Model</strong>, and restart sd-server. With that
+switch on, a picture from the chat goes to the model as a reference
+instead of an img2img start, strength does not apply, and the prompt is
+an instruction; a prompt without a picture still makes a fresh image.
+Any OpenAI client gets the same through the proxy's
+<code>POST /v1/images/edits</code>, which sd-server treats the same way. Going back
+to Z-Image is the same settings change in reverse. If quality matters
+more than speed, Qwen Image Edit 2511 is the stronger editor, at 20B
+parameters plus a 7B Qwen2.5-VL vision encoder and its mmproj file, so
+several times the memory and time; Klein 9B sits between the two but
+under a non-commercial licence.</p>
 <p>ComfyUI is still supported as the chat tool's fallback: when sd-server is
-not running but a workflow file is set, <code>generate_image</code> uses that.</p>
+not running but a workflow file is set, <code>generate_image</code> uses that; it
+takes a prompt only.</p>
 <h2 id="prompt-lab"><a class="hash" href="#prompt-lab" aria-label="Link to this section">#</a>Prompt Lab</h2>
 <p>Pick a running model (or <em>auto</em> for the default instance), set the
 temperature and max tokens, optionally a system prompt, and press <strong>Send</strong>
@@ -1533,6 +1612,12 @@ restart button.</li>
 <td data-label="Applies"><span class="cell">next start</span></td>
 <td data-label="Meaning"><span class="cell">appended to the command, e.g. <code>--offload-to-cpu</code></span></td>
 </tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>sd_edit_model</code></span></td>
+<td data-label="Default"><span class="cell"><code>false</code></span></td>
+<td data-label="Applies"><span class="cell">at once</span></td>
+<td data-label="Meaning"><span class="cell">the loaded model is an instruction-editing model (FLUX.2 Klein, Qwen Image Edit, Kontext): a picture from the chat is sent as a reference to edit rather than an img2img start</span></td>
+</tr>
 </tbody>
 </table></div>
 <h3 id="tool-integrations"><a class="hash" href="#tool-integrations" aria-label="Link to this section">#</a>Tool integrations</h3>
@@ -1978,7 +2063,7 @@ Windows, or wherever <code>NEURALDECK_HOME</code> points. The Settings tab and
 ├── proxy_internal.key     ← the dashboard's own key for the proxy; mode 0600
 ├── chats/&lt;account&gt;/       ← each account's saved chats, one JSON file per chat; mode 0600
 ├── documents/&lt;account&gt;/   ← files the chat's document tools can read (and documents/_shared/)
-├── generated/&lt;account&gt;/   ← images and clips the chat's tools made
+├── generated/&lt;account&gt;/   ← images, clips and files the chat's tools made
 ├── tasks/&lt;account&gt;.json   ← scheduled prompts
 ├── bench.jsonl            ← benchmark history (newest 5,000 runs)
 ├── last-model.txt         ← the last model launched

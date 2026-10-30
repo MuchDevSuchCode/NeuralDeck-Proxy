@@ -587,7 +587,10 @@ reachable, or beyond the account's access is simply not offered.
 | `deck_status`, `list_models` | what is loaded, memory and GPU headroom, throughput; what could be launched | the Dashboard view |
 | `launch_model`, `stop_model` | load or unload a model | the Dashboard view |
 | `benchmark` | the standard bench on a loaded model, recorded in the Benchmarks tab | the Benchmarks view |
-| `generate_image` | an image from sd-server (or ComfyUI), shown inline in the reply | sd-server running (see [Image generation](#image-generation)), or ComfyUI plus a workflow file |
+| `create_document` | a downloadable document rendered from Markdown: PDF, Word (.docx), HTML, Markdown or plain text, with headings, lists, tables and code blocks | the `markdown`, `fpdf2` and `python-docx` packages (installed with the deck) |
+| `create_spreadsheet` | a downloadable Excel workbook, one or more sheets of rows, formulas included | the `openpyxl` package (installed with the deck) |
+| `write_file` | any text file to download: CSV, JSON, YAML, code, SVG, config, notes | nothing |
+| `generate_image` | an image from sd-server (or ComfyUI), shown inline in the reply; given a picture from the chat, a restyled or edited version of it | sd-server running (see [Image generation](#image-generation)), or ComfyUI plus a workflow file |
 | `speak` | a speech clip from the TTS endpoint, playable in the reply | the TTS service running |
 | `schedule_task`, `list_tasks`, `cancel_task` | prompts the deck runs on an interval or at a time of day, with these tools, each result saved as a new chat | nothing |
 | `home_assistant` | list entities, read a state, call a service | a Home Assistant URL and token |
@@ -620,8 +623,23 @@ be steered into reading the deck's API, the proxy or anything on the LAN.
 For `generate_image`, export a workflow from ComfyUI in API format, put
 the strings `{prompt}`, `{negative}`, `{seed}`, `{width}` and `{height}`
 where those values go, and name the file under **Settings → Chat Tools**.
-Images and clips the tools make are kept under `generated/<account>/` in
-the data directory and served only to that account.
+Images, clips and files the tools make are kept under
+`generated/<account>/` in the data directory and served only to that
+account.
+
+**Documents and files.** Ask for "a PDF of this", "a Word document", "a
+spreadsheet of the figures" or "save that as a CSV" and the model
+writes the content and calls `create_document`, `create_spreadsheet` or
+`write_file`; the reply carries a chip that downloads the file under its
+own name. Documents are written in Markdown and rendered on the deck:
+PDF through fpdf2 with the system's DejaVu fonts when present (any Latin,
+Greek or Cyrillic text; CJK needs a font the deck does not ship), Word
+through python-docx with real heading, list, quote and table styles so
+the file edits cleanly, and HTML as a single styled page. Anything but a
+picture or an audio clip is served as an attachment, and an HTML or SVG
+file never renders on the dashboard's origin, so a file the model wrote
+cannot script the page. Files are limited to 8 MB and a workbook to
+200,000 cells.
 
 ## Image generation
 
@@ -688,8 +706,63 @@ the exact text goes to the generator, with `--size 1024x768`, `--seed 7`
 and `--neg <text>` as options. An abliterated chat model (several are in
 your model list) also stops softening prompts it composes itself.
 
+**Working from a picture.** Attach a photo and ask for "a cartoon of
+this", or attach it with `/image cartoon version, bold outlines`, and
+the picture goes to sd-server as the starting point (img2img): it is
+noised to a chosen strength and redrawn to the prompt, so composition,
+pose and colours survive while the style follows the words. The tool's
+`source_image` argument takes `last`, `attached` or `generated`; `/image`
+has `--from last|attached|generated` and `--strength`. With
+Z-Image-Turbo, strength behaves more like a threshold than a dial: up to
+about 0.65 the original look survives (good for small changes), 0.75 (the
+default) turns a photo into a cartoon, painting or sketch while keeping
+the layout, and 0.9 keeps only the rough layout. The deck stretches the
+step count so the full default number of steps works on the picture at
+any strength; a 768×512 restyle takes about 19 s. The output takes the
+source's shape, longest side 1024, unless `--size` says otherwise.
+Nothing "looks at" the photo, the model sees pixels plus your words, so
+describe the scene in the new style ("cartoon of a golden retriever on a
+porch", not "cartoon of this"), and expect a similar person rather than
+the same person. A vision model (one with an mmproj file) describes the
+photo itself when it calls the tool; a text-only model asks you what the
+picture shows first. When the subject must stay recognisably itself, use
+an editing model.
+
+**Editing models: keeping the subject.** Instruction-editing models take
+the picture as a reference they understand, so "turn this into a
+cartoon" keeps the person's face, glasses and shirt, and "put a hat on
+the dog" changes only that. stable-diffusion.cpp runs FLUX.1 Kontext,
+Qwen Image Edit (2509 and 2511), FLUX.2 Klein, Boogu Image Edit, LongCat
+Image Edit and more; each replaces Z-Image as the loaded model and brings
+its own weights. The best fit for this stack is
+[FLUX.2 Klein 4B](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B):
+Apache-2.0, distilled to 4 steps at CFG 1.0, 4.3 GB at Q8, and it uses
+the same Qwen3-4B text encoder as Z-Image (the abliterated one included),
+so only the diffusion model and a 0.34 GB VAE are new:
+
+```bash
+mkdir -p /mnt/models/FLUX.2-Klein-4B && cd /mnt/models/FLUX.2-Klein-4B
+hf download leejet/FLUX.2-klein-4B-GGUF flux-2-klein-4b-Q8_0.gguf --local-dir .
+hf download Comfy-Org/Flux-2-Klein-4B split_files/vae/flux2-vae.safetensors --local-dir .
+```
+
+Under **Settings → Image Generation** point **Diffusion Model** at the
+Klein GGUF and **VAE** at `flux2-vae.safetensors`, set **Default Steps**
+to 4, turn on **Image Edit Model**, and restart sd-server. With that
+switch on, a picture from the chat goes to the model as a reference
+instead of an img2img start, strength does not apply, and the prompt is
+an instruction; a prompt without a picture still makes a fresh image.
+Any OpenAI client gets the same through the proxy's
+`POST /v1/images/edits`, which sd-server treats the same way. Going back
+to Z-Image is the same settings change in reverse. If quality matters
+more than speed, Qwen Image Edit 2511 is the stronger editor, at 20B
+parameters plus a 7B Qwen2.5-VL vision encoder and its mmproj file, so
+several times the memory and time; Klein 9B sits between the two but
+under a non-commercial licence.
+
 ComfyUI is still supported as the chat tool's fallback: when sd-server is
-not running but a workflow file is set, `generate_image` uses that.
+not running but a workflow file is set, `generate_image` uses that; it
+takes a prompt only.
 
 ## Prompt Lab
 
@@ -957,6 +1030,7 @@ Launch-time defaults; a request can always override them.
 | `sd_port` | `7860` | proxy | where sd-server listens (on 127.0.0.1; the proxy relays) |
 | `sd_steps`, `sd_cfg_scale` | `8`, `1.0` | next start | generation defaults a request can override |
 | `sd_extra_args` | — | next start | appended to the command, e.g. `--offload-to-cpu` |
+| `sd_edit_model` | `false` | at once | the loaded model is an instruction-editing model (FLUX.2 Klein, Qwen Image Edit, Kontext): a picture from the chat is sent as a reference to edit rather than an img2img start |
 
 ### Tool integrations
 
@@ -1174,7 +1248,7 @@ neuraldeck/
 ├── proxy_internal.key     ← the dashboard's own key for the proxy; mode 0600
 ├── chats/<account>/       ← each account's saved chats, one JSON file per chat; mode 0600
 ├── documents/<account>/   ← files the chat's document tools can read (and documents/_shared/)
-├── generated/<account>/   ← images and clips the chat's tools made
+├── generated/<account>/   ← images, clips and files the chat's tools made
 ├── tasks/<account>.json   ← scheduled prompts
 ├── bench.jsonl            ← benchmark history (newest 5,000 runs)
 ├── last-model.txt         ← the last model launched

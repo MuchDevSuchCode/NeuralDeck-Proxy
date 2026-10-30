@@ -35,6 +35,7 @@ accounts with the matching view, and integrations only once configured.
 """
 
 import ast
+import binascii
 import datetime as _dt
 import html
 import ipaddress
@@ -47,6 +48,7 @@ import secrets
 import shutil
 import smtplib
 import socket
+import struct
 import subprocess
 import tempfile
 import threading
@@ -59,7 +61,7 @@ from urllib.parse import quote, urlsplit
 
 import httpx
 
-from . import chats, config
+from . import chats, config, docgen
 
 # deck.py fills this in at startup: live telemetry, the launcher, the
 # scheduler, the event loop. Without it the deck-side tools are not offered.
@@ -180,6 +182,38 @@ DEFINITIONS += [
          "offset": {"type": "integer", "description": "Character to start at (default 0)."},
          "max_chars": {"type": "integer", "description": "Characters to return, up to 40000 (default 8000)."}},
         required=["path"]),
+    _fn("create_document",
+        "Make a downloadable document from Markdown: a PDF (default), a Word file (docx), HTML, "
+        "Markdown or plain text. Headings, paragraphs, bullet and numbered lists, tables, code "
+        "blocks, bold, italic and links are rendered. Use it whenever the user wants a document, "
+        "report, letter, summary, PDF or Word file to download: write the complete content "
+        "yourself, then call this once. Returns a link; put the markdown link in your reply.",
+        {"title": {"type": "string"},
+         "content": {"type": "string", "description": "The whole document, in Markdown."},
+         "format": {"type": "string", "enum": ["pdf", "docx", "html", "md", "txt"],
+                    "description": "Default pdf."},
+         "filename": {"type": "string", "description": "A name for the file, without extension; default: from the title."}},
+        required=["title", "content"]),
+    _fn("create_spreadsheet",
+        "Make a downloadable Excel workbook (.xlsx). Give one or more sheets, each a list of "
+        "rows, each row a list of cells (text, numbers, or formulas such as =SUM(B2:B9)); the "
+        "first row of a sheet is its header. For a CSV use write_file instead.",
+        {"filename": {"type": "string", "description": "Without extension."},
+         "sheets": {"type": "array", "description": "[{\"name\": \"Sales\", \"rows\": [[\"Item\", \"Qty\"], [\"Widget\", 3]]}]",
+                    "items": {"type": "object", "properties": {
+                        "name": {"type": "string"},
+                        "rows": {"type": "array", "items": {"type": "array"}}}}},
+         "rows": {"type": "array", "items": {"type": "array"},
+                  "description": "For a single sheet, the rows directly instead of sheets."},
+         "header": {"type": "boolean", "description": "Bold and freeze the first row (default true)."}},
+        required=["filename"]),
+    _fn("write_file",
+        "Save text as a downloadable file of any kind: CSV, JSON, YAML, code in any language, "
+        "SVG, a config file, plain text. Give the full filename with its extension and the "
+        "complete content. For formatted documents use create_document; for xlsx, create_spreadsheet.",
+        {"filename": {"type": "string", "description": "e.g. data.csv, script.py, notes.txt"},
+         "content": {"type": "string"}},
+        required=["filename", "content"]),
     _opt("deck_status",
          "What the NeuralDeck machine is doing now: models loaded and on which ports, RAM and VRAM "
          "used and free, GPU load and temperature, recent throughput, running services.",
@@ -205,13 +239,25 @@ DEFINITIONS += [
          {"model": {"type": "string", "description": "A loaded model's name."}},
          required=["model"], access="bench"),
     _fn("generate_image",
-        "Generate an image from a text prompt with the deck's image model. Pass the user's subject "
-        "and wording through faithfully, including artistic nudity or mature themes they asked for: "
-        "do not remove, soften or substitute terms. Add style, lighting and quality detail if it helps. "
-        "Returns markdown for the image; put that markdown in your reply so the user sees it.",
+        "Generate an image from a text prompt with the deck's image model, or make a new version of "
+        "a picture already in the chat. Pass the user's subject and wording through faithfully, "
+        "including artistic nudity or mature themes they asked for: do not remove, soften or "
+        "substitute terms. Add style, lighting and quality detail if it helps. To restyle a picture "
+        "the user attached or one you generated (a cartoon of it, a painting, a different season), "
+        "set source_image to \"last\" and describe the whole scene in the new style; the result keeps "
+        "the composition and colours. Returns markdown for the image; put that markdown in your "
+        "reply so the user sees it.",
         {"prompt": {"type": "string"}, "negative": {"type": "string"},
          "width": {"type": "integer"}, "height": {"type": "integer"},
-         "seed": {"type": "integer"}},
+         "seed": {"type": "integer"},
+         "source_image": {"type": "string", "description":
+                          "\"last\" for the most recent image in the chat, \"attached\" for the last one "
+                          "the user attached, \"generated\" for the last one made here. Leave out for a "
+                          "fresh image."},
+         "strength": {"type": "number", "description":
+                      "With source_image: how far to depart from it. Up to 0.65 keeps the original "
+                      "look (touch-ups, small changes); the default 0.75 changes the style, e.g. photo "
+                      "to cartoon, keeping the layout; 0.9 keeps only the rough layout."}},
         required=["prompt"]),
     _fn("speak",
         "Turn text into speech with the deck's TTS service. Returns a link to the audio clip; "
@@ -1135,11 +1181,86 @@ def benchmark(args: dict) -> dict:
 
 # ── generated files: images and audio the chat can show ─────────────────────
 
-def _generated(user, ext: str) -> tuple:
+def _generated(user, ext: str, label: str = "") -> tuple:
+    """A new file in the account's generated folder: its path and URL. The
+    name carries a stamp and a nonce; a label after them becomes the
+    file name the browser downloads it as."""
     d = _account_dir("generated", user)
     d.mkdir(parents=True, exist_ok=True, mode=0o700)
-    name = _dt.datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(3) + ext
+    name = _dt.datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(3) + ("-" + label if label else "") + ext
     return d / name, f"/api/generated/{name}"
+
+
+# ── documents and files the chat hands back ─────────────────────────────────
+
+MAX_FILE_BYTES = 8 * 1024 * 1024
+_FILE_EXT_RE = re.compile(r"^[A-Za-z0-9]{1,8}$")
+
+
+def _file_result(path, url, fmt: str, note: str) -> dict:
+    name = url.rsplit("/", 1)[-1]
+    public = re.sub(r"^\d{8}-\d{6}-[0-9a-f]{6}-?", "", name) or name
+    return {"url": url, "filename": public, "bytes": path.stat().st_size, "format": fmt,
+            "markdown": f"[📄 {public}]({url})", "note": note}
+
+
+def create_document(args: dict, user=None) -> dict:
+    title = (args.get("title") or "").strip()[:200]
+    content = args.get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise ToolError("content (Markdown) is required")
+    if len(content) > MAX_FILE_BYTES:
+        raise ToolError("the document is over 8 MB")
+    fmt = (args.get("format") or "pdf").strip().lower()
+    try:
+        data, ext = docgen.render_document(title, content, fmt)
+    except docgen.DocError as e:
+        raise ToolError(str(e))
+    except Exception as e:   # a renderer choking on odd input is the model's problem to fix
+        raise ToolError(f"could not render the {fmt}: {type(e).__name__}: {str(e)[:200]}")
+    stem = docgen.slug(args.get("filename") or title, "document")
+    path, url = _generated(user, ext, stem)
+    path.write_bytes(data)
+    return _file_result(path, url, ext[1:], "put the markdown link in your reply so the user can download it")
+
+
+def create_spreadsheet(args: dict, user=None) -> dict:
+    sheets = args.get("sheets")
+    if not sheets and isinstance(args.get("rows"), list):
+        sheets = [{"name": "Sheet1", "rows": args["rows"]}]
+    if not isinstance(sheets, list) or not sheets:
+        raise ToolError("give sheets (a list of {name, rows}) or rows")
+    header = args.get("header")
+    try:
+        data = docgen.render_spreadsheet(sheets, header=True if header is None else bool(header))
+    except docgen.DocError as e:
+        raise ToolError(str(e))
+    except Exception as e:
+        raise ToolError(f"could not build the workbook: {type(e).__name__}: {str(e)[:200]}")
+    stem = docgen.slug(args.get("filename"), "workbook")
+    path, url = _generated(user, ".xlsx", stem)
+    path.write_bytes(data)
+    return _file_result(path, url, "xlsx", "put the markdown link in your reply so the user can download it")
+
+
+def write_file(args: dict, user=None) -> dict:
+    name = str(args.get("filename") or "").strip()
+    content = args.get("content")
+    if not name:
+        raise ToolError("filename is required, with its extension")
+    if not isinstance(content, str):
+        content = json.dumps(content, indent=2, ensure_ascii=False) if content is not None else ""
+    if len(content.encode("utf-8")) > MAX_FILE_BYTES:
+        raise ToolError("the file is over 8 MB")
+    stem, dot, ext = name.rpartition(".")
+    if not dot or not stem or not _FILE_EXT_RE.match(ext):
+        raise ToolError("give a filename with an extension, e.g. notes.txt or data.csv")
+    ext = ext.lower()
+    if ext in ("exe", "com", "bat", "cmd", "msi", "scr", "dll", "ps1", "vbs", "jar", "apk", "dmg", "pkg"):
+        raise ToolError(f"a .{ext} file cannot be made here")
+    path, url = _generated(user, "." + ext, docgen.slug(stem, "file"))
+    path.write_text(content, encoding="utf-8")
+    return _file_result(path, url, ext, "put the markdown link in your reply so the user can download it")
 
 
 def _comfy_workflow() -> dict:
@@ -1160,15 +1281,120 @@ def _sd_base():
 IMAGE_JOBS: dict = {}     # account -> the sd-server job it is waiting on, for the chat's progress view
 
 
+def _image_size(data: bytes):
+    """(width, height) from a PNG, JPEG, GIF or WebP header, or None."""
+    try:
+        if data[:8] == b"\x89PNG\r\n\x1a\n":
+            return struct.unpack(">II", data[16:24])
+        if data[:6] in (b"GIF87a", b"GIF89a"):
+            return struct.unpack("<HH", data[6:10])
+        if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+            tag = data[12:16]
+            if tag == b"VP8 ":
+                return struct.unpack("<HH", data[26:30])[0] & 0x3FFF, struct.unpack("<HH", data[26:30])[1] & 0x3FFF
+            if tag == b"VP8L":
+                b = data[21:25]
+                return 1 + (((b[1] & 0x3F) << 8) | b[0]), 1 + (((b[3] & 0xF) << 10) | (b[2] << 2) | ((b[1] & 0xC0) >> 6))
+            if tag == b"VP8X":
+                return 1 + int.from_bytes(data[24:27], "little"), 1 + int.from_bytes(data[27:30], "little")
+        if data[:2] == b"\xff\xd8":
+            i = 2
+            while i + 9 < len(data):
+                if data[i] != 0xFF:
+                    i += 1
+                    continue
+                marker = data[i + 1]
+                if marker in (0xD8, 0x01) or 0xD0 <= marker <= 0xD7:
+                    i += 2
+                    continue
+                seg = struct.unpack(">H", data[i + 2:i + 4])[0]
+                if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+                    h, w = struct.unpack(">HH", data[i + 5:i + 9])
+                    return w, h
+                i += 2 + seg
+    except (struct.error, IndexError):
+        pass
+    return None
+
+
+MAX_SOURCE_IMAGE = 24 * 1024 * 1024
+
+
+def _source_image(args: dict, user) -> tuple:
+    """The picture an image job starts from, as (data URL, (w, h) or None),
+    or (None, None) when the request is for a fresh image. It is either an
+    image the chat attached (a data URL) or one a tool made for this
+    account (its /api/generated/ URL)."""
+    import base64
+    src = args.get("source_image")
+    if src in (None, "", False):
+        return None, None
+    if not isinstance(src, str):
+        raise ToolError("source_image must be a string")
+    src = src.strip()
+    if src.lower() in ("last", "attached", "generated", "latest", "previous"):
+        raise ToolError("there is no image in this chat to start from: attach one or generate one first")
+    m = re.match(r"^data:(image/(?:png|jpeg|jpg|webp|gif));base64,([A-Za-z0-9+/=\s]+)$", src)
+    if m:
+        if len(src) > MAX_SOURCE_IMAGE * 4 // 3:
+            raise ToolError("the source image is over 24 MB")
+        try:
+            raw = base64.b64decode(m.group(2), validate=False)
+        except (ValueError, binascii.Error):
+            raise ToolError("the source image is not valid base64")
+        return "data:" + m.group(1) + ";base64," + m.group(2).strip(), _image_size(raw)
+    m = re.match(r"^(?:https?://[^/]+)?/api/generated/([\w.-]{1,80})$", src)
+    if m and not m.group(1).startswith("."):
+        path = _account_dir("generated", user) / m.group(1)
+        try:
+            raw = path.read_bytes()
+        except OSError:
+            raise ToolError("that generated image is no longer here")
+        if len(raw) > MAX_SOURCE_IMAGE:
+            raise ToolError("the source image is over 24 MB")
+        ext = path.suffix.lower()
+        mime = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp", "gif": "image/gif"}.get(ext[1:], "image/png")
+        return "data:" + mime + ";base64," + base64.b64encode(raw).decode(), _image_size(raw)
+    raise ToolError("source_image must be \"last\", \"attached\", \"generated\", an image data URL or a "
+                    "/api/generated/ URL from this chat")
+
+
+def _fit(size, longest: int = 1024, step: int = 16) -> tuple:
+    """The source picture's shape at a working size: longest side capped,
+    both sides multiples of the model's latent step."""
+    w, h = size
+    scale = min(1.0, longest / max(w, h))
+    w, h = max(step, round(w * scale / step) * step), max(step, round(h * scale / step) * step)
+    return int(w), int(h)
+
+
 def _sd_generate(prompt, args, user) -> dict:
     """stable-diffusion.cpp's sd-server, through its async job API, which
-    reports steps and a latent preview while it works."""
-    w = int(_num(args.get("width"), "width", 64, 2048, 1024))
-    h = int(_num(args.get("height"), "height", 64, 2048, 1024))
+    reports steps and a latent preview while it works. With a source image
+    this is img2img: the picture is noised to `strength` and redrawn to the
+    prompt, so its composition survives and its style follows the words."""
+    src, src_size = _source_image(args, user)
+    dw, dh = _fit(src_size) if src and src_size else (1024, 1024)
+    w = int(_num(args.get("width"), "width", 64, 2048, dw))
+    h = int(_num(args.get("height"), "height", 64, 2048, dh))
     seed = int(_num(args.get("seed"), "seed", -1, 2 ** 31 - 1, -1))
     body = {"prompt": prompt, "negative_prompt": (args.get("negative") or "").strip(),
             "width": w, "height": h, "seed": seed, "preview": "proj", "preview_interval": 1,
             "output_format": "png"}
+    edit = bool(src and getattr(config, "SD_EDIT_MODEL", False))
+    if edit:
+        # an instruction-editing model takes the picture as a reference it
+        # understands; the prompt says what to change and the subject stays
+        body["ref_images"] = [src]
+    elif src:
+        # img2img runs only the last `strength` share of the schedule, so a
+        # Turbo model's 8 steps would leave 4-6; stretch the schedule to keep
+        # the full count working on the picture, and strength finely graded
+        strength = round(float(_num(args.get("strength"), "strength", 0.1, 1.0, 0.75)), 3)
+        steps = int(getattr(config, "SD_STEPS", 8) or 8)
+        body["init_image"] = src
+        body["strength"] = strength
+        body["sample_params"] = {"sample_steps": max(steps, min(60, round(steps / strength)))}
     base = _sd_base()
     acct = _account(user)
     with httpx.Client(timeout=httpx.Timeout(30.0, connect=5.0)) as c:
@@ -1206,9 +1432,15 @@ def _sd_generate(prompt, args, user) -> dict:
     import base64
     path, url = _generated(user, ".png")
     path.write_bytes(base64.b64decode(b64))
-    return {"url": url, "markdown": f"![{prompt[:60]}]({url})", "size": f"{w}x{h}",
-            "seed": seed if seed >= 0 else "random", "backend": "sd-server",
-            "note": "include the markdown in your reply to show the image"}
+    out = {"url": url, "markdown": f"![{prompt[:60]}]({url})", "size": f"{w}x{h}",
+           "seed": seed if seed >= 0 else "random", "backend": "sd-server",
+           "note": "include the markdown in your reply to show the image"}
+    if edit:
+        out["source"] = "edit"
+    elif src:
+        out["source"] = "img2img"
+        out["strength"] = body["strength"]
+    return out
 
 
 def generate_image(args: dict, user=None) -> dict:
@@ -1217,6 +1449,8 @@ def generate_image(args: dict, user=None) -> dict:
         raise ToolError("prompt is required")
     if _sd_base():
         return _sd_generate(prompt, args, user)
+    if args.get("source_image"):
+        raise ToolError("working from a picture needs sd-server; the ComfyUI fallback only takes a prompt")
     wf = _comfy_workflow()
     fill = {"{prompt}": prompt, "{negative}": (args.get("negative") or "").strip(),
             "{seed}": str(int(_num(args.get("seed"), "seed", 0, 2 ** 53, secrets.randbelow(2 ** 32)))),
@@ -1421,11 +1655,13 @@ RUN = {"get_datetime": get_datetime, "get_weather": get_weather, "web_search": w
        "read_github": read_github, "search_chats": search_chats, "list_documents": list_documents,
        "search_documents": search_documents, "read_document": read_document,
        "deck_status": deck_status, "list_models": list_models, "launch_model": launch_model,
+       "create_document": create_document, "create_spreadsheet": create_spreadsheet, "write_file": write_file,
        "stop_model": stop_model, "benchmark": benchmark, "generate_image": generate_image,
        "speak": speak, "schedule_task": schedule_task, "list_tasks": list_tasks,
        "cancel_task": cancel_task, "home_assistant": home_assistant, "send_email": send_email}
 # tools that take the calling account
 PER_USER = {"search_chats", "list_documents", "search_documents", "read_document",
+            "create_document", "create_spreadsheet", "write_file",
             "generate_image", "speak", "schedule_task", "list_tasks", "cancel_task"}
 
 
@@ -1437,6 +1673,10 @@ def _offered(name: str, user) -> bool:
             _provider()
         elif name == "run_python":
             return shutil.which("docker") is not None
+        elif name == "create_document":
+            import markdown  # noqa: F401  (pdf and docx report their own missing package when asked for)
+        elif name == "create_spreadsheet":
+            import openpyxl  # noqa: F401
         elif name in ("deck_status", "list_models", "launch_model", "stop_model", "benchmark"):
             if not CONTEXT:
                 return False
@@ -1470,6 +1710,8 @@ NEEDS = {
     "deck_status": "the Dashboard view", "list_models": "the Dashboard view",
     "launch_model": "the Dashboard view", "stop_model": "the Dashboard view",
     "benchmark": "the Benchmarks view",
+    "create_document": "the markdown package, plus fpdf2 for PDF and python-docx for Word (pip install)",
+    "create_spreadsheet": "the openpyxl package (pip install openpyxl)",
     "generate_image": "sd-server running (Settings → Image Generation), or ComfyUI with a workflow file",
     "speak": "the TTS service running",
     "schedule_task": "nothing", "list_tasks": "nothing", "cancel_task": "nothing",

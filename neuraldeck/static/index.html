@@ -610,6 +610,13 @@
   @media (prefers-reduced-motion: reduce){ .imgen-sheen, .imgen-grid, .imgen-bar.pulse i { animation:none; } }
   :root[data-theme^="llama"] .imgen-bar i { background:var(--ink); box-shadow:none; }
   .msg-body .md-audio { display:block; max-width:420px; margin:6px 0; }
+  .md-file { display:inline-flex; align-items:center; gap:8px; max-width:100%; margin:4px 6px 4px 0; padding:7px 12px 7px 10px;
+    border:1px solid var(--border); border-radius:8px; background:var(--panel-2,var(--panel)); color:var(--text); text-decoration:none; font-size:.93em; line-height:1.2; vertical-align:middle; }
+  .md-file:hover { border-color:var(--accent); text-decoration:none; }
+  .md-file svg { width:16px; height:16px; flex:none; color:var(--accent); }
+  .md-file-n { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:46ch; }
+  .md-file-k { font-size:.74em; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); border:1px solid var(--border-dim); border-radius:4px; padding:1px 5px; flex:none; }
+  .tool-media .md-file { margin-top:6px; }
   .tool-media { margin:-2px 0 10px; }
   .tool-media .md-img { display:block; max-width:min(100%,640px); border-radius:8px; border:1px solid var(--border-dim); }
   .tool-media .sub { margin-top:4px; font-size:11px; }
@@ -4076,6 +4083,8 @@ const ICON={
   plus:'<path d="M5 12h14"/><path d="M12 5v14"/>',
   chev:'<path d="m6 9 6 6 6-6"/>',
 };
+ICON.file='<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/>';
+const fmtBytes=b=>b<1024?b+" B":b<1048576?(b/1024).toFixed(b<10240?1:0)+" KB":b<1073741824?(b/1048576).toFixed(1)+" MB":(b/1073741824).toFixed(2)+" GB";
 const svgI=(n,cls="ico")=>`<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[n]}</svg>`;
 const CAP_DEFS=[
   ["vision","eye","Vision: understands images"],
@@ -4461,10 +4470,17 @@ function mdInline(s){
     // files a deck tool made for this account render inline: images as images, clips as players
     .replace(/!\[([^\]\n]*)\]\(\s*(\/api\/generated\/[\w.-]+)\s*\)/g,(_,t,u)=>stash(`<img class="md-img" src="${escA(u)}" alt="${escA(t)}" loading="lazy">`))
     .replace(/\[([^\]\n]+)\]\(\s*(\/api\/generated\/[\w.-]+\.(?:mp3|wav|ogg))\s*\)/g,(_,t,u)=>stash(`<audio class="md-audio" controls preload="none" src="${escA(u)}"></audio>`))
-    .replace(/\[([^\]\n]+)\]\(\s*(\/api\/generated\/[\w.-]+)\s*\)/g,(_,t,u)=>link(u,mdEmph(escH(t))))
+    .replace(/\[([^\]\n]+)\]\(\s*(\/api\/generated\/[\w.-]+)\s*\)/g,(_,t,u)=>stash(mdFileChip(u,t)))
     .replace(/!?\[([^\]\n]+)\]\(\s*((?:https?:\/\/|mailto:)[^\s)"<>]+)(?: +"[^"]*")? *\)/g,(_,t,u)=>link(u,mdEmph(escH(t))))
     .replace(/(^|[\s(])(https?:\/\/[^\s<>"]*[^\s<>".,;:!?)\]'*_])/g,(_,p,u)=>p+link(u,escH(u)));
   return mdEmph(escH(s)).replace(/\u0000(\d+)\u0000/g,(_,i)=>keep[+i]);
+}
+// a file a deck tool made: a chip that downloads it, with its real name
+function mdFileChip(u,label=""){
+  const name=(u.split("/").pop()||"").replace(/^\d{8}-\d{6}-[0-9a-f]{6}-?/,"")||"file", ext=(name.split(".").pop()||"").toLowerCase();
+  const kind={pdf:"PDF",docx:"Word",xlsx:"Excel",csv:"CSV",json:"JSON",md:"Markdown",txt:"Text",html:"HTML",py:"Python",js:"JavaScript",ts:"TypeScript",svg:"SVG",yaml:"YAML",yml:"YAML",sh:"Shell"}[ext]||ext.toUpperCase()||"File";
+  const text=(label||"").replace(/^📄\s*/,"").trim();
+  return `<a class="md-file" href="${escA(u)}" download="${escA(name)}" title="download ${escA(name)}">${svgI("file")}<span class="md-file-n">${escH(text&&text!==name?text:name)}</span><span class="md-file-k">${escH(kind)}</span></a>`;
 }
 function mdStarts(l,next){
   return MD_FENCE.test(l)||/^ {0,3}#{1,6} /.test(l)||MD_HR.test(l)||/^ {0,3}>/.test(l)
@@ -4602,14 +4618,16 @@ function chatLaterText(m){
   return (i<0?[m]:ms.slice(i)).map(x=>x.role==="assistant"?(x.content||""):"").join("\n");
 }
 // what a media tool made shows under its row — unless the reply itself shows it
+const CHAT_FILE_TOOLS=new Set(["create_document","create_spreadsheet","write_file"]);
 function chatToolMediaHTML(t,content=""){
-  if(t.status!=="done"||!(t.name==="generate_image"||t.name==="speak"))return "";
+  if(t.status!=="done"||!(t.name==="generate_image"||t.name==="speak"||CHAT_FILE_TOOLS.has(t.name)))return "";
   let r; try{ r=JSON.parse(t.result||""); }catch(e){ return ""; }
   const u=r&&typeof r.url==="string"&&/^\/api\/generated\/[\w.-]+$/.test(r.url)?r.url:null; if(!u)return "";
   if(content.includes(u))return "";
+  if(CHAT_FILE_TOOLS.has(t.name)) return `<div class="tool-media">${mdFileChip(u,r.filename||"")}<span class="sub"> ${r.bytes?escH(fmtBytes(r.bytes)):""}</span></div>`;
   if(t.name==="speak") return `<div class="tool-media"><audio class="md-audio" controls preload="none" src="${escA(u)}"></audio></div>`;
   return `<div class="tool-media"><a href="${escA(u)}" target="_blank" rel="noopener"><img class="md-img" src="${escA(u)}" alt="generated image" loading="lazy"></a>
-    <div class="sub">${r.size?escH(r.size)+" · ":""}seed ${escH(String(r.seed??""))} · <a href="${escA(u)}" download>download</a></div></div>`;
+    <div class="sub">${r.size?escH(r.size)+" · ":""}seed ${escH(String(r.seed??""))}${r.source==="img2img"?" · from image, strength "+escH(String(r.strength)):r.source==="edit"?" · edited from image":""} · <a href="${escA(u)}" download>download</a></div></div>`;
 }
 function chatMsgHTML(m,i,last,live){
   const acts=[], raw=!!m.raw&&CS.showRawOutputSwitch;
@@ -4651,7 +4669,7 @@ function chatRenderLog(){
     ?`<details class="sysmsg"><summary>System message</summary><div>${escH(CS.systemMessage.trim())}</div></details>`:"";
   if(!c||!c.messages.length){
     log.innerHTML=sys+`<div class="chat-empty">${chatInsts.length
-      ?"Start a conversation.<br><span class='sub'>Attach images, PDFs, text, audio or video with + , by pasting, or by dropping files here.<br>Type <b>/image</b> followed by a prompt to make a picture from your exact words.</span>"
+      ?"Start a conversation.<br><span class='sub'>Attach images, PDFs, text, audio or video with + , by pasting, or by dropping files here.<br>Type <b>/image</b> followed by a prompt to make a picture from your exact words, or attach a photo and ask for a cartoon of it.</span>"
       :"No model is running — launch one from the Dashboard's Models panel."}</div>`;
     return;
   }
@@ -4739,7 +4757,8 @@ function chatEdit(node,i,m){
 // image, so a text-only model gets a note in place of each image or video
 const chatBlind=model=>{ const c=chatCaps[model], i=chatInst(model);
   return c&&c.vision!=null?!c.vision:!!i&&instKind(i)==="llama.cpp"&&!i.mmproj; };
-function chatUserContent(m,blind){
+function chatImageToolOn(model){ return chatToolDefs(model).some(d=>d.function&&d.function.name==="generate_image"); }
+function chatUserContent(m,blind,imgTool=false){
   if(!m.atts||!m.atts.length) return m.content;
   const parts=[];
   for(const a of m.atts){
@@ -4748,7 +4767,8 @@ function chatUserContent(m,blind){
   }
   if(m.content) parts.push({type:"text",text:m.content});
   for(const a of m.atts){
-    if(blind&&(a.kind==="image"||a.kind==="video")) parts.push({type:"text",text:`[${a.kind} “${a.name}” left out: this model has no vision]`});
+    if(blind&&a.kind==="image"&&imgTool) parts.push({type:"text",text:`[image “${a.name}” is attached. You cannot see it, but generate_image can restyle it with source_image "attached". Its prompt must describe the whole scene in the new style, so if the user has not said what the picture shows, ask them in one line before calling it.]`});
+    else if(blind&&(a.kind==="image"||a.kind==="video")) parts.push({type:"text",text:`[${a.kind} “${a.name}” left out: this model has no vision]`});
     else if(a.kind==="image") parts.push({type:"image_url",image_url:{url:a.data}});
     else if(a.kind==="pdf"&&CS.pdfAsImage&&a.pages&&!blind) for(const p of a.pages) parts.push({type:"image_url",image_url:{url:p}});
     else if(a.kind==="audio") parts.push({type:"input_audio",input_audio:{data:a.data.slice(a.data.indexOf(",")+1),format:a.fmt}});
@@ -4757,10 +4777,10 @@ function chatUserContent(m,blind){
   return parts;
 }
 function chatApiMessages(msgs,model){
-  const out=[], sys=(CS.systemMessage||"").trim(), blind=chatBlind(model);
+  const out=[], sys=(CS.systemMessage||"").trim(), blind=chatBlind(model), imgTool=blind&&chatImageToolOn(model);
   if(sys) out.push({role:"system",content:sys});
   for(const m of msgs){
-    if(m.role==="user"){ out.push({role:"user",content:chatUserContent(m,blind)}); continue; }
+    if(m.role==="user"){ out.push({role:"user",content:chatUserContent(m,blind,imgTool)}); continue; }
     const sp=chatSplitThink(m.content||""), a={role:"assistant",content:sp.content};
     const think=((m.think||"")+sp.think).trim();
     if(think&&!CS.excludeReasoningFromContext) a.reasoning_content=think;
@@ -4819,7 +4839,9 @@ function chatSend(){
     return;
   }
   if(chatBlind(model)&&chatAtts.some(a=>a.kind==="image"||a.kind==="video")){
-    toast("this model is text only (no vision) — pick a vision model, or remove the image","err"); return;
+    // a text-only model cannot see a picture, but it can still hand one to the image tool
+    if(chatAtts.some(a=>a.kind==="video")||!chatImageToolOn(model)){
+      toast("this model is text only (no vision) — pick a vision model, or remove the image","err"); return; }
   }
   const c=chatCur;
   c.messages.push({id:chatId(), role:"user", content:text, atts:chatAtts.length?chatAtts:undefined});
@@ -4830,19 +4852,24 @@ function chatSend(){
 // "/image <prompt> [--size WxH] [--seed N] [--neg text]": straight to the
 // generator with the user's exact words — no chat model rewrites them
 function chatImageCommand(text){
-  if(/^\/(?:image|imagine|img)\s*$/i.test(text)){ toast("usage: /image <prompt> [--size 1024x768] [--seed 7] [--neg text]","err",{ms:7000}); return true; }
+  if(/^\/(?:image|imagine|img)\s*$/i.test(text)){ toast("usage: /image <prompt> [--size 1024x768] [--seed 7] [--neg text] [--from last|attached|generated] [--strength 0.6] — or attach a picture to restyle it","err",{ms:9000}); return true; }
   const m=text.match(/^\/(?:image|imagine|img)\s+([\s\S]+)$/i); if(!m)return false;
   if(!chatToolsUniversal){ toast("tool calls are turned off for everyone (Settings → Chat Tools)","err"); return true; }
   if(!chatDeckTools.some(d=>d.function.name==="generate_image")){ toast("image generation is not available — start sd-server from the Servers panel","err"); return true; }
   const args={}; let prompt=m[1];
   prompt=prompt.replace(/\s--size\s+(\d{2,4})x(\d{2,4})\b/i,(_,w,h)=>{ args.width=+w; args.height=+h; return ""; })
     .replace(/\s--seed\s+(\d+)\b/i,(_,s)=>{ args.seed=+s; return ""; })
+    .replace(/\s--from\s+(last|attached|generated)\b/i,(_,f)=>{ args.source_image=f.toLowerCase(); return ""; })
+    .replace(/\s--strength\s+(0?\.\d+|1(?:\.0+)?|0)\b/i,(_,v)=>{ args.strength=+v; return ""; })
     .replace(/\s--neg(?:ative)?\s+"([^"]+)"/i,(_,n)=>{ args.negative=n; return ""; })
     .replace(/\s--neg(?:ative)?\s+([^-][\s\S]*)$/i,(_,n)=>{ args.negative=n.trim(); return ""; }).trim();
   if(!prompt){ toast("give /image a prompt","err"); return true; }
   args.prompt=prompt;
+  const att=chatAtts.find(a=>a.kind==="image");
+  if(att&&!args.source_image) args.source_image="attached";   // a picture sent with the command is what to restyle; resolved when the tool runs, so the saved call stays small
+  else if(args.source_image&&!chatLastImage(args.source_image)&&!att){ toast("no "+(args.source_image==="last"?"":args.source_image+" ")+"image in this chat yet","err"); return true; }
   const c=chatCur, ta=$("chat-in");
-  c.messages.push({id:chatId(), role:"user", content:text});
+  c.messages.push({id:chatId(), role:"user", content:text, atts:chatAtts.length?chatAtts:undefined});
   if(!c.title) c.title=chatTitleFrom(prompt);
   ta.value=""; chatGrow(); chatAtts=[]; chatRenderAtts();
   const t={id:"call_"+chatId(), name:"generate_image", args:JSON.stringify(args), status:"running", source:"NeuralDeck"};
@@ -5024,7 +5051,10 @@ function chatHelpRender(){
     A tool's first use in a chat asks you first; <b>Always allow</b> skips that, per tool, and each one can be unticked under Chat Settings → Tools.
     Every call shows as a row above the reply: expand it to see the arguments and the result.
     For pictures, <b>/image &lt;prompt&gt;</b> sends your exact words to the generator with no model rewriting them
-    (options: <b>--size</b> 1024x768, <b>--seed</b> 7, <b>--neg</b> text).</p>`;
+    (options: <b>--size</b> 1024x768, <b>--seed</b> 7, <b>--neg</b> text). To restyle a picture, attach it and ask
+    ("make this a cartoon"), or attach it with <b>/image cartoon version, bold outlines</b>; <b>--from last</b> reuses
+    the latest image in the chat and <b>--strength</b> 0.3–0.9 sets how far to depart from it.
+    Ask for "a PDF", "a Word document", "a spreadsheet" or "a CSV file" and the model writes it and hands back a download chip.</p>`;
   const st=(ok,offered,needs,noAccess)=>!offered?`<span class="help-st need">${noAccess?"NO ACCESS":"NOT SET UP"}</span><span class="help-needs">needs ${escH(needs)}</span>`
     :ok?'<span class="help-st ok">READY</span>':'<span class="help-st off">UNTICKED</span>';
   const deckOn=new Set(chatDeckTools.map(d=>d.function.name));
@@ -5046,7 +5076,26 @@ function chatHelpRender(){
   if(!CS.mcpServers.length) html+=`<div class="help-grp">MCP servers <span class="sub">· none added — Chat Settings → Tools</span></div>`;
   $("help-body").innerHTML=html;
 }
+// the most recent picture in this chat: one the user attached (a data URL) or
+// one a tool made (its /api/generated/ URL); `which` narrows to either kind
+function chatLastImage(which="last",conv=chatCur){
+  const ms=conv?conv.messages:[], wantA=which!=="generated", wantG=which!=="attached";
+  for(let i=ms.length-1;i>=0;i--){
+    const m=ms[i];
+    if(wantA&&m.role==="user"&&m.atts){ const a=[...m.atts].reverse().find(x=>x.kind==="image"&&/^data:image\//.test(x.data||"")); if(a)return a.data; }
+    if(wantG&&m.role==="assistant"&&m.toolCalls){
+      for(const t of [...m.toolCalls].reverse()){ if(t.name!=="generate_image"||t.status!=="done")continue;
+        try{ const u=JSON.parse(t.result||"").url; if(typeof u==="string"&&/^\/api\/generated\/[\w.-]+$/.test(u))return u; }catch(e){} }
+    }
+  }
+  return null;
+}
 async function chatRunDeck(name,args,sig){
+  if(name==="generate_image"&&args&&typeof args.source_image==="string"&&!/^(data:|\/api\/generated\/)/.test(args.source_image)){
+    const which=args.source_image.trim().toLowerCase(), src=chatLastImage(which==="attached"||which==="generated"?which:"last");
+    if(!src) return {content:"there is no image in this chat to start from: attach one or generate one first",isError:true};
+    args={...args,source_image:src};
+  }
   const r=await fetch("/api/tools/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,args}),signal:sig});
   const j=await r.json().catch(()=>({error:"HTTP "+r.status}));
   if(!r.ok) return {content:errText(j,String(r.status)),isError:true};

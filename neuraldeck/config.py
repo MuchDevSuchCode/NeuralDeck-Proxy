@@ -345,6 +345,7 @@ def _compute(src: dict = None, make_dirs: bool = True) -> dict:
     SD_STEPS = _int("sd_steps", 8)
     SD_CFG_SCALE = _float("sd_cfg_scale", 1.0)
     SD_EXTRA_ARGS = _list("sd_extra_args", [])
+    SD_EDIT_MODEL = _bool("sd_edit_model", False)
 
     # Optional extras: a start command each, as a list or a shell-style
     # string. Empty means "not installed here" and the service is hidden.
@@ -424,6 +425,7 @@ def _compute(src: dict = None, make_dirs: bool = True) -> dict:
         'SD_STEPS': SD_STEPS,
         'SD_CFG_SCALE': SD_CFG_SCALE,
         'SD_EXTRA_ARGS': SD_EXTRA_ARGS,
+        'SD_EDIT_MODEL': SD_EDIT_MODEL,
         'SD_URL': SD_URL,
         'MODEL_DIRS': MODEL_DIRS,
         'DECK_HOST': DECK_HOST,

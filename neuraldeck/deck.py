@@ -1043,6 +1043,7 @@ async def images_progress(request: Request):
 
 
 _GEN_NAME = re.compile(r"^[\w.-]{1,80}$")
+_GEN_INLINE = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".mp3", ".wav", ".ogg"}
 
 
 @app.get("/api/generated/{name}")
@@ -1053,7 +1054,16 @@ async def generated_file(name: str, request: Request):
     path = config.DATA_DIR / "generated" / _chat_account(request) / name
     if not path.is_file():
         raise HTTPException(404, "no such file")
-    return FileResponse(str(path), headers={"Cache-Control": "private, max-age=86400"})
+    headers = {"Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff"}
+    ext = path.suffix.lower()
+    if ext not in _GEN_INLINE:
+        # anything but a picture or a clip downloads under its own name; an
+        # HTML or SVG file a tool wrote must never render on this origin
+        public = re.sub(r"^\d{8}-\d{6}-[0-9a-f]{6}-?", "", name) or name
+        headers["Content-Disposition"] = "attachment; filename=\"" + public.replace('"', "") + "\""
+        if ext in (".html", ".htm", ".svg", ".xml", ".xhtml"):
+            return FileResponse(str(path), headers=headers, media_type="application/octet-stream")
+    return FileResponse(str(path), headers=headers)
 
 
 # ---------------------------------------------------------------------------
