@@ -262,6 +262,20 @@ def _compute(src: dict = None, make_dirs: bool = True) -> dict:
     DECK_PORT = _int("deck_port", 8770)
     # sign-in on the dashboard; off makes anyone who can reach it an admin
     DECK_AUTH = _bool("deck_auth", True)
+    # the Chat tab's tool calling: the master switch and the web_search provider
+    TOOLS_ENABLED = _bool("tools_enabled", True)
+    SEARCH_PROVIDER = str(get("search_provider", "auto") or "auto").strip().lower()
+    BRAVE_API_KEY = str(get("brave_api_key", "") or "").strip()
+    SEARXNG_URL = str(get("searxng_url", "") or "").strip()
+    GITHUB_TOKEN = str(get("github_token", "") or "").strip()
+    COMFY_WORKFLOW = str(get("comfy_workflow", "") or "").strip()
+    HA_URL = str(get("ha_url", "") or "").strip()
+    HA_TOKEN = str(get("ha_token", "") or "").strip()
+    SMTP_HOST = str(get("smtp_host", "") or "").strip()
+    SMTP_PORT = _int("smtp_port", 587)
+    SMTP_USER = str(get("smtp_user", "") or "").strip()
+    SMTP_PASSWORD = str(get("smtp_password", "") or "")
+    SMTP_FROM = str(get("smtp_from", "") or "").strip()
     PROXY_HOST = str(get("proxy_host", "0.0.0.0"))
     PROXY_PORT = _int("proxy_port", 8080)
     LLAMA_HOST = str(get("llama_host", "0.0.0.0"))
@@ -390,6 +404,19 @@ def _compute(src: dict = None, make_dirs: bool = True) -> dict:
         'DECK_HOST': DECK_HOST,
         'DECK_PORT': DECK_PORT,
         'DECK_AUTH': DECK_AUTH,
+        'TOOLS_ENABLED': TOOLS_ENABLED,
+        'SEARCH_PROVIDER': SEARCH_PROVIDER,
+        'BRAVE_API_KEY': BRAVE_API_KEY,
+        'SEARXNG_URL': SEARXNG_URL,
+        'GITHUB_TOKEN': GITHUB_TOKEN,
+        'COMFY_WORKFLOW': COMFY_WORKFLOW,
+        'HA_URL': HA_URL,
+        'HA_TOKEN': HA_TOKEN,
+        'SMTP_HOST': SMTP_HOST,
+        'SMTP_PORT': SMTP_PORT,
+        'SMTP_USER': SMTP_USER,
+        'SMTP_PASSWORD': SMTP_PASSWORD,
+        'SMTP_FROM': SMTP_FROM,
         'PROXY_HOST': PROXY_HOST,
         'PROXY_PORT': PROXY_PORT,
         'LLAMA_HOST': LLAMA_HOST,

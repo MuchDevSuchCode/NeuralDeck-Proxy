@@ -14,9 +14,10 @@ runs on **Linux and Windows** (macOS for everything but GPU telemetry).
   tools, speculative decoding), streaming markdown with code, tables and
   math, reasoning effort, edit/regenerate/continue/stop, image, PDF, text,
   audio, video and voice attachments, all sampling and penalty parameters,
-  and tool calling with permission prompts: llama-server built-ins, a
-  sandboxed JavaScript tool and MCP servers (relayed through the deck to
-  avoid CORS).
+  and tool calling with permission prompts: the deck's own weather, web
+  search, page-fetch and clock tools, llama-server built-ins, a sandboxed
+  JavaScript tool and MCP servers (relayed through the deck to avoid
+  CORS), with a platform-wide switch and a per-chat switch.
 * **Prompt Lab**: send a prompt to any loaded model and watch it stream,
   with time-to-first-token, prefill/decode throughput and draft acceptance
   measured per run.
@@ -561,6 +562,67 @@ A rule of thumb: pick the largest quant that leaves room for the context
 you want. Weights plus KV cache must fit in VRAM; the KV cache grows with
 context length and slots.
 
+### Chat tools
+
+A model with tool support (the wrench icon in the model picker) can call
+tools from the Chat tab. The deck brings a pack of its own, run on the
+deck so keys never reach the browser. A tool that is not set up, not
+reachable, or beyond the account's access is simply not offered.
+
+| Tool | Does | Needs |
+| --- | --- | --- |
+| `get_datetime` | the date and time, in a named zone or the deck's | nothing |
+| `get_weather` | current conditions and a 1–7 day forecast for a place, from Open-Meteo | nothing |
+| `web_search` | titles, URLs and snippets for a query | a Brave Search API key or a SearXNG URL |
+| `news` | recent news articles on a topic | the same |
+| `fetch_url` | a page as readable text, so a search result can be read | nothing |
+| `wikipedia` | an article summary, which beats a search snippet for facts | nothing |
+| `calculate` | arithmetic and math functions, exactly | nothing |
+| `unit_convert` | length, mass, temperature, volume, area, speed, time, data, energy, power, pressure | nothing |
+| `currency` | exchange rates (ECB via frankfurter.app) | nothing |
+| `run_python` | Python 3.12 with numpy, pandas, sympy and matplotlib in a throwaway container: no network, 2 CPUs, 1 GB, a timeout | Docker; the image builds itself on first use |
+| `read_github` | a repo's tree, a file, the README, an issue or a PR with comments | nothing (a token raises the rate limit) |
+| `search_chats` | the account's own saved conversations | nothing |
+| `list_documents`, `search_documents`, `read_document` | files in the account's document folder and a shared one: text, markdown, code, CSV, JSON, PDF | files in `documents/<account>/` or `documents/_shared/` in the data directory |
+| `deck_status`, `list_models` | what is loaded, memory and GPU headroom, throughput; what could be launched | the Dashboard view |
+| `launch_model`, `stop_model` | load or unload a model | the Dashboard view |
+| `benchmark` | the standard bench on a loaded model, recorded in the Benchmarks tab | the Benchmarks view |
+| `generate_image` | an image from ComfyUI, shown inline in the reply | ComfyUI running and a workflow file in Settings |
+| `speak` | a speech clip from the TTS endpoint, playable in the reply | the TTS service running |
+| `schedule_task`, `list_tasks`, `cancel_task` | prompts the deck runs on an interval or at a time of day, with these tools, each result saved as a new chat | nothing |
+| `home_assistant` | list entities, read a state, call a service | a Home Assistant URL and token |
+| `send_email` | plain-text mail through your SMTP server | SMTP settings |
+
+They sit beside llama-server's built-ins, the JavaScript sandbox and any
+MCP servers under **Chat Settings → Tools**, where each can be unticked
+and marked "always allow". The first call of each tool in a chat asks
+before it runs. Scheduled tasks run with no browser, so their tool calls
+do not ask; a task is saved as a chat titled with a clock, and its last
+result shows in `list_tasks`.
+
+Two switches control tool calling as a whole:
+
+* **Universal Tool Calls** under **Settings → Chat Tools** is the master
+  switch for the platform: off, no model is offered any tool, whatever
+  the chat or the user chose. On by default.
+* The **wrench button** in a chat's toolbar turns tools off for that one
+  conversation (on by default, remembered with the chat). It shows as
+  locked while the master switch is off.
+
+`web_search` and `news` are offered only once a provider is set up. A
+Brave key (free plan) goes in **Settings → Chat Tools**; config.json
+becomes readable only by your user the moment it holds any secret. A
+SearXNG instance needs `json` in the `formats` list of its settings.yaml
+(there is a recipe under [How-to recipes](#how-to-recipes)). `fetch_url`
+refuses private, loopback and link-local addresses, so a model cannot
+be steered into reading the deck's API, the proxy or anything on the LAN.
+
+For `generate_image`, export a workflow from ComfyUI in API format, put
+the strings `{prompt}`, `{negative}`, `{seed}`, `{width}` and `{height}`
+where those values go, and name the file under **Settings → Chat Tools**.
+Images and clips the tools make are kept under `generated/<account>/` in
+the data directory and served only to that account.
+
 ## Prompt Lab
 
 Pick a running model (or *auto* for the default instance), set the
@@ -713,6 +775,33 @@ the llama port range.
 **Whisper model** in Settings, and start whisper-server from the Servers
 panel. `input_audio` parts in chat requests are then transcribed.
 
+**Give the chat free web search with SearXNG.** One container, no account,
+no key. Make a settings file that allows JSON output, then run it on
+localhost:
+
+```bash
+mkdir -p ~/.local/share/neuraldeck/searxng
+cat > ~/.local/share/neuraldeck/searxng/settings.yml <<YML
+use_default_settings: true
+general:
+  instance_name: "NeuralDeck search"
+search:
+  formats: [html, json]
+server:
+  secret_key: "$(openssl rand -hex 32)"
+  limiter: false
+  image_proxy: false
+YML
+docker run -d --name searxng --restart unless-stopped -p 127.0.0.1:8888:8080 \
+  -v ~/.local/share/neuraldeck/searxng:/etc/searxng \
+  -e BASE_URL=http://127.0.0.1:8888/ searxng/searxng:latest
+```
+
+Then put `http://127.0.0.1:8888` in **Settings → Chat Tools → SearXNG
+URL**. `web_search` appears in the chat's tool list at once. The
+container comes back after a reboot; `docker logs searxng` if it does
+not answer.
+
 **Reset the panel layout.** Press **Reset layout** in the header.
 
 ## Settings reference
@@ -778,6 +867,24 @@ Launch-time defaults; a request can always override them.
 | `top_p` | `0.95` | now | Top-p (0–1) |
 | `min_p` | `0.05` | now | Min-p (0–1) |
 | `repeat_penalty` | `1.05` | now | Repeat penalty (0–5) |
+
+### Chat tools
+
+| Key | Default | Applies | Meaning |
+| --- | --- | --- | --- |
+| `tools_enabled` | `true` | at once | The master switch for tool calling from the Chat tab (see [Chat tools](#chat-tools)) |
+| `search_provider` | `auto` | at once | `brave`, `searxng`, or `auto` (Brave when a key is set, else SearXNG when a URL is set) |
+| `brave_api_key` | — | at once | A Brave Search API key; a config file holding one is made mode 0600 |
+| `searxng_url` | — | at once | A SearXNG instance with the json format enabled |
+| `github_token` | — | at once | Optional; raises `read_github`'s rate limit from 60 to 5,000 an hour |
+| `comfy_workflow` | — | at once | A ComfyUI API-format workflow with `{prompt}` etc.; enables `generate_image` |
+
+### Tool integrations
+
+| Key | Default | Applies | Meaning |
+| --- | --- | --- | --- |
+| `ha_url`, `ha_token` | — | at once | A Home Assistant instance and a long-lived token; enable `home_assistant` |
+| `smtp_host`, `smtp_port`, `smtp_user`, `smtp_password`, `smtp_from` | —, `587`, —, —, — | at once | The mail server for `send_email`; STARTTLS when offered, implicit TLS on 465 |
 
 ### Ports
 
@@ -987,6 +1094,9 @@ neuraldeck/
 ├── proxy_tokens.json      ← proxy auth tokens (hash and secret); mode 0600
 ├── proxy_internal.key     ← the dashboard's own key for the proxy; mode 0600
 ├── chats/<account>/       ← each account's saved chats, one JSON file per chat; mode 0600
+├── documents/<account>/   ← files the chat's document tools can read (and documents/_shared/)
+├── generated/<account>/   ← images and clips the chat's tools made
+├── tasks/<account>.json   ← scheduled prompts
 ├── bench.jsonl            ← benchmark history (newest 5,000 runs)
 ├── last-model.txt         ← the last model launched
 ├── logs/
@@ -1025,6 +1135,8 @@ a view the account lacks answers 403.
 | `GET /api/browse?path=&mode=dir\|file&ext=` | directory listing for the file picker |
 | `POST /api/restart` | restart the dashboard |
 | `GET /api/chats`, `PUT /api/chats/{id}`, `DELETE /api/chats/{id}`, `DELETE /api/chats` | the signed-in account's saved chats: list, save one (the body is the conversation), delete one, delete all |
+| `GET /api/tools`, `POST /api/tools/run` | the deck's built-in chat tools for this account and whether tool calls are on; run one (`{"name", "args"}`) |
+| `GET /api/generated/{file}` | an image or clip a tool made for this account |
 | `POST /api/chat` | same-origin relay to the proxy (used by the Chat tab and Prompt Lab); signs with the dashboard's internal key once tokens are required |
 | `GET /api/bench`, `POST /api/bench`, `POST /api/bench/delete`, `POST /api/bench/clear` | benchmark history |
 | `GET /api/hf/search`, `/api/hf/files`, `/api/hf/card` | Hugging Face search, file lists and model-card descriptions (`format=gguf\|hf`) |
@@ -1227,6 +1339,10 @@ other machines on your network can use them.
   for anything beyond your own LAN.
 * Generate a proxy token before pointing anything beyond this machine at
   port 8080.
+* The chat's `fetch_url` tool only fetches public addresses, and a Brave
+  key lives in config.json (mode 0600 once set). Turn **Universal Tool
+  Calls** off under Settings → Chat Tools if you would rather no model
+  reached the network at all.
 * On an untrusted network, set `deck_host`, `proxy_host` and `llama_host`
   to `127.0.0.1`.
 * Don't expose these ports to the internet. If you need remote access, put

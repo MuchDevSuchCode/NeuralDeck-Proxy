@@ -206,7 +206,7 @@
     </div>
     <div class="cards">
 <div class="card"><h3>Dashboard</h3><p>live CPU/GPU/VRAM/thermal telemetry, every running model server with the flags it was launched with, KV-cache occupancy, a roofline estimate, per-service start/stop, logs, and model management: launch, relaunch, delete, and download from Hugging Face.</p></div>
-<div class="card"><h3>Chat</h3><p>a full port of the llama.cpp web UI, every setting included: conversations saved per account (search, rename, export/import), a model picker with capability icons (vision, audio, video, reasoning, tools, speculative decoding), streaming markdown with code, tables and math, reasoning effort, edit/regenerate/continue/stop, image, PDF, text, audio, video and voice attachments, all sampling and penalty parameters, and tool calling with permission prompts: llama-server built-ins, a sandboxed JavaScript tool and MCP servers (relayed through the deck to avoid CORS).</p></div>
+<div class="card"><h3>Chat</h3><p>a full port of the llama.cpp web UI, every setting included: conversations saved per account (search, rename, export/import), a model picker with capability icons (vision, audio, video, reasoning, tools, speculative decoding), streaming markdown with code, tables and math, reasoning effort, edit/regenerate/continue/stop, image, PDF, text, audio, video and voice attachments, all sampling and penalty parameters, and tool calling with permission prompts: the deck&#x27;s own weather, web search, page-fetch and clock tools, llama-server built-ins, a sandboxed JavaScript tool and MCP servers (relayed through the deck to avoid CORS), with a platform-wide switch and a per-chat switch.</p></div>
 <div class="card"><h3>Prompt Lab</h3><p>send a prompt to any loaded model and watch it stream, with time-to-first-token, prefill/decode throughput and draft acceptance measured per run.</p></div>
 <div class="card"><h3>Benchmarks</h3><p>every request through the stack is recorded, from the Prompt Lab, from a standard prompt, or from any other client on your network. Compare models, backends and speculation settings on medians.</p></div>
 <div class="card"><h3>Settings</h3><p>point NeuralDeck at your model folders and server builds from the page itself, with a file picker, validation, and an honest account of which changes apply at once and which need a restart.</p></div>
@@ -218,7 +218,7 @@
 
 <div class="layout">
   <nav class="sidebar" id="sidebar" aria-label="Documentation sections">
-<ul class="toc"><li><a href="#quick-start">Quick start</a></li><li><a href="#how-it-fits-together">How it fits together</a></li><li><a href="#requirements">Requirements</a></li><li><a href="#install">Install</a><ul><li><a href="#with-the-installer-recommended">With the installer (recommended)</a></li><li><a href="#manually-or-into-an-existing-environment">Manually, or into an existing environment</a></li><li><a href="#updating">Updating</a></li></ul></li><li><a href="#backends-llamacpp-and-vllm">Backends: llama.cpp and vLLM</a><ul><li><a href="#llamacpp-builds">llama.cpp builds</a></li><li><a href="#vllm">vLLM</a></li></ul></li><li><a href="#the-dashboard">The dashboard</a><ul><li><a href="#signing-in-and-accounts">Signing in and accounts</a></li><li><a href="#dashboard-panels">Dashboard panels</a></li><li><a href="#launching-a-model">Launching a model</a></li><li><a href="#servers-and-logs">Servers and logs</a></li></ul></li><li><a href="#getting-models">Getting models</a><ul><li><a href="#the-hugging-face-downloader">The Hugging Face downloader</a></li><li><a href="#adding-models-by-hand">Adding models by hand</a></li><li><a href="#mmproj-files-which-and-when">mmproj files: which and when</a></li></ul></li><li><a href="#choosing-a-quantisation">Choosing a quantisation</a></li><li><a href="#prompt-lab">Prompt Lab</a></li><li><a href="#benchmarks">Benchmarks</a></li><li><a href="#using-the-proxy">Using the proxy</a><ul><li><a href="#endpoints">Endpoints</a></li><li><a href="#how-model-is-matched">How model is matched</a></li><li><a href="#examples">Examples</a></li></ul></li><li><a href="#how-to-recipes">How-to recipes</a></li><li><a href="#settings-reference">Settings reference</a><ul><li><a href="#models">Models</a></li><li><a href="#backends">Backends</a></li><li><a href="#launch-defaults">Launch defaults</a></li><li><a href="#vllm-1">vLLM</a></li><li><a href="#sampling">Sampling</a></li><li><a href="#ports">Ports</a></li><li><a href="#speech--video">Speech &amp; video</a></li><li><a href="#proxy">Proxy</a></li><li><a href="#importing-and-exporting-settings">Importing and exporting settings</a></li><li><a href="#proxy-auth-tokens">Proxy auth tokens</a></li><li><a href="#dashboard">Dashboard</a></li><li><a href="#optional-services">Optional services</a></li><li><a href="#validation-and-safety">Validation and safety</a></li></ul></li><li><a href="#configuring-without-the-page">Configuring without the page</a><ul><li><a href="#settings-not-on-the-page">Settings not on the page</a></li></ul></li><li><a href="#command-line">Command line</a></li><li><a href="#where-things-are-stored">Where things are stored</a></li><li><a href="#dashboard-api">Dashboard API</a></li><li><a href="#troubleshooting">Troubleshooting</a><ul><li><a href="#starting-and-installing">Starting and installing</a></li><li><a href="#launching-models">Launching models</a></li><li><a href="#clients-and-the-proxy">Clients and the proxy</a></li><li><a href="#models-and-downloads">Models and downloads</a></li><li><a href="#vllm-2">vLLM</a></li><li><a href="#telemetry">Telemetry</a></li></ul></li><li><a href="#security">Security</a><ul><li><a href="#exposing-both-over-one-ngrok-url">Exposing both over one ngrok URL</a></li></ul></li><li><a href="#uninstall">Uninstall</a></li><li><a href="#notes-on-portability">Notes on portability</a></li><li><a href="#documentation-site">Documentation site</a></li><li><a href="#credit">Credit</a></li><li><a href="#license">License</a></li></ul>
+<ul class="toc"><li><a href="#quick-start">Quick start</a></li><li><a href="#how-it-fits-together">How it fits together</a></li><li><a href="#requirements">Requirements</a></li><li><a href="#install">Install</a><ul><li><a href="#with-the-installer-recommended">With the installer (recommended)</a></li><li><a href="#manually-or-into-an-existing-environment">Manually, or into an existing environment</a></li><li><a href="#updating">Updating</a></li></ul></li><li><a href="#backends-llamacpp-and-vllm">Backends: llama.cpp and vLLM</a><ul><li><a href="#llamacpp-builds">llama.cpp builds</a></li><li><a href="#vllm">vLLM</a></li></ul></li><li><a href="#the-dashboard">The dashboard</a><ul><li><a href="#signing-in-and-accounts">Signing in and accounts</a></li><li><a href="#dashboard-panels">Dashboard panels</a></li><li><a href="#launching-a-model">Launching a model</a></li><li><a href="#servers-and-logs">Servers and logs</a></li></ul></li><li><a href="#getting-models">Getting models</a><ul><li><a href="#the-hugging-face-downloader">The Hugging Face downloader</a></li><li><a href="#adding-models-by-hand">Adding models by hand</a></li><li><a href="#mmproj-files-which-and-when">mmproj files: which and when</a></li></ul></li><li><a href="#choosing-a-quantisation">Choosing a quantisation</a><ul><li><a href="#chat-tools">Chat tools</a></li></ul></li><li><a href="#prompt-lab">Prompt Lab</a></li><li><a href="#benchmarks">Benchmarks</a></li><li><a href="#using-the-proxy">Using the proxy</a><ul><li><a href="#endpoints">Endpoints</a></li><li><a href="#how-model-is-matched">How model is matched</a></li><li><a href="#examples">Examples</a></li></ul></li><li><a href="#how-to-recipes">How-to recipes</a></li><li><a href="#settings-reference">Settings reference</a><ul><li><a href="#models">Models</a></li><li><a href="#backends">Backends</a></li><li><a href="#launch-defaults">Launch defaults</a></li><li><a href="#vllm-1">vLLM</a></li><li><a href="#sampling">Sampling</a></li><li><a href="#chat-tools-1">Chat tools</a></li><li><a href="#tool-integrations">Tool integrations</a></li><li><a href="#ports">Ports</a></li><li><a href="#speech--video">Speech &amp; video</a></li><li><a href="#proxy">Proxy</a></li><li><a href="#importing-and-exporting-settings">Importing and exporting settings</a></li><li><a href="#proxy-auth-tokens">Proxy auth tokens</a></li><li><a href="#dashboard">Dashboard</a></li><li><a href="#optional-services">Optional services</a></li><li><a href="#validation-and-safety">Validation and safety</a></li></ul></li><li><a href="#configuring-without-the-page">Configuring without the page</a><ul><li><a href="#settings-not-on-the-page">Settings not on the page</a></li></ul></li><li><a href="#command-line">Command line</a></li><li><a href="#where-things-are-stored">Where things are stored</a></li><li><a href="#dashboard-api">Dashboard API</a></li><li><a href="#troubleshooting">Troubleshooting</a><ul><li><a href="#starting-and-installing">Starting and installing</a></li><li><a href="#launching-models">Launching models</a></li><li><a href="#clients-and-the-proxy">Clients and the proxy</a></li><li><a href="#models-and-downloads">Models and downloads</a></li><li><a href="#vllm-2">vLLM</a></li><li><a href="#telemetry">Telemetry</a></li></ul></li><li><a href="#security">Security</a><ul><li><a href="#exposing-both-over-one-ngrok-url">Exposing both over one ngrok URL</a></li></ul></li><li><a href="#uninstall">Uninstall</a></li><li><a href="#notes-on-portability">Notes on portability</a></li><li><a href="#documentation-site">Documentation site</a></li><li><a href="#credit">Credit</a></li><li><a href="#license">License</a></li></ul>
   </nav>
   <div class="scrim" id="scrim"></div>
   <main id="content">
@@ -840,6 +840,154 @@ removes only the link.</li>
 <p>A rule of thumb: pick the largest quant that leaves room for the context
 you want. Weights plus KV cache must fit in VRAM; the KV cache grows with
 context length and slots.</p>
+<h3 id="chat-tools"><a class="hash" href="#chat-tools" aria-label="Link to this section">#</a>Chat tools</h3>
+<p>A model with tool support (the wrench icon in the model picker) can call
+tools from the Chat tab. The deck brings a pack of its own, run on the
+deck so keys never reach the browser. A tool that is not set up, not
+reachable, or beyond the account's access is simply not offered.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Does</th>
+<th>Needs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td data-label="Tool"><span class="cell"><code>get_datetime</code></span></td>
+<td data-label="Does"><span class="cell">the date and time, in a named zone or the deck's</span></td>
+<td data-label="Needs"><span class="cell">nothing</span></td>
+</tr>
+<tr>
+<td data-label="Tool"><span class="cell"><code>get_weather</code></span></td>
+<td data-label="Does"><span class="cell">current conditions and a 1–7 day forecast for a place, from Open-Meteo</span></td>
+<td data-label="Needs"><span class="cell">nothing</span></td>
+</tr>
+<tr>
+<td data-label="Tool"><span class="cell"><code>web_search</code></span></td>
+<td data-label="Does"><span class="cell">titles, URLs and snippets for a query</span></td>
+<td data-label="Needs"><span class="cell">a Brave Search API key or a SearXNG URL</span></td>
+</tr>
+<tr>
+<td data-label="Tool"><span class="cell"><code>news</code></span></td>
+<td data-label="Does"><span class="cell">recent news articles on a topic</span></td>
+<td data-label="Needs"><span class="cell">the same</span></td>
+</tr>
+<tr>
+<td data-label="Tool"><span class="cell"><code>fetch_url</code></span></td>
+<td data-label="Does"><span class="cell">a page as readable text, so a search result can be read</span></td>
+<td data-label="Needs"><span class="cell">nothing</span></td>
+</tr>
+<tr>
+<td data-label="Tool"><span class="cell"><code>wikipedia</code></span></td>
+<td data-label="Does"><span class="cell">an article summary, which beats a search snippet for facts</span></td>
+<td data-label="Needs"><span class="cell">nothing</span></td>
+</tr>
+<tr>
+<td data-label="Tool"><span class="cell"><code>calculate</code></span></td>
+<td data-label="Does"><span class="cell">arithmetic and math functions, exactly</span></td>
+<td data-label="Needs"><span class="cell">nothing</span></td>
+</tr>
+<tr>
+<td data-label="Tool"><span class="cell"><code>unit_convert</code></span></td>
+<td data-label="Does"><span class="cell">length, mass, temperature, volume, area, speed, time, data, energy, power, pressure</span></td>
+<td data-label="Needs"><span class="cell">nothing</span></td>
+</tr>
+<tr>
+<td data-label="Tool"><span class="cell"><code>currency</code></span></td>
+<td data-label="Does"><span class="cell">exchange rates (ECB via frankfurter.app)</span></td>
+<td data-label="Needs"><span class="cell">nothing</span></td>
+</tr>
+<tr>
+<td data-label="Tool"><span class="cell"><code>run_python</code></span></td>
+<td data-label="Does"><span class="cell">Python 3.12 with numpy, pandas, sympy and matplotlib in a throwaway container: no network, 2 CPUs, 1 GB, a timeout</span></td>
+<td data-label="Needs"><span class="cell">Docker; the image builds itself on first use</span></td>
+</tr>
+<tr>
+<td data-label="Tool"><span class="cell"><code>read_github</code></span></td>
+<td data-label="Does"><span class="cell">a repo's tree, a file, the README, an issue or a PR with comments</span></td>
+<td data-label="Needs"><span class="cell">nothing (a token raises the rate limit)</span></td>
+</tr>
+<tr>
+<td data-label="Tool"><span class="cell"><code>search_chats</code></span></td>
+<td data-label="Does"><span class="cell">the account's own saved conversations</span></td>
+<td data-label="Needs"><span class="cell">nothing</span></td>
+</tr>
+<tr>
+<td data-label="Tool"><span class="cell"><code>list_documents</code>, <code>search_documents</code>, <code>read_document</code></span></td>
+<td data-label="Does"><span class="cell">files in the account's document folder and a shared one: text, markdown, code, CSV, JSON, PDF</span></td>
+<td data-label="Needs"><span class="cell">files in <code>documents/&lt;account&gt;/</code> or <code>documents/_shared/</code> in the data directory</span></td>
+</tr>
+<tr>
+<td data-label="Tool"><span class="cell"><code>deck_status</code>, <code>list_models</code></span></td>
+<td data-label="Does"><span class="cell">what is loaded, memory and GPU headroom, throughput; what could be launched</span></td>
+<td data-label="Needs"><span class="cell">the Dashboard view</span></td>
+</tr>
+<tr>
+<td data-label="Tool"><span class="cell"><code>launch_model</code>, <code>stop_model</code></span></td>
+<td data-label="Does"><span class="cell">load or unload a model</span></td>
+<td data-label="Needs"><span class="cell">the Dashboard view</span></td>
+</tr>
+<tr>
+<td data-label="Tool"><span class="cell"><code>benchmark</code></span></td>
+<td data-label="Does"><span class="cell">the standard bench on a loaded model, recorded in the Benchmarks tab</span></td>
+<td data-label="Needs"><span class="cell">the Benchmarks view</span></td>
+</tr>
+<tr>
+<td data-label="Tool"><span class="cell"><code>generate_image</code></span></td>
+<td data-label="Does"><span class="cell">an image from ComfyUI, shown inline in the reply</span></td>
+<td data-label="Needs"><span class="cell">ComfyUI running and a workflow file in Settings</span></td>
+</tr>
+<tr>
+<td data-label="Tool"><span class="cell"><code>speak</code></span></td>
+<td data-label="Does"><span class="cell">a speech clip from the TTS endpoint, playable in the reply</span></td>
+<td data-label="Needs"><span class="cell">the TTS service running</span></td>
+</tr>
+<tr>
+<td data-label="Tool"><span class="cell"><code>schedule_task</code>, <code>list_tasks</code>, <code>cancel_task</code></span></td>
+<td data-label="Does"><span class="cell">prompts the deck runs on an interval or at a time of day, with these tools, each result saved as a new chat</span></td>
+<td data-label="Needs"><span class="cell">nothing</span></td>
+</tr>
+<tr>
+<td data-label="Tool"><span class="cell"><code>home_assistant</code></span></td>
+<td data-label="Does"><span class="cell">list entities, read a state, call a service</span></td>
+<td data-label="Needs"><span class="cell">a Home Assistant URL and token</span></td>
+</tr>
+<tr>
+<td data-label="Tool"><span class="cell"><code>send_email</code></span></td>
+<td data-label="Does"><span class="cell">plain-text mail through your SMTP server</span></td>
+<td data-label="Needs"><span class="cell">SMTP settings</span></td>
+</tr>
+</tbody>
+</table></div>
+<p>They sit beside llama-server's built-ins, the JavaScript sandbox and any
+MCP servers under <strong>Chat Settings → Tools</strong>, where each can be unticked
+and marked &quot;always allow&quot;. The first call of each tool in a chat asks
+before it runs. Scheduled tasks run with no browser, so their tool calls
+do not ask; a task is saved as a chat titled with a clock, and its last
+result shows in <code>list_tasks</code>.</p>
+<p>Two switches control tool calling as a whole:</p>
+<ul>
+<li><strong>Universal Tool Calls</strong> under <strong>Settings → Chat Tools</strong> is the master
+switch for the platform: off, no model is offered any tool, whatever
+the chat or the user chose. On by default.</li>
+<li>The <strong>wrench button</strong> in a chat's toolbar turns tools off for that one
+conversation (on by default, remembered with the chat). It shows as
+locked while the master switch is off.</li>
+</ul>
+<p><code>web_search</code> and <code>news</code> are offered only once a provider is set up. A
+Brave key (free plan) goes in <strong>Settings → Chat Tools</strong>; config.json
+becomes readable only by your user the moment it holds any secret. A
+SearXNG instance needs <code>json</code> in the <code>formats</code> list of its settings.yaml
+(there is a recipe under <a href="#how-to-recipes">How-to recipes</a>). <code>fetch_url</code>
+refuses private, loopback and link-local addresses, so a model cannot
+be steered into reading the deck's API, the proxy or anything on the LAN.</p>
+<p>For <code>generate_image</code>, export a workflow from ComfyUI in API format, put
+the strings <code>{prompt}</code>, <code>{negative}</code>, <code>{seed}</code>, <code>{width}</code> and <code>{height}</code>
+where those values go, and name the file under <strong>Settings → Chat Tools</strong>.
+Images and clips the tools make are kept under <code>generated/&lt;account&gt;/</code> in
+the data directory and served only to that account.</p>
 <h2 id="prompt-lab"><a class="hash" href="#prompt-lab" aria-label="Link to this section">#</a>Prompt Lab</h2>
 <p>Pick a running model (or <em>auto</em> for the default instance), set the
 temperature and max tokens, optionally a system prompt, and press <strong>Send</strong>
@@ -998,6 +1146,29 @@ the llama port range.</p>
 <p><strong>Add speech input.</strong> Build whisper.cpp, set <strong>whisper-server binary</strong> and
 <strong>Whisper model</strong> in Settings, and start whisper-server from the Servers
 panel. <code>input_audio</code> parts in chat requests are then transcribed.</p>
+<p><strong>Give the chat free web search with SearXNG.</strong> One container, no account,
+no key. Make a settings file that allows JSON output, then run it on
+localhost:</p>
+<pre><code class="language-bash">mkdir -p ~/.local/share/neuraldeck/searxng
+cat &gt; ~/.local/share/neuraldeck/searxng/settings.yml &lt;&lt;YML
+use_default_settings: true
+general:
+  instance_name: &quot;NeuralDeck search&quot;
+search:
+  formats: [html, json]
+server:
+  secret_key: &quot;$(openssl rand -hex 32)&quot;
+  limiter: false
+  image_proxy: false
+YML
+docker run -d --name searxng --restart unless-stopped -p 127.0.0.1:8888:8080 \
+  -v ~/.local/share/neuraldeck/searxng:/etc/searxng \
+  -e BASE_URL=http://127.0.0.1:8888/ searxng/searxng:latest
+</code></pre>
+<p>Then put <code>http://127.0.0.1:8888</code> in <strong>Settings → Chat Tools → SearXNG
+URL</strong>. <code>web_search</code> appears in the chat's tool list at once. The
+container comes back after a reboot; <code>docker logs searxng</code> if it does
+not answer.</p>
 <p><strong>Reset the panel layout.</strong> Press <strong>Reset layout</strong> in the header.</p>
 <h2 id="settings-reference"><a class="hash" href="#settings-reference" aria-label="Link to this section">#</a>Settings reference</h2>
 <p>Every setting is on the <strong>Settings</strong> tab. Each can also be set in
@@ -1207,6 +1378,80 @@ restart button.</li>
 <td data-label="Default"><span class="cell"><code>1.05</code></span></td>
 <td data-label="Applies"><span class="cell">now</span></td>
 <td data-label="Meaning"><span class="cell">Repeat penalty (0–5)</span></td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="chat-tools-1"><a class="hash" href="#chat-tools-1" aria-label="Link to this section">#</a>Chat tools</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Applies</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td data-label="Key"><span class="cell"><code>tools_enabled</code></span></td>
+<td data-label="Default"><span class="cell"><code>true</code></span></td>
+<td data-label="Applies"><span class="cell">at once</span></td>
+<td data-label="Meaning"><span class="cell">The master switch for tool calling from the Chat tab (see <a href="#chat-tools">Chat tools</a>)</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>search_provider</code></span></td>
+<td data-label="Default"><span class="cell"><code>auto</code></span></td>
+<td data-label="Applies"><span class="cell">at once</span></td>
+<td data-label="Meaning"><span class="cell"><code>brave</code>, <code>searxng</code>, or <code>auto</code> (Brave when a key is set, else SearXNG when a URL is set)</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>brave_api_key</code></span></td>
+<td data-label="Default"><span class="cell">—</span></td>
+<td data-label="Applies"><span class="cell">at once</span></td>
+<td data-label="Meaning"><span class="cell">A Brave Search API key; a config file holding one is made mode 0600</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>searxng_url</code></span></td>
+<td data-label="Default"><span class="cell">—</span></td>
+<td data-label="Applies"><span class="cell">at once</span></td>
+<td data-label="Meaning"><span class="cell">A SearXNG instance with the json format enabled</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>github_token</code></span></td>
+<td data-label="Default"><span class="cell">—</span></td>
+<td data-label="Applies"><span class="cell">at once</span></td>
+<td data-label="Meaning"><span class="cell">Optional; raises <code>read_github</code>'s rate limit from 60 to 5,000 an hour</span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>comfy_workflow</code></span></td>
+<td data-label="Default"><span class="cell">—</span></td>
+<td data-label="Applies"><span class="cell">at once</span></td>
+<td data-label="Meaning"><span class="cell">A ComfyUI API-format workflow with <code>{prompt}</code> etc.; enables <code>generate_image</code></span></td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="tool-integrations"><a class="hash" href="#tool-integrations" aria-label="Link to this section">#</a>Tool integrations</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Applies</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td data-label="Key"><span class="cell"><code>ha_url</code>, <code>ha_token</code></span></td>
+<td data-label="Default"><span class="cell">—</span></td>
+<td data-label="Applies"><span class="cell">at once</span></td>
+<td data-label="Meaning"><span class="cell">A Home Assistant instance and a long-lived token; enable <code>home_assistant</code></span></td>
+</tr>
+<tr>
+<td data-label="Key"><span class="cell"><code>smtp_host</code>, <code>smtp_port</code>, <code>smtp_user</code>, <code>smtp_password</code>, <code>smtp_from</code></span></td>
+<td data-label="Default"><span class="cell">—, <code>587</code>, —, —, —</span></td>
+<td data-label="Applies"><span class="cell">at once</span></td>
+<td data-label="Meaning"><span class="cell">The mail server for <code>send_email</code>; STARTTLS when offered, implicit TLS on 465</span></td>
 </tr>
 </tbody>
 </table></div>
@@ -1627,6 +1872,9 @@ Windows, or wherever <code>NEURALDECK_HOME</code> points. The Settings tab and
 ├── proxy_tokens.json      ← proxy auth tokens (hash and secret); mode 0600
 ├── proxy_internal.key     ← the dashboard's own key for the proxy; mode 0600
 ├── chats/&lt;account&gt;/       ← each account's saved chats, one JSON file per chat; mode 0600
+├── documents/&lt;account&gt;/   ← files the chat's document tools can read (and documents/_shared/)
+├── generated/&lt;account&gt;/   ← images and clips the chat's tools made
+├── tasks/&lt;account&gt;.json   ← scheduled prompts
 ├── bench.jsonl            ← benchmark history (newest 5,000 runs)
 ├── last-model.txt         ← the last model launched
 ├── logs/
@@ -1721,6 +1969,14 @@ a view the account lacks answers 403.</p>
 <tr>
 <td data-label="Method and path"><span class="cell"><code>GET /api/chats</code>, <code>PUT /api/chats/{id}</code>, <code>DELETE /api/chats/{id}</code>, <code>DELETE /api/chats</code></span></td>
 <td data-label="Purpose"><span class="cell">the signed-in account's saved chats: list, save one (the body is the conversation), delete one, delete all</span></td>
+</tr>
+<tr>
+<td data-label="Method and path"><span class="cell"><code>GET /api/tools</code>, <code>POST /api/tools/run</code></span></td>
+<td data-label="Purpose"><span class="cell">the deck's built-in chat tools for this account and whether tool calls are on; run one (<code>{&quot;name&quot;, &quot;args&quot;}</code>)</span></td>
+</tr>
+<tr>
+<td data-label="Method and path"><span class="cell"><code>GET /api/generated/{file}</code></span></td>
+<td data-label="Purpose"><span class="cell">an image or clip a tool made for this account</span></td>
 </tr>
 <tr>
 <td data-label="Method and path"><span class="cell"><code>POST /api/chat</code></span></td>
@@ -1894,6 +2150,10 @@ tokens travel in the clear. Put a TLS-terminating reverse proxy in front
 for anything beyond your own LAN.</li>
 <li>Generate a proxy token before pointing anything beyond this machine at
 port 8080.</li>
+<li>The chat's <code>fetch_url</code> tool only fetches public addresses, and a Brave
+key lives in config.json (mode 0600 once set). Turn <strong>Universal Tool
+Calls</strong> off under Settings → Chat Tools if you would rather no model
+reached the network at all.</li>
 <li>On an untrusted network, set <code>deck_host</code>, <code>proxy_host</code> and <code>llama_host</code>
 to <code>127.0.0.1</code>.</li>
 <li>Don't expose these ports to the internet. If you need remote access, put

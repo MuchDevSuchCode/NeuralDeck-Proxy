@@ -47,7 +47,8 @@ def _f(key, label, type_, group, help_="", restart=False, choices=None,
             "min": min_, "max": max_, "placeholder": placeholder}
 
 
-# type: str | int | float | bool | choice | dir | file | dirlist | strlist | map
+# type: str | secret | int | float | bool | choice | dir | file | dirlist | strlist | map
+# (secret is a str the page masks; a config file holding one is written 0600)
 SCHEMA = [
     # ── Models ────────────────────────────────────────────────────────────
     _f("model_dirs", "Model Directories", "dirlist", "Models",
@@ -121,6 +122,49 @@ SCHEMA = [
     _f("top_p", "Top-p", "float", "Sampling", "", min_=0, max_=1),
     _f("min_p", "Min-p", "float", "Sampling", "", min_=0, max_=1),
     _f("repeat_penalty", "Repeat Penalty", "float", "Sampling", "", min_=0, max_=5),
+
+    # ── Chat Tools ────────────────────────────────────────────────────────
+    _f("tools_enabled", "Universal Tool Calls", "bool", "Chat Tools",
+       "The master switch for tool calling from the Chat tab: the built-in "
+       "tools below, llama-server's own, the JavaScript sandbox and MCP "
+       "servers. Off: no model is offered any tool. Applies at once; each "
+       "chat also has its own tools toggle."),
+    _f("search_provider", "Web Search Provider", "choice", "Chat Tools",
+       "What web_search uses. auto picks Brave when a key is set, else "
+       "SearXNG when a URL is set; with neither, the tool is not offered.",
+       choices=["auto", "brave", "searxng"]),
+    _f("brave_api_key", "Brave Search API Key", "secret", "Chat Tools",
+       "From brave.com/search/api (the free plan is enough). Kept in "
+       "config.json, which is then readable only by your user.",
+       placeholder="BSA…"),
+    _f("searxng_url", "SearXNG URL", "str", "Chat Tools",
+       "A SearXNG instance, e.g. http://127.0.0.1:8888, with the json "
+       "format enabled in its settings.yaml.", placeholder="http://127.0.0.1:8888"),
+    _f("github_token", "GitHub Token", "secret", "Chat Tools",
+       "Optional. read_github works without one at 60 requests an hour; a "
+       "fine-grained token with public-repo read raises that to 5,000.",
+       placeholder="github_pat_…"),
+    _f("comfy_workflow", "ComfyUI Workflow File", "file", "Chat Tools",
+       "A workflow exported from ComfyUI in API format, with {prompt}, "
+       "{negative}, {seed}, {width} and {height} where those go. Enables "
+       "the generate_image tool while ComfyUI is running."),
+
+    # ── Tool Integrations ─────────────────────────────────────────────────
+    _f("ha_url", "Home Assistant URL", "str", "Tool Integrations",
+       "e.g. http://homeassistant.local:8123. With the token, enables the "
+       "home_assistant tool.", placeholder="http://homeassistant.local:8123"),
+    _f("ha_token", "Home Assistant Token", "secret", "Tool Integrations",
+       "A long-lived access token from your Home Assistant profile page."),
+    _f("smtp_host", "SMTP Server", "str", "Tool Integrations",
+       "With a From address, enables the send_email tool. STARTTLS is used "
+       "when the server offers it; port 465 means implicit TLS.",
+       placeholder="smtp.gmail.com"),
+    _f("smtp_port", "SMTP Port", "int", "Tool Integrations", "", min_=1, max_=65535),
+    _f("smtp_user", "SMTP User", "str", "Tool Integrations", ""),
+    _f("smtp_password", "SMTP Password", "secret", "Tool Integrations",
+       "For Gmail, an app password."),
+    _f("smtp_from", "From Address", "str", "Tool Integrations",
+       "What sent mail comes from.", placeholder="deck@example.com"),
 
     # ── Ports ─────────────────────────────────────────────────────────────
     _f("deck_port", "Dashboard Port", "int", "Ports",
@@ -222,6 +266,12 @@ ATTR = {
     "temp": "TEMP", "top_p": "TOP_P", "min_p": "MIN_P",
     "repeat_penalty": "REPEAT_PENALTY",
     "deck_port": "DECK_PORT", "deck_host": "DECK_HOST", "deck_auth": "DECK_AUTH",
+    "tools_enabled": "TOOLS_ENABLED", "search_provider": "SEARCH_PROVIDER",
+    "brave_api_key": "BRAVE_API_KEY", "searxng_url": "SEARXNG_URL",
+    "github_token": "GITHUB_TOKEN", "comfy_workflow": "COMFY_WORKFLOW",
+    "ha_url": "HA_URL", "ha_token": "HA_TOKEN", "smtp_host": "SMTP_HOST",
+    "smtp_port": "SMTP_PORT", "smtp_user": "SMTP_USER", "smtp_password": "SMTP_PASSWORD",
+    "smtp_from": "SMTP_FROM",
     "proxy_port": "PROXY_PORT", "proxy_host": "PROXY_HOST",
     "whisper_bin": "WHISPER_BIN", "whisper_model": "WHISPER_MODEL",
     "whisper_port": "WHISPER_PORT", "ffmpeg": "FFMPEG",
@@ -469,8 +519,11 @@ def _write_atomic(data: dict) -> None:
             fh.write(json.dumps(data, indent=2, sort_keys=True) + "\n")
             fh.flush()
             os.fsync(fh.fileno())
-        # mkstemp creates 0600; keep the mode the file already had
+        # mkstemp creates 0600; keep the mode the file already had, unless
+        # a secret is in it now, which makes it private for good
         mode = os.stat(target).st_mode & 0o777 if target.exists() else 0o644
+        if any(data.get(f["key"]) for f in SCHEMA if f["type"] == "secret"):
+            mode = 0o600
         os.chmod(tmp, mode)
         os.replace(tmp, target)
     except BaseException:

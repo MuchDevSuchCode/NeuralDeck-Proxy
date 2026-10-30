@@ -16,6 +16,9 @@ API behind it:
   POST /api/llama/{port}/stop   stop one instance
   GET  /api/launch/status       progress of an in-flight launch
   POST /api/chat                same-origin relay to the proxy (Prompt Lab)
+  GET  /api/tools               the deck's built-in chat tools (and the master switch)
+  POST /api/tools/run           run one: {"name", "args"}
+  GET  /api/generated/{file}    an image or clip a tool made for this account
   GET  /api/chats               the signed-in account's saved chats
   PUT  /api/chats/{id}          save one; DELETE removes one, DELETE /api/chats all
   GET  /api/bench               benchmark history
@@ -45,7 +48,7 @@ from fastapi.responses import (FileResponse, JSONResponse, RedirectResponse, Res
 from starlette.background import BackgroundTask
 
 from . import __version__
-from . import (bench, chats, config, gguf, launcher, llama_log, models, procs,
+from . import (bench, chats, config, gguf, launcher, llama_log, models, procs, scheduler, tools,
                services, settings, sysinfo, tokens, users)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -246,10 +249,20 @@ async def sampler():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     task = asyncio.create_task(sampler())
+    # what the chat's deck-side tools and the task runner reach into
+    tools.CONTEXT.update({
+        "loop": asyncio.get_running_loop(), "snapshot": lambda: latest_snapshot,
+        "instances": procs.llama_instances, "stop_pid": procs.stop_pid, "models": models.discover,
+        "launch": _launcher.start, "bench_add": bench.add_client_run,
+        "proxy_headers": _proxy_headers, "scheduler": scheduler,
+        "current_model": lambda: next((i.get("alias") for i in procs.llama_instances() if i.get("alias")), None),
+    })
+    runner = asyncio.create_task(scheduler.loop())
     print(f"NeuralDeck on http://{config.DECK_HOST}:{config.DECK_PORT}", flush=True)
     _bootstrap_admin()
     yield
     task.cancel()
+    runner.cancel()
 
 
 app = FastAPI(title="NeuralDeck", lifespan=lifespan)
@@ -269,7 +282,7 @@ _MUST_CHANGE_OK = {"/api/me", "/api/me/password", "/api/logout", "/login", "/api
 # accounts and proxy tokens are admin-only whatever the access list.
 _VIEW_OF_PATH = [
     (re.compile(r"^/api/(models|llama/|launch/status|service/|logs/|hf/)"), "dash"),
-    (re.compile(r"^/api/(px/|mcp|chats)"), "chat"),
+    (re.compile(r"^/api/(px/|mcp|chats|tools|generated)"), "chat"),
     (re.compile(r"^/api/chat$"), ("chat", "prompt")),
     (re.compile(r"^/api/bench"), ("bench", "prompt")),
     (re.compile(r"^/api/(settings|browse|restart)"), "settings"),
@@ -986,12 +999,55 @@ async def tokens_revoke(token_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Built-in chat tools: weather, web search, fetch a page, the clock. They
+# run here so keys stay on the deck; tools_enabled is the master switch.
+# ---------------------------------------------------------------------------
+
+@app.get("/api/tools")
+async def tools_list(request: Request):
+    me = _user(request)
+    return {"enabled": config.TOOLS_ENABLED,
+            "tools": await asyncio.to_thread(tools.definitions, me) if config.TOOLS_ENABLED else []}
+
+
+@app.post("/api/tools/run")
+async def tools_run(body: dict, request: Request):
+    if not config.TOOLS_ENABLED:
+        raise HTTPException(403, "tool calls are turned off (Settings → Chat Tools)")
+    name = str(body.get("name") or "")
+    try:
+        text = await asyncio.to_thread(tools.run, name, body.get("args"), _user(request))
+    except tools.ToolError as e:
+        return {"error": str(e)}
+    return {"result": text}
+
+
+_GEN_NAME = re.compile(r"^[\w.-]{1,80}$")
+
+
+@app.get("/api/generated/{name}")
+async def generated_file(name: str, request: Request):
+    """An image or audio clip a tool made for the signed-in account."""
+    if not _GEN_NAME.match(name) or name.startswith("."):
+        raise HTTPException(404, "no such file")
+    path = config.DATA_DIR / "generated" / _chat_account(request) / name
+    if not path.is_file():
+        raise HTTPException(404, "no such file")
+    return FileResponse(str(path), headers={"Cache-Control": "private, max-age=86400"})
+
+
+# ---------------------------------------------------------------------------
 # Saved chats: one store per account, so a user sees only their own history
 # and finds it again from any browser.
 # ---------------------------------------------------------------------------
 
 def _chat_account(request: Request) -> str:
     return _user(request).get("name") or chats.LOCAL
+
+
+def _proxy_headers() -> dict:
+    """What the deck itself sends the proxy, with no browser in the loop."""
+    return ({"Authorization": "Bearer " + tokens.internal_key()} if tokens.required() else {})
 
 
 @app.get("/api/chats")

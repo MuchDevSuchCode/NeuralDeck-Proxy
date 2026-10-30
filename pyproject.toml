@@ -27,4 +27,4 @@ neuraldeck = "neuraldeck.cli:main"
 packages = ["neuraldeck"]
 
 [tool.setuptools.package-data]
-neuraldeck = ["static/*"]
+neuraldeck = ["static/*", "sandbox/*"]

@@ -349,7 +349,7 @@
   .strow .badge.env { border-color:var(--yellow); color:var(--yellow); }
   .strow .badge.restart { border-color:var(--pink); color:var(--pink); }
   .strow .badge.missing { border-color:var(--critical); color:var(--critical); }
-  .strow input[type=text], .strow input[type=number], .strow textarea, .strow select {
+  .strow input[type=text], .strow input[type=password], .strow input[type=number], .strow textarea, .strow select {
     background:var(--surface2); color:var(--ink); border:1px solid var(--border-dim);
     padding:4px 8px; font:inherit; font-size:12px; width:100%; }
   .strow input:disabled, .strow select:disabled { opacity:.5; }
@@ -524,6 +524,11 @@
   .chat-top { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:8px 10px;
     border-bottom:1px solid var(--border-dim); }
   #chat-ctx { margin-left:auto; color:var(--muted); font-size:11px; display:flex; align-items:center; gap:6px; }
+  #chat-tools-tgl { display:inline-flex; align-items:center; gap:5px; padding:3px 9px; text-transform:none; letter-spacing:0; font-size:12px; }
+  #chat-tools-tgl .ico { width:14px; height:14px; vertical-align:0; }
+  #chat-tools-tgl.off { color:var(--muted); border-style:dashed; background:transparent; }
+  #chat-tools-tgl.off .ico { opacity:.5; }
+  #chat-tools-tgl.locked { color:var(--muted); cursor:not-allowed; opacity:.6; }
   #chat-ctx .bar { width:80px; flex:none; display:inline-block; }
   /* model picker */
   .mp { position:relative; min-width:0; }
@@ -561,6 +566,8 @@
   .msg-body h1,.msg-body h2,.msg-body h3,.msg-body h4,.msg-body h5,.msg-body h6 {
     font-size:1.05em; margin:1em 0 .4em; color:var(--ink); border:0; padding:0; text-transform:none; letter-spacing:0; }
   .msg-body h1 { font-size:1.35em; } .msg-body h2 { font-size:1.2em; }
+  .msg-body .md-img { display:block; max-width:min(100%,640px); border-radius:6px; margin:6px 0; }
+  .msg-body .md-audio { display:block; max-width:420px; margin:6px 0; }
   .msg-body ul,.msg-body ol { margin:.2em 0 .7em; padding-left:1.6em; }
   .msg-body li { margin:.15em 0; } .msg-body li > p { margin:0; }
   .msg-body blockquote { margin:.4em 0; padding:.1em .9em; border-left:3px solid var(--border); color:var(--ink-2); }
@@ -664,7 +671,7 @@
     #chat-in { flex:1 1 0; min-width:0; }
     #chat-effort { flex:1 1 100%; order:-1; max-width:none; }
     #chat-cs-btn { margin-left:auto; }
-    #chat-cs-btn .cs-lbl { display:none; }
+    #chat-cs-btn .cs-lbl, #chat-tools-tgl .tt-lbl { display:none; }
     #mp-btn { max-width:52vw; }
     #chat-ctx, .chat-top .caps { display:none; }
     .msg.user .msg-body { max-width:95%; }
@@ -992,6 +999,7 @@
         <div id="mp-list" role="listbox" aria-label="Model" tabindex="-1" hidden></div>
       </div>
       <span class="caps" id="chat-caps"></span>
+      <button id="chat-tools-tgl" onclick="chatToolsToggle()" aria-pressed="true" title="tools are on for this chat — click to turn them off"></button>
       <span id="chat-ctx" title="context used by this conversation, of the model's per-request window"></span>
       <button id="chat-cs-btn" onclick="csOpen()" title="all chat settings" aria-label="Chat Settings">⚙<span class="cs-lbl"> Chat Settings</span></button>
     </div>
@@ -3530,7 +3538,8 @@ function stControl(f){
     }
   }else{
     const inp=document.createElement("input"); inp.id=id;
-    inp.type=(f.type==="int"||f.type==="float")?"number":"text";
+    inp.type=(f.type==="int"||f.type==="float")?"number":f.type==="secret"?"password":"text";
+    if(f.type==="secret") inp.autocomplete="off";
     if(f.type==="float")inp.step="any";
     if(f.min!=null)inp.min=f.min; if(f.max!=null)inp.max=f.max;
     inp.value=v==null?"":v; inp.disabled=dis; inp.placeholder=f.placeholder||"";
@@ -3575,6 +3584,7 @@ async function stSave(){
 // what the page does with a save (or import) result: notes, restart
 // badges, a toast, and a refresh of everything that reads the config
 async function stApplyResult(r){
+  if(chatReady) chatToolsRefresh();
   const parts=[], warn=[];
   if((r.saved||[]).length)parts.push(`saved ${r.saved.join(", ")}`);
   if((r.cleared||[]).length)parts.push(`reset ${r.cleared.join(", ")} to default`);
@@ -4227,7 +4237,7 @@ function chatOpen(id){
 function chatAfterSwitch(){
   $("chat").classList.remove("side-open");
   chatModelSig=""; chatUpdateModels(chatInsts);
-  chatRenderList(); chatRenderLog(); chatComposerSync(); chatBuildLine(); $("chat-in").focus();
+  chatRenderList(); chatRenderLog(); chatComposerSync(); chatBuildLine(); chatToolsBtn(); $("chat-in").focus();
 }
 async function chatSave(c=chatCur){
   if(!c)return;
@@ -4396,6 +4406,10 @@ function mdInline(s){
     // non-space before it and no digit after it
     .replace(/\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]/g,(_,a,b)=>stash(mdMath((a??b).trim(),true)))
     .replace(/\\\(([\s\S]+?)\\\)|(?<![\\$\w])\$(?=[^\s$])([^$\n]*?[^\s$\\])\$(?![\d$])/g,(_,a,b)=>stash(mdMath((a??b).trim(),false)))
+    // files a deck tool made for this account render inline: images as images, clips as players
+    .replace(/!\[([^\]\n]*)\]\(\s*(\/api\/generated\/[\w.-]+)\s*\)/g,(_,t,u)=>stash(`<img class="md-img" src="${escA(u)}" alt="${escA(t)}" loading="lazy">`))
+    .replace(/\[([^\]\n]+)\]\(\s*(\/api\/generated\/[\w.-]+\.(?:mp3|wav|ogg))\s*\)/g,(_,t,u)=>stash(`<audio class="md-audio" controls preload="none" src="${escA(u)}"></audio>`))
+    .replace(/\[([^\]\n]+)\]\(\s*(\/api\/generated\/[\w.-]+)\s*\)/g,(_,t,u)=>link(u,mdEmph(escH(t))))
     .replace(/!?\[([^\]\n]+)\]\(\s*((?:https?:\/\/|mailto:)[^\s)"<>]+)(?: +"[^"]*")? *\)/g,(_,t,u)=>link(u,mdEmph(escH(t))))
     .replace(/(^|[\s(])(https?:\/\/[^\s<>"]*[^\s<>".,;:!?)\]'*_])/g,(_,p,u)=>p+link(u,escH(u)));
   return mdEmph(escH(s)).replace(/\u0000(\d+)\u0000/g,(_,i)=>keep[+i]);
@@ -4759,7 +4773,7 @@ async function chatRun(opts={}){
       await chatSave(c); if(chatCur===c) chatRenderLog();
       const history=cont?c.messages.slice(0,c.messages.indexOf(m)+1):c.messages.slice(0,-1);
       const body=chatBuildBody(model,history,{cont:!!cont});
-      const tools=chatToolDefs(model); if(tools.length) body.tools=tools;
+      const tools=chatToolDefs(model,c); if(tools.length) body.tools=tools;
       let tThink=null, tThinkEnd=null, res=null;
       try{
         res=await streamChat(body,{
@@ -4822,7 +4836,7 @@ async function chatLLMTitle(c,model){
 // re-send the conversation with n_predict 0 so the server has it in the KV
 // cache before the next message
 function chatPreEncode(c,model){
-  const body=chatBuildBody(model,c.messages), tools=chatToolDefs(model);
+  const body=chatBuildBody(model,c.messages), tools=chatToolDefs(model,c);
   if(tools.length) body.tools=tools;
   Object.assign(body,{stream:false,n_predict:0}); delete body.stream_options; delete body.return_progress; delete body.timings_per_token;
   chatPreAbort=new AbortController();
@@ -4831,20 +4845,25 @@ function chatPreEncode(c,model){
 }
 
 /* ── tools: llama-server built-ins, the JS sandbox, MCP servers ── */
-let chatToolIndex=new Map(), chatBuiltin=[];
+let chatToolIndex=new Map(), chatBuiltin=[], chatDeckTools=[], chatToolsUniversal=true;
 const SANDBOX_DEF={type:"function",function:{name:"run_javascript",
   description:"Execute JavaScript in a sandboxed browser worker (no DOM, no page access). Top level await is supported. Use console.log to print intermediate values; a top level return statement is captured as the result.",
   parameters:{type:"object",properties:{code:{type:"string",description:"JavaScript source to execute"},
     timeout_ms:{type:"number",description:"Execution timeout in milliseconds, default 10000, max 30000"}},required:["code"]}}};
 async function chatToolsRefresh(){
+  try{ const d=await api("/api/tools","GET",undefined,{quiet:true}); chatToolsUniversal=d.enabled!==false; chatDeckTools=Array.isArray(d.tools)?d.tools:[]; }
+  catch(e){ chatDeckTools=[]; }
   try{ const r=await fetch("/api/px/tools",{headers:chatHeaders()}); const j=r.ok?await r.json():[];
     chatBuiltin=Array.isArray(j)?j.filter(t=>t&&t.definition&&t.tool):[]; }
   catch(e){ chatBuiltin=[]; }
+  chatToolsBtn();
   for(const s of CS.mcpServers) if(s.enabled&&!mcpConn[s.id]) mcpConnect(s);
   chatToolsIndex();
 }
 function chatToolGroups(){
   const g=[];
+  if(chatDeckTools.length) g.push({label:"NeuralDeck", tools:chatDeckTools.map(d=>({key:"deck:"+d.function.name, def:d,
+    run:(a,sig)=>chatRunDeck(d.function.name,a,sig)}))});
   if(chatBuiltin.length) g.push({label:"llama-server built-in", tools:chatBuiltin.map(b=>({key:"builtin:"+b.tool, def:b.definition,
     run:(a,sig)=>chatRunBuiltin(b.tool,a,sig)}))});
   if(CS.jsSandboxEnabled) g.push({label:"JavaScript sandbox", tools:[{key:"sandbox:run_javascript", def:SANDBOX_DEF, run:chatRunSandbox}]});
@@ -4867,9 +4886,34 @@ function chatToolsIndex(){
   }
   if($("cs-dialog").open&&csSection==="tools") csRenderBody();
 }
-function chatToolDefs(model){
+// tools reach a model only when the master switch (Settings → Chat Tools),
+// this chat's own switch and the model's capability all allow it
+function chatToolDefs(model,conv=chatCur){
+  if(!chatToolsUniversal||(conv&&conv.noTools))return [];
   const c=chatCaps[model]; if(c&&c.tools===false)return [];
   return [...chatToolIndex.values()].map(t=>t.def);
+}
+function chatToolsBtn(){
+  const b=$("chat-tools-tgl"); if(!b)return;
+  const off=!!(chatCur&&chatCur.noTools), lock=!chatToolsUniversal;
+  b.className=(off?"off":"")+(lock?" locked":""); b.setAttribute("aria-pressed",String(!off&&!lock));
+  b.innerHTML=svgI("wrench")+`<span class="tt-lbl">${lock?"Tools Off":off?"Tools Off":"Tools"}</span>`;
+  b.title=lock?"tool calls are turned off for everyone (Settings → Chat Tools → Universal Tool Calls)"
+    :off?"tools are off for this chat — click to turn them on":"tools are on for this chat — click to turn them off";
+}
+function chatToolsToggle(){
+  if(!chatToolsUniversal){ toast("tool calls are turned off for everyone — an admin can turn them on under Settings → Chat Tools","warn",{ms:7000}); return; }
+  if(!chatCur)return;
+  chatCur.noTools=!chatCur.noTools; chatToolsBtn();
+  if(!chatCur.draft) chatDB.put(chatCur);
+  toast(chatCur.noTools?"tools off for this chat":"tools on for this chat");
+}
+async function chatRunDeck(name,args,sig){
+  const r=await fetch("/api/tools/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,args}),signal:sig});
+  const j=await r.json().catch(()=>({error:"HTTP "+r.status}));
+  if(!r.ok) return {content:errText(j,String(r.status)),isError:true};
+  if(j.error) return {content:String(j.error),isError:true};
+  return {content:String(j.result??""),isError:false};
 }
 async function chatExecTool(t,m,sig){
   const tool=chatToolIndex.get(t.name);
@@ -5041,8 +5085,12 @@ function csToolsHTML(){
         <td class="c"><input type="checkbox" data-ten="${escA(t.key)}" ${CS.toolsDisabled[t.key]?"":"checked"} aria-label="Enable ${escA(t.def.function.name)}"></td>
         <td class="c"><input type="checkbox" data-tal="${escA(t.key)}" ${CS.toolsAllowed[t.key]?"checked":""} aria-label="Always allow ${escA(t.def.function.name)}"></td></tr>`).join("")
       }</tbody></table></div>`).join("")
-    :`<div class="sub" style="padding:10px 0">No tools available. Turn on the JavaScript sandbox (Developer), add an MCP server above, or start llama-server with <code>--tools</code>.</div>`;
-  return `<div class="cs-f"><label><span>MCP servers</span></label>
+    :`<div class="sub" style="padding:10px 0">No tools available. The deck's own tools come from Settings → Chat Tools; otherwise turn on the JavaScript sandbox (Developer), add an MCP server above, or start llama-server with <code>--tools</code>.</div>`;
+  const banner=!chatToolsUniversal?`<div class="cs-f"><span class="tool-st err">TOOL CALLS ARE OFF FOR EVERYONE</span>
+      <div class="help">Universal Tool Calls is off under Settings → Chat Tools. No model is offered any tool until an admin turns it on.</div></div>`
+    :chatCur&&chatCur.noTools?`<div class="cs-f"><span class="tool-st err">TOOLS ARE OFF FOR THIS CHAT</span>
+      <div class="help">The wrench button in the chat toolbar turns them back on for this conversation.</div></div>`:"";
+  return banner+`<div class="cs-f"><label><span>MCP servers</span></label>
       <div class="help">Model Context Protocol servers (Streamable HTTP) whose tools the model may call. Each call asks first unless you tick “Always allow”.</div>
       ${servers}
       <div class="cs-card"><div class="row"><input id="mcp-url" class="pl-input" style="flex:1;min-width:200px;margin:0" placeholder="https://example.com/mcp" aria-label="MCP server URL">
