@@ -205,8 +205,8 @@ DEFINITIONS += [
          {"model": {"type": "string", "description": "A loaded model's name."}},
          required=["model"], access="bench"),
     _fn("generate_image",
-        "Generate an image with the deck's ComfyUI. Returns markdown for the image; put that "
-        "markdown in your reply so the user sees it.",
+        "Generate an image from a text prompt with the deck's image model. Returns markdown "
+        "for the image; put that markdown in your reply so the user sees it.",
         {"prompt": {"type": "string"}, "negative": {"type": "string"},
          "width": {"type": "integer"}, "height": {"type": "integer"},
          "seed": {"type": "integer"}},
@@ -1150,10 +1150,46 @@ def _comfy_workflow() -> dict:
         raise ToolError(f"could not read the ComfyUI workflow: {e}")
 
 
+def _sd_base():
+    base = (getattr(config, "SD_URL", "") or "").rstrip("/")
+    return base if base and _reachable(base + "/v1/models") else None
+
+
+def _sd_generate(prompt, args, user) -> dict:
+    """stable-diffusion.cpp's sd-server, through its OpenAI-shaped API."""
+    w = int(_num(args.get("width"), "width", 64, 2048, 1024))
+    h = int(_num(args.get("height"), "height", 64, 2048, 1024))
+    seed = int(_num(args.get("seed"), "seed", -1, 2 ** 31 - 1, -1))
+    extra = {"seed": seed}
+    neg = (args.get("negative") or "").strip()
+    if neg:
+        extra["negative_prompt"] = neg
+    body = {"prompt": f"{prompt} <sd_cpp_extra_args>{json.dumps(extra)}</sd_cpp_extra_args>",
+            "n": 1, "size": f"{w}x{h}", "output_format": "png"}
+    with httpx.Client(timeout=httpx.Timeout(900.0, connect=5.0)) as c:
+        r = c.post(_sd_base() + "/v1/images/generations", json=body)
+    if r.status_code == 503:
+        raise ToolError("sd-server has no model loaded yet; give it a moment or check its log")
+    if r.status_code != 200:
+        raise ToolError(f"sd-server answered {r.status_code}: {r.text[:300]}")
+    data = (r.json().get("data") or [{}])[0]
+    b64 = data.get("b64_json")
+    if not b64:
+        raise ToolError("sd-server returned no image")
+    import base64
+    path, url = _generated(user, ".png")
+    path.write_bytes(base64.b64decode(b64))
+    return {"url": url, "markdown": f"![{prompt[:60]}]({url})", "size": f"{w}x{h}",
+            "seed": seed if seed >= 0 else "random", "backend": "sd-server",
+            "note": "include the markdown in your reply to show the image"}
+
+
 def generate_image(args: dict, user=None) -> dict:
     prompt = (args.get("prompt") or "").strip()
     if not prompt:
         raise ToolError("prompt is required")
+    if _sd_base():
+        return _sd_generate(prompt, args, user)
     wf = _comfy_workflow()
     fill = {"{prompt}": prompt, "{negative}": (args.get("negative") or "").strip(),
             "{seed}": str(int(_num(args.get("seed"), "seed", 0, 2 ** 53, secrets.randbelow(2 ** 32)))),
@@ -1378,6 +1414,8 @@ def _offered(name: str, user) -> bool:
             if not CONTEXT:
                 return False
         elif name == "generate_image":
+            if _sd_base():
+                return True
             _comfy_workflow()
             return _reachable(getattr(config, "COMFY_URL", "").rstrip("/") + "/system_stats")
         elif name == "speak":
@@ -1395,6 +1433,35 @@ def _offered(name: str, user) -> bool:
     if need and user is not None and need not in (user.get("access") or []):
         return False
     return True
+
+
+# what each tool needs before it is offered, for the chat's help panel
+NEEDS = {
+    "web_search": "a search provider: a Brave API key or a SearXNG URL under Settings → Chat Tools",
+    "news": "the same search provider as web_search",
+    "run_python": "Docker on the deck (the sandbox image builds itself on first use)",
+    "deck_status": "the Dashboard view", "list_models": "the Dashboard view",
+    "launch_model": "the Dashboard view", "stop_model": "the Dashboard view",
+    "benchmark": "the Benchmarks view",
+    "generate_image": "sd-server running (Settings → Image Generation), or ComfyUI with a workflow file",
+    "speak": "the TTS service running",
+    "schedule_task": "nothing", "list_tasks": "nothing", "cancel_task": "nothing",
+    "home_assistant": "a Home Assistant URL and token under Settings → Tool Integrations",
+    "send_email": "SMTP settings under Settings → Tool Integrations",
+}
+
+
+def catalog(user=None) -> list:
+    """Every built-in tool, offered or not, with why not: the help panel."""
+    out = []
+    for d in DEFINITIONS:
+        name = d["function"]["name"]
+        need = ACCESS.get(name)
+        out.append({"name": name, "description": d["function"]["description"],
+                    "offered": _offered(name, user),
+                    "needs": NEEDS.get(name, "nothing"),
+                    "no_access": bool(need and user is not None and need not in (user.get("access") or []))})
+    return out
 
 
 def definitions(user=None) -> list:

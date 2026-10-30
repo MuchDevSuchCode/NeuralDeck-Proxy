@@ -529,6 +529,19 @@
   #chat-tools-tgl.off { color:var(--muted); border-style:dashed; background:transparent; }
   #chat-tools-tgl.off .ico { opacity:.5; }
   #chat-tools-tgl.locked { color:var(--muted); cursor:not-allowed; opacity:.6; }
+  #chat-help { width:30px; padding:3px 0; text-align:center; font-weight:700; letter-spacing:0; }
+  #help-dialog { width:min(880px, calc(100vw - 20px)); }
+  .help-intro { color:var(--ink-2); font-size:12.5px; line-height:1.55; margin:0 0 10px; }
+  .help-intro b { color:var(--ink); }
+  .help-grp { margin-top:12px; color:var(--cyan); font-size:11px; letter-spacing:1.5px; text-transform:uppercase; }
+  .help-grp .sub { letter-spacing:0; text-transform:none; margin-left:6px; }
+  .help-tbl td:first-child { white-space:nowrap; color:var(--ink); font-family:var(--mono); }
+  .help-tbl td { vertical-align:top; line-height:1.45; }
+  .help-tbl td:last-child { width:170px; min-width:140px; }
+  .help-tbl td:nth-child(2) { width:auto; }
+  .help-st.ok { color:var(--green); } .help-st.off { color:var(--muted); } .help-st.need { color:var(--yellow); }
+  .help-needs { color:var(--muted); font-size:11px; display:block; margin-top:2px; }
+  :root[data-theme^="llama"] .help-grp { color:var(--ink); letter-spacing:0; text-transform:none; font-weight:600; font-size:13px; }
   #chat-ctx .bar { width:80px; flex:none; display:inline-block; }
   /* model picker */
   .mp { position:relative; min-width:0; }
@@ -1000,6 +1013,7 @@
       </div>
       <span class="caps" id="chat-caps"></span>
       <button id="chat-tools-tgl" onclick="chatToolsToggle()" aria-pressed="true" title="tools are on for this chat — click to turn them off"></button>
+      <button id="chat-help" onclick="chatHelpOpen()" title="what the model can do with tools" aria-label="Tool help">?</button>
       <span id="chat-ctx" title="context used by this conversation, of the model's per-request window"></span>
       <button id="chat-cs-btn" onclick="csOpen()" title="all chat settings" aria-label="Chat Settings">⚙<span class="cs-lbl"> Chat Settings</span></button>
     </div>
@@ -1196,6 +1210,12 @@
   </div>
 </dialog>
 
+<dialog id="help-dialog" class="modal" aria-labelledby="help-title" onclick="if(event.target===this)this.close()">
+  <div class="panel">
+    <h2 id="help-title">Tools <span class="meta"><button onclick="$('help-dialog').close()" aria-label="Close">✕ Close</button></span></h2>
+    <div id="help-body"></div>
+  </div>
+</dialog>
 <dialog id="cs-dialog" class="modal" aria-labelledby="cs-title" onclick="if(event.target===this)this.close()">
   <div class="panel">
     <h2><span id="cs-title">Chat Settings</span> <span class="meta">
@@ -1854,7 +1874,7 @@ function renderSnapshot(s){
 
 /* ---------- servers ---------- */
 // the deck names its own services; this is only a fallback
-const SVC_LABELS={llama:"llama-server",proxy:"multimodal proxy",whisper:"whisper-server",comfy:"ComfyUI",tts:"TTS server"};
+const SVC_LABELS={llama:"llama-server",proxy:"multimodal proxy",whisper:"whisper-server",comfy:"ComfyUI",tts:"TTS server",sd:"sd-server (images)"};
 const svcLabel=(name,svc)=>(svc&&svc.label)||SVC_LABELS[name]||name;
 const rssFmt=r=>r>1073741824?fmt(r/1073741824)+"G":Math.round((r||0)/1048576)+"M";
 // pending Stop/Start clicks, keyed by row: shown as "stopping…" until the
@@ -4845,13 +4865,13 @@ function chatPreEncode(c,model){
 }
 
 /* ── tools: llama-server built-ins, the JS sandbox, MCP servers ── */
-let chatToolIndex=new Map(), chatBuiltin=[], chatDeckTools=[], chatToolsUniversal=true;
+let chatToolIndex=new Map(), chatBuiltin=[], chatDeckTools=[], chatToolsUniversal=true, chatToolCatalog=[];
 const SANDBOX_DEF={type:"function",function:{name:"run_javascript",
   description:"Execute JavaScript in a sandboxed browser worker (no DOM, no page access). Top level await is supported. Use console.log to print intermediate values; a top level return statement is captured as the result.",
   parameters:{type:"object",properties:{code:{type:"string",description:"JavaScript source to execute"},
     timeout_ms:{type:"number",description:"Execution timeout in milliseconds, default 10000, max 30000"}},required:["code"]}}};
 async function chatToolsRefresh(){
-  try{ const d=await api("/api/tools","GET",undefined,{quiet:true}); chatToolsUniversal=d.enabled!==false; chatDeckTools=Array.isArray(d.tools)?d.tools:[]; }
+  try{ const d=await api("/api/tools","GET",undefined,{quiet:true}); chatToolsUniversal=d.enabled!==false; chatDeckTools=Array.isArray(d.tools)?d.tools:[]; chatToolCatalog=Array.isArray(d.catalog)?d.catalog:[]; }
   catch(e){ chatDeckTools=[]; }
   try{ const r=await fetch("/api/px/tools",{headers:chatHeaders()}); const j=r.ok?await r.json():[];
     chatBuiltin=Array.isArray(j)?j.filter(t=>t&&t.definition&&t.tool):[]; }
@@ -4907,6 +4927,40 @@ function chatToolsToggle(){
   chatCur.noTools=!chatCur.noTools; chatToolsBtn();
   if(!chatCur.draft) chatDB.put(chatCur);
   toast(chatCur.noTools?"tools off for this chat":"tools on for this chat");
+}
+function chatHelpOpen(){
+  const d=$("help-dialog"); chatHelpRender(); if(!d.open) d.showModal();
+  chatToolsRefresh().then(chatHelpRender);
+}
+function chatHelpRender(){
+  const model=mpCurrent(), cap=chatCaps[model], modelNo=cap&&cap.tools===false, chatOff=!!(chatCur&&chatCur.noTools);
+  const state=chatToolsUniversal?chatOff?`tools are <b>off for this chat</b> (the wrench button turns them on)`
+      :modelNo?`<b>${escH(model||"this model")}</b> does not support tool calling — pick a model with the wrench icon`
+      :`tools are <b>on</b> for this chat`
+    :`tool calls are <b>off for everyone</b> (Settings → Chat Tools → Universal Tool Calls)`;
+  let html=`<p class="help-intro">When ${state}. The model decides when a tool helps; ask plainly ("search the web for…", "what's the weather in…", "run this in Python") to nudge it.
+    A tool's first use in a chat asks you first; <b>Always allow</b> skips that, per tool, and each one can be unticked under Chat Settings → Tools.
+    Every call shows as a row above the reply: expand it to see the arguments and the result.</p>`;
+  const st=(ok,offered,needs,noAccess)=>!offered?`<span class="help-st need">${noAccess?"NO ACCESS":"NOT SET UP"}</span><span class="help-needs">needs ${escH(needs)}</span>`
+    :ok?'<span class="help-st ok">READY</span>':'<span class="help-st off">UNTICKED</span>';
+  const deckOn=new Set(chatDeckTools.map(d=>d.function.name));
+  if(chatToolCatalog.length){
+    html+=`<div class="help-grp">NeuralDeck <span class="sub">· run on the deck, keys stay there</span></div><table class="help-tbl"><tbody>`;
+    for(const t of chatToolCatalog){
+      const key="deck:"+t.name, offered=deckOn.has(t.name), ok=offered&&!CS.toolsDisabled[key];
+      html+=`<tr><td>${escH(t.name)}</td><td>${escH(t.description)}</td><td>${st(ok,offered,t.needs,t.no_access)}</td></tr>`;
+    }
+    html+=`</tbody></table>`;
+  }
+  for(const g of chatToolGroups()){
+    if(g.label==="NeuralDeck")continue;
+    html+=`<div class="help-grp">${escH(g.label)}</div><table class="help-tbl"><tbody>`;
+    for(const t of g.tools) html+=`<tr><td>${escH(t.def.function.name)}</td><td>${escH(t.def.function.description||"")}</td><td>${st(!CS.toolsDisabled[t.key],true,"")}</td></tr>`;
+    html+=`</tbody></table>`;
+  }
+  if(!CS.jsSandboxEnabled) html+=`<div class="help-grp">JavaScript sandbox <span class="sub">· off — turn it on under Chat Settings → Developer</span></div>`;
+  if(!CS.mcpServers.length) html+=`<div class="help-grp">MCP servers <span class="sub">· none added — Chat Settings → Tools</span></div>`;
+  $("help-body").innerHTML=html;
 }
 async function chatRunDeck(name,args,sig){
   const r=await fetch("/api/tools/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,args}),signal:sig});

@@ -14,6 +14,7 @@ client port; llama-server instances sit behind it. What it adds:
     natively, otherwise ffmpeg extracts frames and they are rewritten as
     images for the vision projector
   * speech output — /v1/audio/speech is relayed to a TTS backend
+  * images — /v1/images/generations and /v1/images/edits go to sd-server
   * Anthropic-format endpoints routed by model, like the OpenAI ones
   * everything else relayed to llama untouched
 
@@ -50,6 +51,7 @@ from . import config, tokens
 LLAMA_ENDPOINT = config.LLAMA_ENDPOINT
 WHISPER_ENDPOINT = config.WHISPER_ENDPOINT
 TTS_ENDPOINT = config.TTS_ENDPOINT
+SD_ENDPOINT = config.SD_URL
 HOST, PORT = config.PROXY_HOST, config.PROXY_PORT
 VIDEO_FPS, MAX_FRAMES = config.VIDEO_FPS, config.MAX_FRAMES
 CONNECT_TIMEOUT = config.BACKEND_CONNECT_TIMEOUT
@@ -361,9 +363,9 @@ async def lifespan(app: FastAPI):
               f"({config.LLAMA_PORT_RANGE}); discovery skips it, so no "
               f"llama-server can be found there.", file=sys.stderr, flush=True)
     _http()
-    llama_ok, whisper_ok, tts_ok = await asyncio.gather(
+    llama_ok, whisper_ok, tts_ok, sd_ok = await asyncio.gather(
         probe_backend(LLAMA_ENDPOINT), probe_backend(WHISPER_ENDPOINT),
-        probe_backend(TTS_ENDPOINT))
+        probe_backend(TTS_ENDPOINT), probe_backend(SD_ENDPOINT))
     state = lambda ok: "reachable" if ok else "UNREACHABLE"
     ff = ffmpeg_bin()
     print(f"""
@@ -375,6 +377,7 @@ async def lifespan(app: FastAPI):
   llama port range      : {config.LLAMA_PORT_RANGE}
   Whisper endpoint      : {WHISPER_ENDPOINT}  [{state(whisper_ok)}]
   TTS endpoint          : {TTS_ENDPOINT}  [{state(tts_ok)}]
+  Images (sd-server)    : {SD_ENDPOINT}  [{state(sd_ok)}]
   Video frame rate      : {VIDEO_FPS} fps (max {MAX_FRAMES} frames/video)
   ffmpeg                : {ff or 'NOT FOUND — video input disabled'}
   Authentication        : {("required (" + str(len(tokens.list_tokens())) + " tokens)") if tokens.required() else "OPEN — no tokens yet (Settings → Proxy Auth Tokens)"}
@@ -691,9 +694,9 @@ def guess_image_mime(upload: UploadFile) -> str:
 
 @app.get("/health")
 async def health():
-    instances, whisper_ok, tts_ok = await asyncio.gather(
+    instances, whisper_ok, tts_ok, sd_ok = await asyncio.gather(
         discover_instances(ttl=2.0), probe_backend(WHISPER_ENDPOINT),
-        probe_backend(TTS_ENDPOINT))
+        probe_backend(TTS_ENDPOINT), probe_backend(SD_ENDPOINT))
     llama_ok = bool(instances) or await probe_backend(LLAMA_ENDPOINT)
     return JSONResponse(
         status_code=200 if llama_ok else 503,
@@ -707,6 +710,7 @@ async def health():
                                         for i in instances]},
                 "whisper": {"endpoint": WHISPER_ENDPOINT, "reachable": whisper_ok},
                 "tts": {"endpoint": TTS_ENDPOINT, "reachable": tts_ok},
+                "images": {"endpoint": SD_ENDPOINT, "reachable": sd_ok},
             },
         })
 
@@ -1279,6 +1283,19 @@ async def tts_speech(request: Request):
         pass
     return await _relay_to(TTS_ENDPOINT, request, "/v1/audio/speech", "TTS",
                            content=content)
+
+
+@app.post("/v1/images/generations")
+async def images_generations(request: Request):
+    """OpenAI's image API, answered by stable-diffusion.cpp's sd-server
+    (start it from the Servers panel). The body passes through: prompt,
+    n, size, output_format; sd.cpp extras ride inside the prompt."""
+    return await _relay_to(SD_ENDPOINT, request, "/v1/images/generations", "image generation")
+
+
+@app.post("/v1/images/edits")
+async def images_edits(request: Request):
+    return await _relay_to(SD_ENDPOINT, request, "/v1/images/edits", "image generation")
 
 
 @app.post("/upload_reference")

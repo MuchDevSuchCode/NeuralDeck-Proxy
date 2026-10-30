@@ -244,6 +244,7 @@ def _compute(src: dict = None, make_dirs: bool = True) -> dict:
     WHISPER_LOG = _as_path(get("whisper_log", LOG_DIR / "whisper.log"))
     COMFY_LOG = _as_path(get("comfy_log", LOG_DIR / "comfy.log"))
     TTS_LOG = _as_path(get("tts_log", LOG_DIR / "tts.log"))
+    SD_LOG = _as_path(get("sd_log", LOG_DIR / "sd.log"))
 
 
     def _default_model_dirs() -> list:
@@ -283,6 +284,7 @@ def _compute(src: dict = None, make_dirs: bool = True) -> dict:
     WHISPER_PORT = _int("whisper_port", 8090)
     TTS_PORT = _int("tts_port", 8004)
     COMFY_PORT = _int("comfy_port", 8188)
+    SD_PORT = _int("sd_port", 7860)
 
 
     # A reversed range is swapped; one that is not a range at all falls back
@@ -332,6 +334,18 @@ def _compute(src: dict = None, make_dirs: bool = True) -> dict:
     FFMPEG = os.path.expanduser(str(get("ffmpeg", shutil.which("ffmpeg")
                                         or f"ffmpeg{EXE}")))
 
+    # Image generation: stable-diffusion.cpp's sd-server, which speaks the
+    # OpenAI images API. Shown in the Servers panel when the binary exists.
+    SD_BIN = os.path.expanduser(str(get(
+        "sd_bin", shutil.which("sd-server")
+        or Path.home() / "stable-diffusion.cpp" / "build" / "bin" / f"sd-server{EXE}")))
+    SD_DIFFUSION_MODEL = os.path.expanduser(str(get("sd_diffusion_model", "") or ""))
+    SD_TEXT_ENCODER = os.path.expanduser(str(get("sd_text_encoder", "") or ""))
+    SD_VAE = os.path.expanduser(str(get("sd_vae", "") or ""))
+    SD_STEPS = _int("sd_steps", 8)
+    SD_CFG_SCALE = _float("sd_cfg_scale", 1.0)
+    SD_EXTRA_ARGS = _list("sd_extra_args", [])
+
     # Optional extras: a start command each, as a list or a shell-style
     # string. Empty means "not installed here" and the service is hidden.
     COMFY_CMD = _cmd("comfy_cmd", [])
@@ -376,6 +390,7 @@ def _compute(src: dict = None, make_dirs: bool = True) -> dict:
                                f"http://127.0.0.1:{WHISPER_PORT}/v1/audio/transcriptions"))
     TTS_ENDPOINT = str(get("tts_endpoint", f"http://127.0.0.1:{TTS_PORT}"))
     COMFY_URL = str(get("comfy_url", f"http://127.0.0.1:{COMFY_PORT}"))
+    SD_URL = str(get("sd_url", f"http://127.0.0.1:{SD_PORT}"))
     PROXY_CHAT = str(get("proxy_chat",
                          f"http://127.0.0.1:{PROXY_PORT}/v1/chat/completions"))
     STRICT_MODEL_ROUTING = _bool("strict_model_routing", True)
@@ -400,6 +415,16 @@ def _compute(src: dict = None, make_dirs: bool = True) -> dict:
         'WHISPER_LOG': WHISPER_LOG,
         'COMFY_LOG': COMFY_LOG,
         'TTS_LOG': TTS_LOG,
+        'SD_LOG': SD_LOG,
+        'SD_PORT': SD_PORT,
+        'SD_BIN': SD_BIN,
+        'SD_DIFFUSION_MODEL': SD_DIFFUSION_MODEL,
+        'SD_TEXT_ENCODER': SD_TEXT_ENCODER,
+        'SD_VAE': SD_VAE,
+        'SD_STEPS': SD_STEPS,
+        'SD_CFG_SCALE': SD_CFG_SCALE,
+        'SD_EXTRA_ARGS': SD_EXTRA_ARGS,
+        'SD_URL': SD_URL,
         'MODEL_DIRS': MODEL_DIRS,
         'DECK_HOST': DECK_HOST,
         'DECK_PORT': DECK_PORT,

@@ -587,7 +587,7 @@ reachable, or beyond the account's access is simply not offered.
 | `deck_status`, `list_models` | what is loaded, memory and GPU headroom, throughput; what could be launched | the Dashboard view |
 | `launch_model`, `stop_model` | load or unload a model | the Dashboard view |
 | `benchmark` | the standard bench on a loaded model, recorded in the Benchmarks tab | the Benchmarks view |
-| `generate_image` | an image from ComfyUI, shown inline in the reply | ComfyUI running and a workflow file in Settings |
+| `generate_image` | an image from sd-server (or ComfyUI), shown inline in the reply | sd-server running (see [Image generation](#image-generation)), or ComfyUI plus a workflow file |
 | `speak` | a speech clip from the TTS endpoint, playable in the reply | the TTS service running |
 | `schedule_task`, `list_tasks`, `cancel_task` | prompts the deck runs on an interval or at a time of day, with these tools, each result saved as a new chat | nothing |
 | `home_assistant` | list entities, read a state, call a service | a Home Assistant URL and token |
@@ -622,6 +622,55 @@ the strings `{prompt}`, `{negative}`, `{seed}`, `{width}` and `{height}`
 where those values go, and name the file under **Settings → Chat Tools**.
 Images and clips the tools make are kept under `generated/<account>/` in
 the data directory and served only to that account.
+
+## Image generation
+
+NeuralDeck generates images the way the hosted assistants do: a prompt
+in, a picture out, no node graph. The engine is
+[stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp),
+the llama.cpp of diffusion: one C++ binary, GGUF weights, a Vulkan
+backend that runs on the same GPU and unified memory as your llama-server
+builds. Its `sd-server` speaks OpenAI's images API, so once it is
+running:
+
+* the proxy relays `POST /v1/images/generations` (and `/v1/images/edits`)
+  to it, with the same tokens as everything else, so any OpenAI client
+  can make images;
+* the **Servers** panel starts, stops and logs it like whisper and TTS;
+* the chat's `generate_image` tool uses it, and the picture appears in the
+  reply.
+
+**Set it up.** Build with Vulkan and get a model. Z-Image-Turbo is the
+one to start with: 6B parameters, 8 steps, FLUX-class output, about
+7 GB at Q8.
+
+```bash
+git clone --recursive https://github.com/leejet/stable-diffusion.cpp ~/stable-diffusion.cpp
+cd ~/stable-diffusion.cpp && cmake -B build -DSD_VULKAN=ON -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
+mkdir -p /mnt/models/Z-Image-Turbo && cd /mnt/models/Z-Image-Turbo
+hf download unsloth/Z-Image-Turbo-GGUF z-image-turbo-Q8_0.gguf --local-dir .
+hf download Comfy-Org/Z-Image-Turbo split_files/text_encoders/qwen_3_4b.safetensors split_files/vae/ae.safetensors --local-dir .
+```
+
+Then under **Settings → Image Generation** point **sd-server Binary** at
+`build/bin/sd-server`, **Diffusion Model** at the GGUF, **Text Encoder**
+at `qwen_3_4b.safetensors` and **VAE** at `ae.safetensors`; the defaults
+of 8 steps and CFG 1.0 are right for Turbo. Start **sd-server** from the
+Servers panel (the first start loads about 15 GB into memory and takes
+about 20 seconds). On a Ryzen AI Max+ 395 with Vulkan, Z-Image-Turbo at
+Q8 takes about 50 s for a 1024×1024 image, 25 s at 768×768 and 11 s at
+512×512, after a slower first image while shaders compile. Other models stable-diffusion.cpp supports, FLUX, SD3, Qwen-Image
+and more, work the same way with their own encoder and VAE files; see its
+docs for each.
+
+```bash
+curl http://localhost:8080/v1/images/generations -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "a lighthouse at dawn, oil painting", "size": "1024x1024"}' | jq -r '.data[0].b64_json' | base64 -d > out.png
+```
+
+ComfyUI is still supported as the chat tool's fallback: when sd-server is
+not running but a workflow file is set, `generate_image` uses that.
 
 ## Prompt Lab
 
@@ -674,6 +723,7 @@ request must carry one, as `Authorization: Bearer <token>` or `x-api-key`.
 | `POST /v1/completions`, `/v1/embeddings`, `/v1/responses`, `/v1/rerank` … | routed by `model` when the body names one |
 | `POST /v1/multimodal` | one multipart form with `text`, `images`, `videos`, `audio`, `system`, `model` and `stream` fields |
 | `POST /v1/audio/speech`, `GET /v1/audio/voices` | relayed to the TTS backend |
+| `POST /v1/images/generations`, `POST /v1/images/edits` | OpenAI's image API, relayed to sd-server (see [Image generation](#image-generation)) |
 | `GET /v1/models` | every model being served, across all instances |
 | `GET /props`, `GET /health` | the default instance's properties; the proxy's health |
 | anything else | relayed to the default llama-server untouched |
@@ -878,6 +928,16 @@ Launch-time defaults; a request can always override them.
 | `searxng_url` | — | at once | A SearXNG instance with the json format enabled |
 | `github_token` | — | at once | Optional; raises `read_github`'s rate limit from 60 to 5,000 an hour |
 | `comfy_workflow` | — | at once | A ComfyUI API-format workflow with `{prompt}` etc.; enables `generate_image` |
+
+### Image generation
+
+| Key | Default | Applies | Meaning |
+| --- | --- | --- | --- |
+| `sd_bin` | `~/stable-diffusion.cpp/build/bin/sd-server` | next start | stable-diffusion.cpp's server; the Servers panel shows it when the file exists |
+| `sd_diffusion_model`, `sd_text_encoder`, `sd_vae` | — | next start | the model's files (Z-Image: the GGUF, `qwen_3_4b.safetensors`, `ae.safetensors`) |
+| `sd_port` | `7860` | proxy | where sd-server listens (on 127.0.0.1; the proxy relays) |
+| `sd_steps`, `sd_cfg_scale` | `8`, `1.0` | next start | generation defaults a request can override |
+| `sd_extra_args` | — | next start | appended to the command, e.g. `--offload-to-cpu` |
 
 ### Tool integrations
 

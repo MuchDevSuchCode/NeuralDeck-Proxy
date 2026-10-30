@@ -35,6 +35,22 @@ def _whisper_cmd() -> list:
             "--convert"]
 
 
+def _sd_cmd() -> list:
+    """stable-diffusion.cpp's server: the OpenAI images API on a local port.
+    Needs the binary and a diffusion model; the text encoder and VAE are
+    added when set (Z-Image, FLUX and friends need both)."""
+    if not os.path.isfile(config.SD_BIN) or not os.path.isfile(config.SD_DIFFUSION_MODEL):
+        return []
+    cmd = [config.SD_BIN, "--diffusion-model", config.SD_DIFFUSION_MODEL,
+           "--listen-ip", "127.0.0.1", "--listen-port", str(config.SD_PORT),
+           "--steps", str(config.SD_STEPS), "--cfg-scale", str(config.SD_CFG_SCALE)]
+    if config.SD_TEXT_ENCODER:
+        cmd += ["--llm", config.SD_TEXT_ENCODER]
+    if config.SD_VAE:
+        cmd += ["--vae", config.SD_VAE]
+    return cmd + list(config.SD_EXTRA_ARGS)
+
+
 def registry() -> dict:
     """name -> descriptor, in the order the dashboard should list them."""
     out = {
@@ -66,6 +82,10 @@ def registry() -> dict:
         out["comfy"] = {"label": "ComfyUI", "port": config.COMFY_PORT,
                         "needle": " ".join(config.COMFY_CMD),
                         "log": config.COMFY_LOG, "cmd": config.COMFY_CMD}
+    if os.path.isfile(config.SD_BIN):
+        out["sd"] = {"label": "sd-server (images)", "port": config.SD_PORT,
+                     "needle": os.path.basename(config.SD_BIN) + " ",
+                     "log": config.SD_LOG, "cmd": _sd_cmd()}
     return out
 
 

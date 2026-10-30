@@ -149,6 +149,32 @@ SCHEMA = [
        "{negative}, {seed}, {width} and {height} where those go. Enables "
        "the generate_image tool while ComfyUI is running."),
 
+    # ── Image Generation ──────────────────────────────────────────────────
+    _f("sd_bin", "sd-server Binary", "file", "Image Generation",
+       "stable-diffusion.cpp's server (build with -DSD_VULKAN=ON). With a "
+       "diffusion model set, it appears in the Servers panel, the proxy "
+       "relays /v1/images/generations to it, and the chat gets a "
+       "generate_image tool."),
+    _f("sd_diffusion_model", "Diffusion Model", "file", "Image Generation",
+       "A GGUF or safetensors diffusion model, e.g. Z-Image-Turbo Q8_0."),
+    _f("sd_text_encoder", "Text Encoder", "file", "Image Generation",
+       "The model's text encoder (Z-Image: Qwen3-4B; FLUX: T5 + CLIP via "
+       "extra args). Leave empty for all-in-one checkpoints."),
+    _f("sd_vae", "VAE", "file", "Image Generation",
+       "The VAE decoder (Z-Image and FLUX: ae.safetensors)."),
+    _f("sd_port", "sd-server Port", "int", "Image Generation",
+       "Saving restarts the proxy; restart sd-server from the dashboard to "
+       "move it.", restart="proxy", min_=1, max_=65535),
+    _f("sd_steps", "Default Steps", "int", "Image Generation",
+       "Sampling steps unless a request sets its own. 8 suits Z-Image-Turbo "
+       "and FLUX.1-schnell; 20–30 for non-distilled models.", min_=1, max_=200),
+    _f("sd_cfg_scale", "Default CFG Scale", "float", "Image Generation",
+       "1.0 for distilled models (Z-Image-Turbo, schnell); 3–7 otherwise.",
+       min_=0, max_=30),
+    _f("sd_extra_args", "Extra sd-server Args", "strlist", "Image Generation",
+       "Appended to the command, one argument per entry, e.g. --offload-to-cpu "
+       "or --clip_l / --t5xxl for FLUX."),
+
     # ── Tool Integrations ─────────────────────────────────────────────────
     _f("ha_url", "Home Assistant URL", "str", "Tool Integrations",
        "e.g. http://homeassistant.local:8123. With the token, enables the "
@@ -272,6 +298,9 @@ ATTR = {
     "ha_url": "HA_URL", "ha_token": "HA_TOKEN", "smtp_host": "SMTP_HOST",
     "smtp_port": "SMTP_PORT", "smtp_user": "SMTP_USER", "smtp_password": "SMTP_PASSWORD",
     "smtp_from": "SMTP_FROM",
+    "sd_bin": "SD_BIN", "sd_diffusion_model": "SD_DIFFUSION_MODEL",
+    "sd_text_encoder": "SD_TEXT_ENCODER", "sd_vae": "SD_VAE", "sd_port": "SD_PORT",
+    "sd_steps": "SD_STEPS", "sd_cfg_scale": "SD_CFG_SCALE", "sd_extra_args": "SD_EXTRA_ARGS",
     "proxy_port": "PROXY_PORT", "proxy_host": "PROXY_HOST",
     "whisper_bin": "WHISPER_BIN", "whisper_model": "WHISPER_MODEL",
     "whisper_port": "WHISPER_PORT", "ffmpeg": "FFMPEG",
@@ -353,7 +382,7 @@ class Invalid(ValueError):
 
 
 HOST_KEYS = ("deck_host", "proxy_host", "llama_host")
-PORT_KEYS = ("deck_port", "proxy_port", "whisper_port", "tts_port", "comfy_port")
+PORT_KEYS = ("deck_port", "proxy_port", "whisper_port", "tts_port", "comfy_port", "sd_port")
 _LABEL = re.compile(r"^(?!-)[A-Za-z0-9-]{1,63}(?<!-)$")
 
 
@@ -476,7 +505,8 @@ def _cross_check(pending: dict, cleared: list, merged: dict,
              "proxy_port": computed["PROXY_PORT"],
              "whisper_port": computed["WHISPER_PORT"],
              "tts_port": computed["TTS_PORT"],
-             "comfy_port": computed["COMFY_PORT"]}
+             "comfy_port": computed["COMFY_PORT"],
+             "sd_port": computed["SD_PORT"]}
     llama = computed["LLAMA_PORTS"]
     problems = []
     keys = list(ports)

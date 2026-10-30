@@ -1007,7 +1007,8 @@ async def tokens_revoke(token_id: str):
 async def tools_list(request: Request):
     me = _user(request)
     return {"enabled": config.TOOLS_ENABLED,
-            "tools": await asyncio.to_thread(tools.definitions, me) if config.TOOLS_ENABLED else []}
+            "tools": await asyncio.to_thread(tools.definitions, me) if config.TOOLS_ENABLED else [],
+            "catalog": await asyncio.to_thread(tools.catalog, me)}
 
 
 @app.post("/api/tools/run")
