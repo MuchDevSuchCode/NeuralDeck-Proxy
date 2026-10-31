@@ -274,7 +274,7 @@ app = FastAPI(title="NeuralDeck", lifespan=lifespan)
 # ---------------------------------------------------------------------------
 
 SESSION_COOKIE = "nd_session"
-_PUBLIC_PATHS = {"/login", "/api/login", "/api/login/hint", "/api/logout", "/favicon.ico"}
+_PUBLIC_PATHS = {"/login", "/api/login", "/api/login/hint", "/api/logout", "/favicon.ico", "/sw.js"}
 # what a signed-in account whose password must still be changed may reach
 _MUST_CHANGE_OK = {"/api/me", "/api/me/password", "/api/logout", "/login", "/api/login/hint"}
 # Which view each API call belongs to; a user needs that view. Calls not
@@ -502,6 +502,14 @@ async def static_file(name: str):
 @app.get("/favicon.ico")
 async def favicon():
     return FileResponse(STATIC_DIR / "icon-192.png", media_type="image/png", headers=_STATIC_HEADERS)
+
+
+@app.get("/sw.js")
+async def service_worker():
+    # at the root so its scope covers the whole deck; never cached, so a
+    # new build replaces it on the next visit
+    return FileResponse(STATIC_DIR / "sw.js", media_type="text/javascript",
+                        headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/api/config")

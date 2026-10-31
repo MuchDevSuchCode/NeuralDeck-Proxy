@@ -12,6 +12,7 @@
 <link rel="manifest" href="/static/manifest.webmanifest">
 <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/static/icon-192.png">
+<script>if("serviceWorker" in navigator)addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}));</script>
 <script>try{let t=localStorage.getItem("nd-theme");const L=matchMedia("(prefers-color-scheme: light)").matches;
   if(t==="system")t=L?"light":"dark"; else if(t==="llama")t=L?"llama-light":"llama-dark";
   if(["dark","light","llama-dark","llama-light"].includes(t))document.documentElement.dataset.theme=t;}catch(e){}</script>

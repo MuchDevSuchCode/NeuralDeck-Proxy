@@ -331,9 +331,11 @@ Chrome, Edge and Samsung Internet on Android show an install button (a phone
 with a plus) in the top bar that puts a NeuralDeck icon on the home screen;
 the icon opens the deck full screen, with no browser around it. On an iPhone
 the same button explains the Safari way (Share → Add to Home Screen). A
-browser that can do neither gets a full-screen toggle instead. The manifest
-and icons are served without sign-in at `/static/`; everything else still
-needs an account.
+browser that can do neither gets a full-screen toggle instead. The manifest,
+icons and a small service worker (it caches nothing; it only makes the deck
+count as an app) are served without sign-in at `/static/` and `/sw.js`;
+everything else still needs an account. Installing needs HTTPS, so on a
+phone use the ngrok URL below, whose rule passes those paths to the deck.
 
 ### Signing in and accounts
 
@@ -1557,7 +1559,7 @@ endpoints:
     traffic_policy:
       on_http_request:
         - expressions:
-            - "!(req.url.path == '/' || req.url.path.startsWith('/api/') || req.url.path.startsWith('/login') || req.url.path == '/favicon.ico')"
+            - "!(req.url.path == '/' || req.url.path.startsWith('/api/') || req.url.path.startsWith('/login') || req.url.path == '/favicon.ico' || req.url.path == '/sw.js' || req.url.path.startsWith('/static/'))"
           actions:
             - type: forward-internal
               config:

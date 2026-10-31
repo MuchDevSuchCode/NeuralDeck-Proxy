@@ -2368,7 +2368,7 @@ config version 3), with a domain reserved for this machine:</p>
     traffic_policy:
       on_http_request:
         - expressions:
-            - &quot;!(req.url.path == '/' || req.url.path.startsWith('/api/') || req.url.path.startsWith('/login') || req.url.path == '/favicon.ico')&quot;
+            - &quot;!(req.url.path == '/' || req.url.path.startsWith('/api/') || req.url.path.startsWith('/login') || req.url.path == '/favicon.ico' || req.url.path == '/sw.js' || req.url.path.startsWith('/static/'))&quot;
           actions:
             - type: forward-internal
               config:
