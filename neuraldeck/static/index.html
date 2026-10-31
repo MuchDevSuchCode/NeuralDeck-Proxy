@@ -2,8 +2,16 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>NeuralDeck</title>
+<meta name="theme-color" content="#05080f">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="NeuralDeck">
+<link rel="manifest" href="/static/manifest.webmanifest">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
 <script>try{let t=localStorage.getItem("nd-theme");const L=matchMedia("(prefers-color-scheme: light)").matches;
   if(t==="system")t=L?"light":"dark"; else if(t==="llama")t=L?"llama-light":"llama-dark";
   if(["dark","light","llama-dark","llama-light"].includes(t))document.documentElement.dataset.theme=t;}catch(e){}</script>
@@ -314,6 +322,7 @@
   .umenu[hidden] { display:none; }
   .umenu-who { color:var(--muted); font-size:11px; padding:5px 10px 7px; border-bottom:1px solid var(--border-dim); margin-bottom:3px; }
   .umenu button { text-align:left; clip-path:none; padding:6px 10px; text-transform:none; letter-spacing:0; font-size:12.5px; }
+  .imenu-how { padding:6px 10px 8px; font-size:12px; line-height:1.45; max-width:260px; color:var(--ink-2); }
   #acct-dialog { width:min(1100px, calc(100vw - 20px)); }
   .dlg-sec { margin-top:16px; padding-top:14px; border-top:1px solid var(--border-dim); }
   .dlg-h { display:flex; align-items:center; gap:8px; margin:0 0 8px; color:var(--cyan); font-size:12px; font-weight:700;
@@ -477,6 +486,15 @@
     .srow-top { flex-wrap:wrap; }
     .stbar { flex-wrap:wrap; }
     #bn-search { width:100% !important; }
+  }
+  /* installed as an app: the page runs edge to edge, so keep clear of the notch and the gesture bar */
+  @media (display-mode: standalone){
+    body { padding:calc(14px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right))
+                   calc(14px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left)); }
+  }
+  @media (display-mode: standalone) and (max-width:600px){
+    body { padding:calc(10px + env(safe-area-inset-top)) calc(8px + env(safe-area-inset-right))
+                   calc(10px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left)); }
   }
   @media (max-width:500px){
     .mrow .top { flex-wrap:wrap; }
@@ -811,6 +829,12 @@
       <option value="llama">llama.cpp</option>
       <option value="llama-light">llama.cpp Light</option>
       <option value="llama-dark">llama.cpp Dark</option></select></label>
+    <span class="umenu-wrap"><button id="hdr-install" class="ibtn" style="display:none" onclick="installDeck(event)"
+      aria-haspopup="true" aria-expanded="false" aria-controls="imenu"></button>
+      <div id="imenu" class="umenu" role="dialog" aria-label="Install NeuralDeck" hidden>
+        <div class="umenu-who">Install NeuralDeck</div>
+        <p class="imenu-how">Tap the Share button, then <b>Add to Home Screen</b>. The icon opens the deck full screen, without the browser around it.</p>
+      </div></span>
     <span class="umenu-wrap"><button id="hdr-user" onclick="userMenu(event)" style="display:none" aria-haspopup="menu" aria-expanded="false" aria-controls="umenu"></button>
       <div id="umenu" class="umenu" role="menu" hidden>
         <div class="umenu-who" id="umenu-who"></div>
@@ -1679,6 +1703,9 @@ function setTheme(t){
   else { delete document.documentElement.dataset.theme; t="neuraldeck"; }
   try{localStorage.setItem("nd-theme",t);}catch(e){}
   if(typeof CS==="object") CS.theme=t;
+  // the status bar of the installed app follows the page colour
+  const tc=document.querySelector('meta[name="theme-color"]');
+  if(tc) tc.content=getComputedStyle(document.documentElement).getPropertyValue("--page").trim()||"#05080f";
 }
 themeMQ.addEventListener("change",()=>{ try{ const t=localStorage.getItem("nd-theme"); if(t==="system"||t==="llama") setTheme(t); }catch(e){} });
 $("theme-sel").value=(()=>{ try{ const t=localStorage.getItem("nd-theme"); if(t==="system"||t==="llama")return t; }catch(e){}
@@ -4076,6 +4103,9 @@ const ICON={
   zap:'<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
   file:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
   square:'<rect x="5" y="5" width="14" height="14" rx="2"/>',
+  install:'<rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 8v6"/><path d="M9 11h6"/>',
+  expand:'<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>',
+  shrink:'<path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/>',
   eyeoff:'<path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/>',
   copy:'<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
   undo:'<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/>',
@@ -5453,6 +5483,52 @@ function chatComposerSync(){
 $("chat-send").innerHTML=svgI("up"); $("chat-stop").innerHTML=svgI("square");
 document.querySelector(".chat-row .cbtn").innerHTML=svgI("plus");
 $("reset-layout").innerHTML=svgI("undo");
+
+// ── install as an app ────────────────────────────────────────────────────
+// Chrome, Edge and Samsung Internet hand the page an install prompt and the
+// button fires it; iPhone Safari has no prompt, so there the button explains
+// Share → Add to Home Screen; a browser with neither gets the Fullscreen API
+// instead. The button goes away once the deck runs installed.
+let installPrompt=null;
+const IS_IOS=/iPhone|iPad|iPod/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
+const standaloneMQ=matchMedia("(display-mode: standalone)");
+function isStandalone(){ return standaloneMQ.matches||navigator.standalone===true; }
+function installSync(){
+  const b=$("hdr-install");
+  const canFull=!!document.documentElement.requestFullscreen;
+  const mode=isStandalone()?"":installPrompt?"prompt":IS_IOS?"ios":canFull?"fullscreen":"";
+  b.dataset.mode=mode; b.style.display=mode?"":"none";
+  if(!mode){ $("imenu").hidden=true; return; }
+  const full=mode==="fullscreen"&&!!document.fullscreenElement;
+  b.innerHTML=svgI(mode==="fullscreen"?(full?"shrink":"expand"):"install");
+  b.title=mode==="fullscreen"?(full?"Leave full screen":"Full screen (this browser cannot install the deck as an app)")
+         :"Install NeuralDeck as an app: a home-screen icon that opens the deck full screen";
+  b.setAttribute("aria-label",b.title);
+  b.setAttribute("aria-haspopup",mode==="ios"?"dialog":"false");
+}
+window.addEventListener("beforeinstallprompt",e=>{ e.preventDefault(); installPrompt=e; installSync(); });
+window.addEventListener("appinstalled",()=>{ installPrompt=null; installSync(); });
+document.addEventListener("fullscreenchange",installSync);
+standaloneMQ.addEventListener("change",installSync);
+async function installDeck(e){
+  e.stopPropagation();
+  const b=$("hdr-install"), mode=b.dataset.mode;
+  if(mode==="prompt"){
+    // the prompt event is single-use: the browser hands over a new one on the next load
+    const p=installPrompt; installPrompt=null; installSync();
+    try{ await p.prompt(); }catch(err){}
+    return;
+  }
+  if(mode==="fullscreen"){
+    try{ if(document.fullscreenElement) await document.exitFullscreen();
+         else await document.documentElement.requestFullscreen({navigationUI:"hide"}); }catch(err){}
+    return;
+  }
+  const m=$("imenu"); m.hidden=!m.hidden; b.setAttribute("aria-expanded",String(!m.hidden));
+}
+document.addEventListener("click",e=>{ if(!e.target.closest("#imenu,#hdr-install")){ $("imenu").hidden=true; $("hdr-install").setAttribute("aria-expanded","false"); } });
+document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&!$("imenu").hidden){ $("imenu").hidden=true; $("hdr-install").focus(); } });
+installSync();
 function chatGrow(){ const t=$("chat-in"); t.style.height="auto"; t.style.height=Math.min(240,t.scrollHeight+2)+"px"; }
 $("chat-in").addEventListener("input",()=>{ chatGrow(); chatComposerSync(); });
 $("chat-in").addEventListener("keydown",e=>{

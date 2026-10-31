@@ -323,7 +323,7 @@ def _api_error(status: int, detail: str) -> JSONResponse:
 async def require_login(request: Request, call_next):
     request.state.user = None
     path = request.url.path
-    if not config.DECK_AUTH or path in _PUBLIC_PATHS:
+    if not config.DECK_AUTH or path in _PUBLIC_PATHS or path.startswith("/static/"):
         return await call_next(request)
     if users.count() == 0:
         _bootstrap_admin()
@@ -479,6 +479,29 @@ async def users_access(name: str, body: dict, request: Request):
 @app.get("/")
 async def index():
     return FileResponse(STATIC_DIR / "index.html", media_type="text/html")
+
+
+# The manifest and icons let a phone install the deck as an app (a
+# home-screen icon that opens full screen). Browsers fetch the manifest
+# without cookies, so these are served without sign-in; nothing else in
+# the static directory is.
+_STATIC_PUBLIC = {"manifest.webmanifest": "application/manifest+json",
+                  "icon.svg": "image/svg+xml",
+                  "icon-192.png": "image/png", "icon-512.png": "image/png"}
+_STATIC_HEADERS = {"Cache-Control": "public, max-age=86400"}
+
+
+@app.get("/static/{name}")
+async def static_file(name: str):
+    mime = _STATIC_PUBLIC.get(name)
+    if not mime:
+        raise HTTPException(404)
+    return FileResponse(STATIC_DIR / name, media_type=mime, headers=_STATIC_HEADERS)
+
+
+@app.get("/favicon.ico")
+async def favicon():
+    return FileResponse(STATIC_DIR / "icon-192.png", media_type="image/png", headers=_STATIC_HEADERS)
 
 
 @app.get("/api/config")

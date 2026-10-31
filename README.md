@@ -52,6 +52,7 @@ runs on **Linux and Windows** (macOS for everything but GPU telemetry).
 * [Choosing a quantisation](#choosing-a-quantisation)
 * [Prompt Lab](#prompt-lab)
 * [Benchmarks](#benchmarks)
+* [Android app](#android-app)
 * [Using the proxy](#using-the-proxy)
 * [How-to recipes](#how-to-recipes)
 * [Settings reference](#settings-reference)
@@ -324,6 +325,15 @@ rather than tracking a branch.
 
 The dashboard is at `http://localhost:8770`. It has five views: Dashboard,
 Chat, Prompt Lab, Benchmarks and Settings.
+
+On a phone, install it as an app: the page carries a web app manifest, so
+Chrome, Edge and Samsung Internet on Android show an install button (a phone
+with a plus) in the top bar that puts a NeuralDeck icon on the home screen;
+the icon opens the deck full screen, with no browser around it. On an iPhone
+the same button explains the Safari way (Share → Add to Home Screen). A
+browser that can do neither gets a full-screen toggle instead. The manifest
+and icons are served without sign-in at `/static/`; everything else still
+needs an account.
 
 ### Signing in and accounts
 
@@ -796,6 +806,30 @@ marked as such. Every Prompt Lab run is added to the benchmarks.
 
 History is kept in `bench.jsonl` in the data directory, capped at the
 newest 5,000 runs.
+
+## Android app
+
+`android/` holds a native Android client (Kotlin, Jetpack Compose) with the
+Chat tab's feature set in the shape of the Gemini, ChatGPT and Claude apps:
+conversation drawer, streaming Markdown, thinking blocks with a
+reasoning-effort picker, a model picker with capability badges, photo and
+text-file attachments, edit/regenerate/continue/stop, the deck's themes,
+and the web UI's sampling and penalty settings. It also gives the model an
+assistant's toolset: web search and page fetch, a calculator and a
+sandboxed JavaScript runner, weather, long-term memory, search over
+earlier chats, and phone tools (location, alarms, timers, reminders,
+calendar, contacts, maps, apps, clipboard, SMS/email drafts), plus
+llama-server's built-in tools and MCP servers, each with an Off/Ask/Allow
+policy. Signed in to the dashboard with an account, it also gets the
+deck's own tool pack (web search, Wikipedia, documents, spreadsheets,
+files, Python, GitHub, the deck itself, scheduled tasks, Home Assistant,
+email), image generation with sd-server's live preview and the `/image`
+command, download chips for the files tools make, and chats kept per
+account so the phone and the web Chat tab share one history. It talks to
+the proxy's `/v1` API (with a proxy token once one exists) and to the
+dashboard's `/api`, both on your LAN, so inference stays local. Build it
+with `./gradlew :app:assembleDebug` in `android/`; see
+[android/README.md](android/README.md).
 
 ## Using the proxy
 

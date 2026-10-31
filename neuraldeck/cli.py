@@ -158,6 +158,14 @@ def _ensure_streams() -> None:
     no window to show why. Send both to deck.log in the log directory.
     """
     if sys.stdout is not None and sys.stderr is not None:
+        # a Windows console or log file may be cp1252, which cannot take the
+        # arrows and dashes in the banners; never let a print end the deck
+        for s in (sys.stdout, sys.stderr):
+            if hasattr(s, "reconfigure"):
+                try:
+                    s.reconfigure(encoding="utf-8", errors="replace")
+                except (ValueError, OSError):
+                    pass
         return
     try:
         from . import config

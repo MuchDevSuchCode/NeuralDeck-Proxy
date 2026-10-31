@@ -1426,6 +1426,15 @@ def _body_model(content: bytes) -> Optional[str]:
 
 def main():
     import uvicorn
+    # Started by the deck, stdout is a log file; on Windows that file opens
+    # as cp1252, which cannot take the arrows in the banner and would end
+    # the proxy before it listens.
+    for s in (sys.stdout, sys.stderr):
+        if s is not None and hasattr(s, "reconfigure"):
+            try:
+                s.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
     uvicorn.run(app, host=HOST, port=PORT, log_level="info")
 
 
